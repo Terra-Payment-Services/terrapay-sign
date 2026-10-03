@@ -9,6 +9,7 @@ import {
   TEAM_MEMBER_ROLE_PERMISSIONS_MAP,
 } from '../constants/teams';
 import type { TEAM_MEMBER_ROLE_MAP } from '../constants/teams-translations';
+import { assertRoleChangeTakesEffect } from './organisations';
 
 /**
  * Workaround for E2E tests to not import `msg`.
@@ -73,7 +74,7 @@ export const isTeamRoleWithinUserHierarchy = (
   return TEAM_MEMBER_ROLE_HIERARCHY[currentUserRole].some((i) => i === roleToCheck);
 };
 
-export const getHighestTeamRoleInGroup = (groups: TeamGroup[]): TeamMemberRole => {
+export const getHighestTeamRoleInGroup = (groups: Pick<TeamGroup, 'teamRole'>[]): TeamMemberRole => {
   let highestTeamRole: TeamMemberRole = LOWEST_TEAM_ROLE;
 
   groups.forEach((group) => {
@@ -86,6 +87,39 @@ export const getHighestTeamRoleInGroup = (groups: TeamGroup[]): TeamMemberRole =
   });
 
   return highestTeamRole;
+};
+
+/** Ranks a team role by how far it reaches, so two roles can be compared directly. */
+const teamRoleRank = (role: TeamMemberRole): number => TEAM_MEMBER_ROLE_HIERARCHY[role].length;
+
+export type TeamRoleChangeEffect = {
+  /** The role the change is meant to leave the member holding. */
+  requestedRole: TeamMemberRole;
+  /** The member's team groups other than the internal one being rewritten. */
+  retainedGroups: { organisationGroupId: string; name: string | null; teamRole: TeamMemberRole }[];
+};
+
+/**
+ * Refuse a team role change the member's other team groups would override.
+ *
+ * Same defect as the organisation one, same reasoning. A team role update
+ * rewrites one internal team group membership while the effective role is read
+ * across every group, so a member who reaches ADMIN through a custom group kept
+ * it after being demoted, and the route said the demotion had worked.
+ *
+ * @param options - the requested role and the team groups the member keeps
+ * @throws {AppError} INVALID_REQUEST when another group would override the new role
+ */
+export const assertTeamRoleChangeTakesEffect = ({ requestedRole, retainedGroups }: TeamRoleChangeEffect): void => {
+  assertRoleChangeTakesEffect({
+    requestedRole,
+    retainedGroups: retainedGroups.map(({ organisationGroupId, name, teamRole }) => ({
+      id: organisationGroupId,
+      name,
+      role: teamRole,
+    })),
+    rankRole: teamRoleRank,
+  });
 };
 
 export const extractTeamSignatureSettings = (

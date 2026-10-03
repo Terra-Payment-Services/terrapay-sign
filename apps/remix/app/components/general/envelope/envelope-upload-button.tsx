@@ -1,6 +1,5 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
+import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
 import { useSession } from '@documenso/lib/client-only/providers/session';
 import { TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
@@ -10,10 +9,10 @@ import type { TCreateEnvelopePayload } from '@documenso/trpc/server/envelope-rou
 import { buildDropzoneRejectionDescription } from '@documenso/ui/lib/handle-dropzone-rejection';
 import { cn } from '@documenso/ui/lib/utils';
 import { DocumentUploadButton } from '@documenso/ui/primitives/document-upload-button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@documenso/ui/primitives/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger } from '@documenso/ui/primitives/tooltip';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { msg, plural } from '@lingui/core/macro';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { EnvelopeType } from '@prisma/client';
 import { useMemo, useState } from 'react';
 import { ErrorCode as DropzoneErrorCode, type FileRejection } from 'react-dropzone';
@@ -40,31 +39,22 @@ export const EnvelopeUploadButton = ({ className, type, folderId }: EnvelopeUplo
   const team = useCurrentTeam();
 
   const navigate = useNavigate();
-  const organisation = useCurrentOrganisation();
 
   const userTimezone = TIME_ZONES.find((timezone) => timezone === Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-  const { quota, remaining, refreshLimits, maximumEnvelopeItemCount } = useLimits();
+  const maximumEnvelopeItemCount = useMaximumEnvelopeItemCount();
 
   const [isLoading, setIsLoading] = useState(false);
 
   const { mutateAsync: createEnvelope } = trpc.envelope.create.useMutation();
 
   const disabledMessage = useMemo(() => {
-    if (organisation.subscription && remaining.documents === 0) {
-      return msg`Document upload disabled due to unpaid invoices`;
-    }
-
-    if (remaining.documents === 0) {
-      return msg`You have reached your document limit.`;
-    }
-
     if (!user.emailVerified) {
       return msg`Verify your email to upload documents.`;
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining.documents, user.emailVerified, team]);
+  }, [user.emailVerified, team]);
 
   const onFileDrop = async (files: File[]) => {
     try {
@@ -93,13 +83,9 @@ export const EnvelopeUploadButton = ({ className, type, folderId }: EnvelopeUplo
         throw error;
       });
 
-      void refreshLimits();
-
       const pathPrefix = type === EnvelopeType.DOCUMENT ? formatDocumentsPath(team.url) : formatTemplatesPath(team.url);
 
-      const aiQueryParam = team.preferences.aiFeaturesEnabled ? '?ai=true' : '';
-
-      await navigate(`${pathPrefix}/${id}/edit${aiQueryParam}`);
+      await navigate(`${pathPrefix}/${id}/edit`);
 
       toast({
         title: type === EnvelopeType.DOCUMENT ? t`Document uploaded` : t`Template uploaded`,
@@ -166,7 +152,7 @@ export const EnvelopeUploadButton = ({ className, type, folderId }: EnvelopeUplo
             <div>
               <DocumentUploadButton
                 loading={isLoading}
-                disabled={remaining.documents === 0 || !user.emailVerified}
+                disabled={!user.emailVerified}
                 disabledMessage={disabledMessage}
                 onDrop={onFileDrop}
                 onDropRejected={onFileDropRejected}
@@ -176,16 +162,6 @@ export const EnvelopeUploadButton = ({ className, type, folderId }: EnvelopeUplo
               />
             </div>
           </TooltipTrigger>
-
-          {type === EnvelopeType.DOCUMENT && remaining.documents > 0 && Number.isFinite(remaining.documents) && (
-            <TooltipContent>
-              <p className="text-sm">
-                <Trans>
-                  {remaining.documents} of {quota.documents} documents remaining this month.
-                </Trans>
-              </p>
-            </TooltipContent>
-          )}
         </Tooltip>
       </TooltipProvider>
     </div>

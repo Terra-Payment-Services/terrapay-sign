@@ -61,7 +61,8 @@ export const extractDerivedDocumentMeta = (
     drawSignatureEnabled: meta.drawSignatureEnabled ?? settings.drawSignatureEnabled,
 
     // Email settings.
-    emailId: meta.emailId ?? settings.emailId,
+    // Organisation sender addresses were removed; the column is no longer written.
+    emailId: null,
     emailReplyTo: meta.emailReplyTo ?? settings.emailReplyTo,
     emailSettings: meta.emailSettings || settings.emailDocumentSettings || DEFAULT_DOCUMENT_EMAIL_SETTINGS,
 

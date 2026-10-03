@@ -14,7 +14,7 @@ const Label = React.forwardRef<
 >(({ className, children, required, ...props }, ref) => (
   <LabelPrimitive.Root ref={ref} className={cn(labelVariants(), className)} {...props}>
     {children}
-    {required && <span className="ml-1 inline-block font-medium text-destructive">*</span>}
+    {required && <span className="ml-1 inline-block font-medium text-destructive-text">*</span>}
   </LabelPrimitive.Root>
 ));
 

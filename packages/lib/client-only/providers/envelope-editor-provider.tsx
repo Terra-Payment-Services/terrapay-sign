@@ -58,6 +58,7 @@ type EnvelopeEditorProviderValue = {
 
   isAutosaving: boolean;
   flushAutosave: () => Promise<TEditorEnvelope>;
+  cancelAutosave: () => void;
   autosaveError: boolean;
   resetForms: () => void;
 
@@ -74,15 +75,12 @@ type EnvelopeEditorProviderValue = {
 
   registerExternalFlush: (key: string, flush: () => Promise<void>) => () => void;
   registerPendingMutation: (promise: Promise<unknown>) => void;
-
-  organisationEmails?: { id: string; email: string }[];
 };
 
 interface EnvelopeEditorProviderProps {
   children: React.ReactNode;
   editorConfig?: EnvelopeEditorConfig;
   initialEnvelope: TEditorEnvelope;
-  organisationEmails?: { id: string; email: string }[];
 }
 
 const EnvelopeEditorContext = createContext<EnvelopeEditorProviderValue | null>(null);
@@ -101,7 +99,6 @@ export const EnvelopeEditorProvider = ({
   children,
   editorConfig: providedEditorConfig = DEFAULT_EDITOR_CONFIG,
   initialEnvelope,
-  organisationEmails,
 }: EnvelopeEditorProviderProps) => {
   const { t } = useLingui();
   const { toast } = useToast();
@@ -143,6 +140,9 @@ export const EnvelopeEditorProvider = ({
   const envelope = useSyncExternalStore(subscribeToEnvelopeStore, getEnvelope, getEnvelope);
 
   const [autosaveError, setAutosaveError] = useState<boolean>(false);
+
+  /** Set when the envelope is on its way out, so late failures stay quiet. */
+  const isAbandonedRef = useRef(false);
 
   const isCscMode = IS_INSTANCE_CSC_MODE();
 
@@ -211,6 +211,7 @@ export const EnvelopeEditorProvider = ({
   const {
     triggerSave: setRecipientsDebounced,
     flush: flushSetRecipients,
+    cancel: cancelSetRecipients,
     isPending: isRecipientsMutationPending,
   } = useEnvelopeAutosave(async (localRecipients: TSetEnvelopeRecipientsRequest['recipients']) => {
     try {
@@ -241,6 +242,13 @@ export const EnvelopeEditorProvider = ({
 
       setAutosaveError(false);
     } catch (err) {
+      // The envelope is being deleted, so a save that lands after it has
+      // nothing to write to. Reporting it puts a destructive banner over a
+      // delete that worked.
+      if (isAbandonedRef.current) {
+        return;
+      }
+
       console.error(err);
 
       analytics.captureException(err, {
@@ -273,6 +281,7 @@ export const EnvelopeEditorProvider = ({
   const {
     triggerSave: setFieldsDebounced,
     flush: flushSetFields,
+    cancel: cancelSetFields,
     isPending: isFieldsMutationPending,
   } = useEnvelopeAutosave(async (localFields: TLocalField[]) => {
     try {
@@ -310,6 +319,13 @@ export const EnvelopeEditorProvider = ({
         }
       });
     } catch (err) {
+      // The envelope is being deleted, so a save that lands after it has
+      // nothing to write to. Reporting it puts a destructive banner over a
+      // delete that worked.
+      if (isAbandonedRef.current) {
+        return;
+      }
+
       console.error(err);
 
       analytics.captureException(err, {
@@ -342,6 +358,7 @@ export const EnvelopeEditorProvider = ({
   const {
     triggerSave: updateEnvelopeDebounced,
     flush: flushUpdateEnvelope,
+    cancel: cancelUpdateEnvelope,
     isPending: isEnvelopeMutationPending,
   } = useEnvelopeAutosave(async ({ data, meta }: UpdateEnvelopePayload) => {
     try {
@@ -371,6 +388,13 @@ export const EnvelopeEditorProvider = ({
 
       setAutosaveError(false);
     } catch (err) {
+      // The envelope is being deleted, so a save that lands after it has
+      // nothing to write to. Reporting it puts a destructive banner over a
+      // delete that worked.
+      if (isAbandonedRef.current) {
+        return;
+      }
+
       console.error(err);
 
       analytics.captureException(err, {
@@ -521,6 +545,25 @@ export const EnvelopeEditorProvider = ({
     editorFields.resetForm(currentEnvelope.fields);
   };
 
+  /**
+   * Throw away every queued autosave without sending it.
+   *
+   * Called when the envelope is being deleted. A debounced save that lands
+   * after the delete has nothing to write to, and its failure handler would
+   * raise a destructive toast over the top of the successful delete.
+   */
+  const cancelAutosave = () => {
+    // Anything still on the wire will come back as a failure, because the row
+    // it is writing to has gone. That is expected once the envelope is being
+    // deleted, so stop the handlers reporting it. Cancelling the queue cannot
+    // recall a request already sent.
+    isAbandonedRef.current = true;
+
+    cancelSetFields();
+    cancelSetRecipients();
+    cancelUpdateEnvelope();
+  };
+
   const flushAutosave = async (): Promise<TEditorEnvelope> => {
     await Promise.all([flushSetFields(), flushSetRecipients(), flushUpdateEnvelope()]);
 
@@ -556,6 +599,7 @@ export const EnvelopeEditorProvider = ({
         editorRecipients,
         autosaveError,
         flushAutosave,
+        cancelAutosave,
         isAutosaving,
         relativePath,
         syncEnvelope,
@@ -563,7 +607,6 @@ export const EnvelopeEditorProvider = ({
         resetForms,
         registerExternalFlush,
         registerPendingMutation,
-        organisationEmails,
       }}
     >
       {children}

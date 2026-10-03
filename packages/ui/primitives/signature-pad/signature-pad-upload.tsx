@@ -421,7 +421,7 @@ export const SignaturePadUpload = ({ className, value, onChange, ...props }: Sig
 
       {isSignatureValid === false && (
         <div className="absolute bottom-4 left-4 flex gap-2">
-          <span className="text-destructive text-xs">
+          <span className="text-destructive-text text-xs">
             <Trans>Signature is too small</Trans>
           </span>
         </div>

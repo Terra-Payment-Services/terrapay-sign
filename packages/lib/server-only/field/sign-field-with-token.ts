@@ -13,6 +13,7 @@ import { match } from 'ts-pattern';
 import { AUTO_SIGNABLE_FIELD_TYPES } from '../../constants/autosign';
 import { DEFAULT_DOCUMENT_DATE_FORMAT } from '../../constants/date-formats';
 import { DEFAULT_DOCUMENT_TIME_ZONE } from '../../constants/time-zones';
+import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
 import type { TRecipientActionAuth } from '../../types/document-auth';
 import {
@@ -25,6 +26,8 @@ import {
 import type { RequestMetadata } from '../../universal/extract-request-metadata';
 import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
 import { assertRecipientNotExpired } from '../../utils/recipients';
+import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
+import { assertRecipientAccessAuthorized } from '../document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '../document/validate-field-auth';
 
 export type SignFieldWithTokenOptions = {
@@ -34,6 +37,11 @@ export type SignFieldWithTokenOptions = {
   isBase64?: boolean;
   userId?: number;
   authOptions?: TRecipientActionAuth;
+  /**
+   * Whether the request carries the recipient's access code cookie. A
+   * recipient whose access auth is an emailed code cannot act without it.
+   */
+  isAccess2FAVerified?: boolean;
   requestMetadata?: RequestMetadata;
 };
 
@@ -54,6 +62,7 @@ export const signFieldWithToken = async ({
   isBase64,
   userId,
   authOptions,
+  isAccess2FAVerified = false,
   requestMetadata,
 }: SignFieldWithTokenOptions) => {
   const recipient = await prisma.recipient.findFirstOrThrow({
@@ -119,9 +128,33 @@ export const signFieldWithToken = async ({
     throw new Error(`Field ${fieldId} has already been inserted`);
   }
 
+  await assertRecipientAccessAuthorized({
+    documentAuthOptions: envelope.authOptions,
+    recipient,
+    userId,
+  });
+
+  if (isRecipientAccess2FARequired({ documentAuthOptions: envelope.authOptions, recipient }) && !isAccess2FAVerified) {
+    throw new AppError(AppErrorCode.UNAUTHORIZED, {
+      message: 'The access code must be entered before signing',
+      statusCode: 401,
+    });
+  }
+
   // Unreachable code based on the above query but we need to satisfy TypeScript
   if (field.recipientId === null) {
     throw new Error(`Field ${fieldId} has no recipientId`);
+  }
+
+  // An assistant may prefill another recipient's fields, but never their signature.
+  // The Signature row below is written with `recipientId: field.recipientId`, so
+  // without this the signature would be attributed to the recipient who never made it.
+  if (
+    recipient.role === RecipientRole.ASSISTANT &&
+    field.recipientId !== recipient.id &&
+    (field.type === FieldType.SIGNATURE || field.type === FieldType.FREE_SIGNATURE)
+  ) {
+    throw new Error(`Assistant ${recipient.id} cannot sign for recipient ${field.recipientId}`);
   }
 
   if (field.type === FieldType.NUMBER && field.fieldMeta) {

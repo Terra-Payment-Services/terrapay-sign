@@ -1,15 +1,9 @@
 import signingCelebration from '@documenso/assets/images/signing-celebration.png';
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
-import {
-  buildClearCscBlockingErrorCookieHeader,
-  readCscBlockingErrorFromRequest,
-} from '@documenso/ee/server-only/signing/csc/cookies/blocking-error-cookie';
-import { readCscSadSessionFromRequest } from '@documenso/ee/server-only/signing/csc/cookies/sad-session-cookie';
-import { readCscServiceSessionFromRequest } from '@documenso/ee/server-only/signing/csc/cookies/service-session-cookie';
 import { EnvelopeRenderProvider } from '@documenso/lib/client-only/providers/envelope-render-provider';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
-import { IS_INSTANCE_CSC_MODE } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { isRecipientAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { viewedDocument } from '@documenso/lib/server-only/document/viewed-document';
@@ -25,12 +19,14 @@ import { getRecipientsForAssistant } from '@documenso/lib/server-only/recipient/
 import { getTeamSettings } from '@documenso/lib/server-only/team/get-team-settings';
 import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-email';
 import { DocumentAccessAuth } from '@documenso/lib/types/document-auth';
-import { isTspEnvelope } from '@documenso/lib/types/signature-level';
+import { SignatureLevel } from '@documenso/lib/types/signature-level';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
+import { logger } from '@documenso/lib/utils/logger';
 import { isRecipientExpired } from '@documenso/lib/utils/recipients';
 import { prisma } from '@documenso/prisma';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
 import { Trans } from '@lingui/react/macro';
+import type { Recipient } from '@prisma/client';
 import { DocumentSigningOrder, DocumentStatus, RecipientRole, SigningStatus } from '@prisma/client';
 import { Clock8 } from 'lucide-react';
 import { Link, redirect } from 'react-router';
@@ -38,8 +34,7 @@ import { getOptionalLoaderContext } from 'server/utils/get-loader-session';
 import { match } from 'ts-pattern';
 
 import { Header as AuthenticatedHeader } from '~/components/general/app-header';
-import { CscRecipientBlockedPage } from '~/components/general/document-signing/csc-recipient-blocked-page';
-import { CscRecipientSigningInProgressPage } from '~/components/general/document-signing/csc-recipient-signing-in-progress-page';
+import { DocumentSigningAccess2FAGate } from '~/components/general/document-signing/document-signing-access-2fa-gate';
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
 import { DocumentSigningAuthProvider } from '~/components/general/document-signing/document-signing-auth-provider';
 import { DocumentSigningPageViewV1 } from '~/components/general/document-signing/document-signing-page-view-v1';
@@ -131,8 +126,25 @@ const handleV1Loader = async ({ params, request }: Route.LoaderArgs) => {
 
     return {
       isDocumentAccessValid: false,
+      isAccess2FARequired: false,
       recipientEmail: recipient.email,
       recipientHasAccount,
+    } as const;
+  }
+
+  // Withhold the document until the recipient has entered their emailed code.
+  const isAccess2FASatisfied = await isRecipientAccess2FASatisfied({
+    headers: request.headers,
+    documentAuthOptions: document.authOptions,
+    recipient,
+  });
+
+  if (!isAccess2FASatisfied) {
+    return {
+      isDocumentAccessValid: false,
+      isAccess2FARequired: true,
+      documentAuthOptions: document.authOptions,
+      recipient: pickGateRecipient(recipient),
     } as const;
   }
 
@@ -206,6 +218,7 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
 
         return {
           isDocumentAccessValid: false,
+          isAccess2FARequired: false,
           ...requiredAccessData,
         } as const;
       }
@@ -244,8 +257,25 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
 
     return {
       isDocumentAccessValid: false,
+      isAccess2FARequired: false,
       recipientEmail: recipient.email,
       recipientHasAccount,
+    } as const;
+  }
+
+  // Withhold the document until the recipient has entered their emailed code.
+  const isAccess2FASatisfied = await isRecipientAccess2FASatisfied({
+    headers: request.headers,
+    documentAuthOptions: envelope.authOptions,
+    recipient,
+  });
+
+  if (!isAccess2FASatisfied) {
+    return {
+      isDocumentAccessValid: false,
+      isAccess2FARequired: true,
+      documentAuthOptions: envelope.authOptions,
+      recipient: pickGateRecipient(recipient),
     } as const;
   }
 
@@ -261,69 +291,45 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
     throw redirect(`/sign/${token}/expired`);
   }
 
+  // Only SES envelopes can be signed. Remote signing through a trust service
+  // provider has been removed, so an AES or QES envelope is refused rather
+  // than shown with a signing flow that could never complete it.
+  if (envelope.signatureLevel !== SignatureLevel.SES) {
+    logger.error({
+      msg: 'Refusing to open an envelope that is not SES for signing',
+      envelopeId: envelope.id,
+      signatureLevel: envelope.signatureLevel,
+    });
+
+    throw new AppError(AppErrorCode.CSC_INSTANCE_MODE_MISMATCH, {
+      message: `Envelope ${envelope.id} has signature level ${envelope.signatureLevel}, which this instance cannot sign.`,
+    });
+  }
+
   await viewedDocument({
     token,
     requestMetadata,
     recipientAccessAuth: derivedRecipientAccessAuth,
   }).catch(() => null);
 
-  // CSC / TSP routing. TSP envelopes have three terminal recipient-page
-  // states beyond the normal signing UI:
-  //   1. `blocked` — service-scope OAuth returned a hard error (set by the
-  //      callback as a one-shot `csc_blocking_error` cookie).
-  //   2. `signing-in-progress` — credential-scope OAuth completed, SAD is
-  //      attached server-side, page auto-fires the sync sign mutation.
-  //   3. pre-auth — no service token yet, kick the recipient into
-  //      service-scope OAuth.
-  // The fourth state (service session valid, no SAD, no blocking error) falls
-  // through to the normal signing UI.
-  if (IS_INSTANCE_CSC_MODE() && isTspEnvelope(envelope)) {
-    const blockingError = await readCscBlockingErrorFromRequest(request);
-
-    if (blockingError && blockingError.recipientToken === token) {
-      return {
-        isDocumentAccessValid: true,
-        envelopeForSigning,
-        csc: { state: 'blocked', code: blockingError.code } as const,
-        responseHeaders: { 'Set-Cookie': buildClearCscBlockingErrorCookieHeader() },
-      } as const;
-    }
-
-    const sadSessionId = await readCscSadSessionFromRequest(request);
-
-    if (sadSessionId) {
-      const cscSession = await prisma.cscSession.findUnique({
-        where: { id: sadSessionId },
-      });
-
-      const isSadSessionValid =
-        cscSession !== null &&
-        cscSession.recipientId === recipient.id &&
-        cscSession.encryptedSad !== null &&
-        cscSession.sadExpiresAt !== null &&
-        cscSession.sadExpiresAt > new Date();
-
-      if (isSadSessionValid) {
-        return {
-          isDocumentAccessValid: true,
-          envelopeForSigning,
-          csc: { state: 'signing-in-progress', sessionId: sadSessionId } as const,
-        } as const;
-      }
-    }
-
-    const serviceSessionToken = await readCscServiceSessionFromRequest(request);
-
-    if (serviceSessionToken !== token) {
-      throw redirect(`/api/csc/oauth/authorize?scope=service&token=${encodeURIComponent(token)}`);
-    }
-  }
-
   return {
     isDocumentAccessValid: true,
     envelopeForSigning,
   } as const;
 };
+
+/**
+ * Only what the access code gate needs, so nothing of the document leaves the
+ * server before the code is entered.
+ */
+const pickGateRecipient = (recipient: Pick<Recipient, 'id' | 'token' | 'email' | 'name' | 'role' | 'authOptions'>) => ({
+  id: recipient.id,
+  token: recipient.token,
+  email: recipient.email,
+  name: recipient.name,
+  role: recipient.role,
+  authOptions: recipient.authOptions,
+});
 
 export async function loader(loaderArgs: Route.LoaderArgs) {
   const { token } = loaderArgs.params;
@@ -358,22 +364,11 @@ export async function loader(loaderArgs: Route.LoaderArgs) {
   if (foundRecipient.envelope.internalVersion === 2) {
     const payloadV2 = await handleV2Loader(loaderArgs);
 
-    // V2 payload may carry a one-shot `Set-Cookie` header (used to clear the
-    // CSC blocking-error cookie after the loader reads it). Forward it via
-    // the `superLoaderJson` response init so the browser actually applies the
-    // header. The field stays on the payload — it's just a `Max-Age=0` clear
-    // directive, not sensitive — and isn't read by any consumer.
-    const responseHeaders =
-      'responseHeaders' in payloadV2 && payloadV2.responseHeaders ? payloadV2.responseHeaders : undefined;
-
-    return superLoaderJson(
-      {
-        version: 2,
-        payload: payloadV2,
-        branding,
-      } as const,
-      responseHeaders ? { headers: responseHeaders } : undefined,
-    );
+    return superLoaderJson({
+      version: 2,
+      payload: payloadV2,
+      branding,
+    } as const);
   }
 
   const payloadV1 = await handleV1Loader(loaderArgs);
@@ -403,6 +398,10 @@ const SigningPageV1 = ({ data }: { data: Awaited<ReturnType<typeof handleV1Loade
   const user = sessionData?.user;
 
   if (!data.isDocumentAccessValid) {
+    if (data.isAccess2FARequired) {
+      return <DocumentSigningAccess2FAGate documentAuthOptions={data.documentAuthOptions} recipient={data.recipient} />;
+    }
+
     return <DocumentSigningAuthPageView email={data.recipientEmail} emailHasAccount={!!data.recipientHasAccount} />;
   }
 
@@ -442,24 +441,14 @@ const SigningPageV1 = ({ data }: { data: Awaited<ReturnType<typeof handleV1Loade
             </Trans>
           </h2>
 
-          <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+          <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
             <Trans>This document has been cancelled by the owner.</Trans>
           </p>
 
-          {user ? (
+          {user && (
             <Link to="/" className="mt-36 text-documenso-700 hover:text-documenso-600">
               <Trans>Go Back Home</Trans>
             </Link>
-          ) : (
-            <p className="mt-36 text-muted-foreground/60 text-sm">
-              <Trans>
-                Want to send slick signing links like this one?{' '}
-                <Link to="https://documenso.com" className="text-documenso-700 hover:text-documenso-600">
-                  Check out Documenso
-                </Link>
-                .
-              </Trans>
-            </p>
           )}
         </div>
       </div>
@@ -475,7 +464,12 @@ const SigningPageV1 = ({ data }: { data: Awaited<ReturnType<typeof handleV1Loade
       uploadSignatureEnabled={document.documentMeta?.uploadSignatureEnabled}
       drawSignatureEnabled={document.documentMeta?.drawSignatureEnabled}
     >
-      <DocumentSigningAuthProvider documentAuthOptions={document.authOptions} recipient={recipient} user={user}>
+      <DocumentSigningAuthProvider
+        documentAuthOptions={document.authOptions}
+        recipient={recipient}
+        user={user}
+        isAccess2FAVerified
+      >
         {sessionData?.user && <AuthenticatedHeader />}
 
         <div className="mt-8 mb-8 px-4 md:mt-12 md:mb-12 md:px-8">
@@ -500,20 +494,11 @@ const SigningPageV2 = ({ data }: { data: Awaited<ReturnType<typeof handleV2Loade
   const user = sessionData?.user;
 
   if (!data.isDocumentAccessValid) {
+    if (data.isAccess2FARequired) {
+      return <DocumentSigningAccess2FAGate documentAuthOptions={data.documentAuthOptions} recipient={data.recipient} />;
+    }
+
     return <DocumentSigningAuthPageView email={data.recipientEmail} emailHasAccount={!!data.recipientHasAccount} />;
-  }
-
-  if ('csc' in data && data.csc?.state === 'blocked') {
-    return <CscRecipientBlockedPage code={data.csc.code} recipientToken={data.envelopeForSigning.recipient.token} />;
-  }
-
-  if ('csc' in data && data.csc?.state === 'signing-in-progress') {
-    return (
-      <CscRecipientSigningInProgressPage
-        sessionId={data.csc.sessionId}
-        recipientToken={data.envelopeForSigning.recipient.token}
-      />
-    );
   }
 
   const { envelope, recipientSignature, recipient } = data.envelopeForSigning;
@@ -541,24 +526,14 @@ const SigningPageV2 = ({ data }: { data: Awaited<ReturnType<typeof handleV2Loade
             </Trans>
           </h2>
 
-          <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+          <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
             <Trans>This document has been cancelled by the owner.</Trans>
           </p>
 
-          {user ? (
+          {user && (
             <Link to="/" className="mt-36 text-documenso-700 hover:text-documenso-600">
               <Trans>Go Back Home</Trans>
             </Link>
-          ) : (
-            <p className="mt-36 text-muted-foreground/60 text-sm">
-              <Trans>
-                Want to send slick signing links like this one?{' '}
-                <Link to="https://documenso.com" className="text-documenso-700 hover:text-documenso-600">
-                  Check out Documenso
-                </Link>
-                .
-              </Trans>
-            </p>
           )}
         </div>
       </div>
@@ -572,7 +547,12 @@ const SigningPageV2 = ({ data }: { data: Awaited<ReturnType<typeof handleV2Loade
       fullName={user?.email === recipient.email ? user?.name : recipient.name}
       signature={user?.email === recipient.email ? user?.signature : undefined}
     >
-      <DocumentSigningAuthProvider documentAuthOptions={envelope.authOptions} recipient={recipient} user={user}>
+      <DocumentSigningAuthProvider
+        documentAuthOptions={envelope.authOptions}
+        recipient={recipient}
+        user={user}
+        isAccess2FAVerified
+      >
         <EnvelopeRenderProvider
           version="current"
           envelope={envelope}

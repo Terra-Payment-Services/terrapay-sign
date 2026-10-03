@@ -1,4 +1,3 @@
-import { getServerLimits } from '@documenso/ee/server-only/limits/server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
 import { DocumentDataType, DocumentStatus, EnvelopeType, SigningStatus } from '@prisma/client';
@@ -41,6 +40,7 @@ import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/
 import { getPresignGetUrl, getPresignPostUrl } from '@documenso/lib/universal/upload/server-actions';
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
+import { assertAccountAccessAuthNotAdded } from '@documenso/lib/utils/document-auth';
 import { mapSecondaryIdToDocumentId, mapSecondaryIdToTemplateId } from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
 
@@ -359,17 +359,6 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
-
-      if (remaining.documents <= 0) {
-        return {
-          status: 400,
-          body: {
-            message: 'You have reached the maximum number of documents allowed for this month',
-          },
-        };
-      }
-
       const dateFormat = body.meta.dateFormat
         ? DATE_FORMATS.find((format) => format.value === body.meta.dateFormat)
         : DATE_FORMATS.find((format) => format.value === DEFAULT_DOCUMENT_DATE_FORMAT);
@@ -405,6 +394,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       const documentData = await createDocumentData({
         data: key,
         type: DocumentDataType.S3_PATH,
+        owner: { userId: user.id, teamId: team.id },
       });
 
       const envelope = await createEnvelope({
@@ -542,6 +532,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       const templateDocumentData = await createDocumentData({
         data: key,
         type: DocumentDataType.S3_PATH,
+        owner: { userId: user.id, teamId: team.id },
       });
 
       const createdTemplate = await createEnvelope({
@@ -730,18 +721,10 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       },
     });
 
-    const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
-
-    if (remaining.documents <= 0) {
-      return {
-        status: 400,
-        body: {
-          message: 'You have reached the maximum number of documents allowed for this month',
-        },
-      };
-    }
-
     const templateId = Number(params.templateId);
+
+    // body.authOptions is written straight onto the new envelope below, past createEnvelope's check.
+    assertAccountAccessAuthNotAdded({ requested: body.authOptions?.globalAccessAuth });
 
     const fileName = body.title.endsWith('.pdf') ? body.title : `${body.title}.pdf`;
 
@@ -818,11 +801,14 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         formValues: body.formValues,
       });
 
-      const newDocumentData = await putNormalizedPdfFileServerSide({
-        name: fileName,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(prefilled),
-      });
+      const newDocumentData = await putNormalizedPdfFileServerSide(
+        {
+          name: fileName,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(prefilled),
+        },
+        { owner: { userId: createdEnvelope.userId, teamId: createdEnvelope.teamId } },
+      );
 
       await prisma.envelopeItem.update({
         where: {
@@ -874,22 +860,14 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       },
     });
 
-    const { remaining } = await getServerLimits({ userId: user.id, teamId: team.id });
-
-    if (remaining.documents <= 0) {
-      return {
-        status: 400,
-        body: {
-          message: 'You have reached the maximum number of documents allowed for this month',
-        },
-      };
-    }
-
     const templateId = Number(params.templateId);
 
     let envelope: Awaited<ReturnType<typeof createDocumentFromTemplate>> | null = null;
 
     try {
+      // body.authOptions is written straight onto the new envelope below, past createEnvelope's check.
+      assertAccountAccessAuthNotAdded({ requested: body.authOptions?.globalAccessAuth });
+
       envelope = await createDocumentFromTemplate({
         id: {
           type: 'templateId',

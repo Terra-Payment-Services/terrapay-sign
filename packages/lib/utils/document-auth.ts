@@ -1,5 +1,7 @@
 import type { Envelope, Recipient } from '@prisma/client';
 
+import { AppError, AppErrorCode } from '../errors/app-error';
+
 import type {
   TDocumentAuthOptions,
   TRecipientAccessAuthTypes,
@@ -62,4 +64,26 @@ export const createRecipientAuthOptions = (options: TRecipientAuthOptions): TRec
     accessAuth: options?.accessAuth ?? [],
     actionAuth: options?.actionAuth ?? [],
   };
+};
+
+type AssertAccountAccessAuthNotAddedOptions = {
+  requested?: TRecipientAccessAuthTypes[] | null;
+  existing?: TRecipientAccessAuthTypes[] | null;
+};
+
+/**
+ * Refuse a write that newly asks for "Require account" access auth, which TerraPay Sign no longer offers.
+ *
+ * A value that is already stored on the envelope or recipient is let through unchanged, so envelopes created
+ * before the option was withdrawn keep working and can still have their other settings edited.
+ */
+export const assertAccountAccessAuthNotAdded = ({ requested, existing }: AssertAccountAccessAuthNotAddedOptions) => {
+  const isAccountRequested = (requested ?? []).includes(DocumentAuth.ACCOUNT);
+  const isAccountAlreadySet = (existing ?? []).includes(DocumentAuth.ACCOUNT);
+
+  if (isAccountRequested && !isAccountAlreadySet) {
+    throw new AppError(AppErrorCode.INVALID_BODY, {
+      message: 'The "Require account" access option is no longer available.',
+    });
+  }
 };

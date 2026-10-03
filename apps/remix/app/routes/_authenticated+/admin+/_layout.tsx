@@ -1,5 +1,4 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
-import { LicenseClient } from '@documenso/lib/server-only/license/license-client';
 import { isAdmin } from '@documenso/lib/utils/is-admin';
 import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
@@ -19,7 +18,6 @@ import {
 } from 'lucide-react';
 import { Link, Outlet, redirect, useLocation } from 'react-router';
 
-import { AdminLicenseStatusBanner } from '~/components/general/admin-license-status-banner';
 import { adminMiddleware } from '~/middleware/admin';
 import { appMetaTags } from '~/utils/meta';
 import type { Route } from './+types/_layout';
@@ -33,25 +31,18 @@ export const middleware = [adminMiddleware];
 export async function loader({ request }: Route.LoaderArgs) {
   const { user } = await getOptionalSession(request);
 
-  const license = await LicenseClient.getInstance()?.getCachedLicense();
-
   if (!user || !isAdmin(user)) {
     throw redirect('/');
   }
 
-  return {
-    license: license || null,
-  };
+  return null;
 }
 
-export default function AdminLayout({ loaderData }: Route.ComponentProps) {
-  const { license } = loaderData;
+export default function AdminLayout() {
   const { pathname } = useLocation();
 
   return (
     <div className="mx-auto w-full max-w-screen-xl px-4 md:px-8">
-      <AdminLicenseStatusBanner license={license} />
-
       <h1 className="font-semibold text-4xl">
         <Trans>Admin Panel</Trans>
       </h1>
@@ -139,17 +130,6 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
             <Link to="/admin/email-transports">
               <MailIcon className="mr-2 h-5 w-5" />
               <Trans>Email Transports</Trans>
-            </Link>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className={cn('justify-start md:w-full', pathname?.startsWith('/admin/email-domains') && 'bg-secondary')}
-            asChild
-          >
-            <Link to="/admin/email-domains">
-              <MailIcon className="mr-2 h-5 w-5" />
-              <Trans>Email Domains</Trans>
             </Link>
           </Button>
 

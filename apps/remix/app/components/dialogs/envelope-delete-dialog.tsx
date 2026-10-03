@@ -1,4 +1,3 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { trpc as trpcReact } from '@documenso/trpc/react';
 import { Alert, AlertDescription } from '@documenso/ui/primitives/alert';
 import { Button } from '@documenso/ui/primitives/button';
@@ -40,7 +39,6 @@ export const EnvelopeDeleteDialog = ({
   canManageDocument,
 }: EnvelopeDeleteDialogProps) => {
   const { toast } = useToast();
-  const { refreshLimits } = useLimits();
   const { t } = useLingui();
 
   const deleteMessage = msg`delete`;
@@ -53,8 +51,6 @@ export const EnvelopeDeleteDialog = ({
 
   const { mutateAsync: deleteEnvelope, isPending } = trpcReact.envelope.delete.useMutation({
     onSuccess: async () => {
-      void refreshLimits();
-
       toast({
         title: canManageDocument
           ? isDocument

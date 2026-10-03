@@ -1,7 +1,6 @@
-import { getServerLimits } from '@documenso/ee/server-only/limits/server';
-import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { convertToPdf } from '@documenso/lib/server-only/document-conversion';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
+import { getEnvelopeItemLimit } from '@documenso/lib/server-only/organisation/get-envelope-item-limit';
 import { insertFormValuesInPdf } from '@documenso/lib/server-only/pdf/insert-form-values-in-pdf';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
@@ -46,11 +45,14 @@ export const createDocumentRoute = authenticatedProcedure
       });
     }
 
-    const { id: documentDataId } = await putNormalizedPdfFileServerSide({
-      name: file.name,
-      type: 'application/pdf',
-      arrayBuffer: async () => Promise.resolve(pdf),
-    });
+    const { id: documentDataId } = await putNormalizedPdfFileServerSide(
+      {
+        name: file.name,
+        type: 'application/pdf',
+        arrayBuffer: async () => Promise.resolve(pdf),
+      },
+      { owner: { userId: ctx.user.id, teamId: ctx.teamId } },
+    );
 
     ctx.logger.info({
       input: {
@@ -58,14 +60,7 @@ export const createDocumentRoute = authenticatedProcedure
       },
     });
 
-    const { remaining } = await getServerLimits({ userId: user.id, teamId });
-
-    if (remaining.documents <= 0) {
-      throw new AppError(AppErrorCode.LIMIT_EXCEEDED, {
-        message: 'You have reached your document limit for this month. Please upgrade your plan.',
-        statusCode: 400,
-      });
-    }
+    await getEnvelopeItemLimit({ userId: user.id, teamId });
 
     const document = await createEnvelope({
       userId: user.id,

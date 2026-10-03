@@ -1,6 +1,7 @@
 import {
   DIRECT_TEMPLATE_RECIPIENT_EMAIL,
   DIRECT_TEMPLATE_RECIPIENT_NAME,
+  isDirectTemplateRecipientEmail,
 } from '@documenso/lib/constants/direct-templates';
 import { prisma } from '@documenso/prisma';
 import { EnvelopeType, type Recipient } from '@prisma/client';
@@ -50,10 +51,7 @@ export const createTemplateDirectLink = async ({
     throw new AppError(AppErrorCode.NOT_FOUND, { message: 'Recipient not found' });
   }
 
-  if (
-    !directRecipientId &&
-    envelope.recipients.find((recipient) => recipient.email.toLowerCase() === DIRECT_TEMPLATE_RECIPIENT_EMAIL)
-  ) {
+  if (!directRecipientId && envelope.recipients.find((recipient) => isDirectTemplateRecipientEmail(recipient.email))) {
     throw new AppError(AppErrorCode.INVALID_BODY, {
       message: 'Cannot generate placeholder direct recipient',
     });

@@ -254,7 +254,7 @@ export const AccessAuth2FAForm = ({ onSubmit, token, error }: AccessAuth2FAFormP
                       {expiresAt && millisecondsRemaining !== null && (
                         <div
                           className={cn('mt-2 text-center text-muted-foreground text-sm', {
-                            'text-destructive': millisecondsRemaining <= 0,
+                            'text-destructive-text': millisecondsRemaining <= 0,
                           })}
                         >
                           <Trans>

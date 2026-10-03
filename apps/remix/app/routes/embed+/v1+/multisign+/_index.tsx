@@ -5,6 +5,7 @@ import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organis
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { ZSignDocumentEmbedDataSchema } from '@documenso/lib/types/embed-document-sign-schema';
 import { fireAndForget } from '@documenso/lib/universal/fire-and-forget';
+import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 import { prisma } from '@documenso/prisma';
 import { Trans } from '@lingui/react/macro';
 import { SigningStatus } from '@prisma/client';
@@ -36,6 +37,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       });
 
       const recipient = await getRecipientByToken({ token });
+
+      // Multi-sign cannot satisfy access auth, and applyMultiSignSignature
+      // refuses these documents, so do not hand out their contents either.
+      const { recipientAccessAuthRequired } = extractDocumentAuthMethods({
+        documentAuth: document.authOptions,
+        recipientAuth: recipient.authOptions,
+      });
+
+      if (recipientAccessAuthRequired) {
+        throw new Response('Documents that require additional authentication cannot be multi signed', {
+          status: 403,
+        });
+      }
 
       return { document, recipient };
     }),

@@ -1,6 +1,7 @@
 import { NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY } from '@documenso/lib/constants/app';
-import { HttpTimestampAuthority } from '@libpdf/core';
 import { once } from 'remeda';
+
+import { VerifyingTimestampAuthority } from './timestamp/authority';
 
 const setupTimestampAuthorities = once(() => {
   const timestampAuthority = NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY();
@@ -14,7 +15,12 @@ const setupTimestampAuthorities = once(() => {
     .split(',')
     .filter(Boolean)
     .map((url) => {
-      return new HttpTimestampAuthority(url);
+      // Deliberately not libpdf's HttpTimestampAuthority. That one accepts a
+      // token on the HTTP status and the ASN.1 shape alone, never checking the
+      // signature, the certificate, the imprint or the nonce, so anything able
+      // to answer for the authority could set the time our documents claim.
+      // See timestamp/verify.ts.
+      return new VerifyingTimestampAuthority(url);
     });
 
   return timestampAuthorities;

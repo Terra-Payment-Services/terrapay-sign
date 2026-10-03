@@ -1,8 +1,8 @@
 import { ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/organisations';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { getMemberOrganisationRole } from '@documenso/lib/server-only/team/get-member-roles';
+import { assertOrganisationRoleAssignable } from '@documenso/lib/server-only/organisation/assert-organisation-role-assignable';
 import { generateDatabaseId } from '@documenso/lib/universal/id';
-import { buildOrganisationWhereQuery, isOrganisationRoleWithinUserHierarchy } from '@documenso/lib/utils/organisations';
+import { buildOrganisationWhereQuery } from '@documenso/lib/utils/organisations';
 import { prisma } from '@documenso/prisma';
 import { OrganisationGroupType } from '@prisma/client';
 
@@ -52,19 +52,13 @@ export const createOrganisationGroupRoute = authenticatedProcedure
       throw new AppError(AppErrorCode.UNAUTHORIZED);
     }
 
-    const currentUserOrganisationRole = await getMemberOrganisationRole({
+    // A group carries a role to everyone put in it, so creating one grants that
+    // role as surely as editing a member does.
+    await assertOrganisationRoleAssignable({
       organisationId,
-      reference: {
-        type: 'User',
-        id: user.id,
-      },
+      userId: user.id,
+      roleToAssign: organisationRole,
     });
-
-    if (!isOrganisationRoleWithinUserHierarchy(currentUserOrganisationRole, organisationRole)) {
-      throw new AppError(AppErrorCode.UNAUTHORIZED, {
-        message: 'You are not allowed to create this organisation group',
-      });
-    }
 
     // Validate that members exist in the organisation.
     memberIds.forEach((memberId) => {

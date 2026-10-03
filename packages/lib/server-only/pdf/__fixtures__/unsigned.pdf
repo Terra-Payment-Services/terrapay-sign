@@ -1,0 +1,76 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<<
+/Type /Pages
+/Kids [4 0 R]
+/Count 1
+>>
+endobj
+2 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+>>
+endobj
+3 0 obj
+<<
+/Title (Untitled)
+/Author (Unknown)
+/Creator (@libpdf/core)
+/Producer (@libpdf/core)
+/CreationDate (D:20260913165728Z)
+/ModDate (D:20260913165728Z)
+>>
+endobj
+4 0 obj
+<<
+/Type /Page
+/MediaBox [0 0 612 792]
+/Resources <<
+/Font <<
+/F0 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+>>
+>>
+>>
+/Parent 1 0 R
+/Contents 5 0 R
+>>
+endobj
+5 0 obj
+<<
+/Length 76>>
+stream
+
+q
+0 g
+BT
+/F0 18 Tf
+1 0 0 1 60 700 Tm
+<556E7369676E6564206472616674> Tj
+ET
+Q
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f
+0000000015 00000 n
+0000000072 00000 n
+0000000121 00000 n
+0000000290 00000 n
+0000000492 00000 n
+trailer
+<<
+/Size 6
+/Root 2 0 R
+/Info 3 0 R
+/ID [<0D3649951F1A06A21C54BC2185AB7853> <0D3649951F1A06A21C54BC2185AB7853>]
+>>
+startxref
+617
+%%EOF

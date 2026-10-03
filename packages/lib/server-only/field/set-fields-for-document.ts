@@ -83,6 +83,18 @@ export const setFieldsForDocument = async ({
     (existingField) => !fields.find((field) => field.id === existingField.id),
   );
 
+  // Same shape as the recipient removal path. An inserted field holds what the
+  // recipient put on the document, and `Signature.fieldId` cascades,
+  // so deleting one throws the signature away. Modifying an inserted field
+  // already throws below.
+  const insertedRemovals = removedFields.filter((removedField) => removedField.inserted);
+
+  if (insertedRemovals.length > 0) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'Cannot remove a field that the recipient has already filled in',
+    });
+  }
+
   const linkedFields = fields.map((field) => {
     const existing = existingFields.find((existingField) => existingField.id === field.id);
 

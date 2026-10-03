@@ -328,7 +328,7 @@ export function BrandingPreferencesForm({
                           type="button"
                           variant="link"
                           size="sm"
-                          className="text-destructive text-xs"
+                          className="text-destructive-text text-xs"
                           onClick={() => {
                             setPreviewUrl('');
                             onChange(null);

@@ -6,7 +6,7 @@ import { NEXT_PUBLIC_WEBAPP_URL } from './app';
 export const SALT_ROUNDS = 12;
 
 export const IDENTITY_PROVIDER_NAME: Record<string, string> = {
-  DOCUMENSO: 'Documenso',
+  DOCUMENSO: 'TerraPay Sign',
   GOOGLE: 'Google',
   MICROSOFT: 'Microsoft',
   OIDC: 'OIDC',
@@ -181,6 +181,20 @@ export const isSignupEnabledForProvider = (provider: 'email' | 'google' | 'micro
 
   return env(flagMap[provider]) !== 'true';
 };
+
+/**
+ * Whether a passkey may be used to sign in.
+ *
+ * A passkey is a credential this application holds itself, so on a deployment
+ * that authenticates against a directory it is a second way in that the
+ * directory does not see and cannot revoke. Somebody removed from Entra keeps
+ * their passkey until an administrator notices. That is the whole reason this
+ * flag exists, and it is why the server refuses the passkey authorize route as
+ * well as the page hiding the button.
+ *
+ * On by default, which is upstream's behaviour.
+ */
+export const isPasskeyEnabled = (): boolean => env('NEXT_PUBLIC_DISABLE_PASSKEY') !== 'true';
 
 /**
  * Check if signin is enabled for the given provider.

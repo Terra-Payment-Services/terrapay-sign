@@ -1,0 +1,17 @@
+diff --git a/node_modules/zod-prisma-types/dist/classes/directoryHelper.js b/node_modules/zod-prisma-types/dist/classes/directoryHelper.js
+index e0bb07c..9d10771 100644
+--- a/node_modules/zod-prisma-types/dist/classes/directoryHelper.js
++++ b/node_modules/zod-prisma-types/dist/classes/directoryHelper.js
+@@ -22,7 +22,11 @@ class DirectoryHelper {
+         if (!this.pathOrDirExists(path))
+             return;
+         try {
+-            fs_1.default.rmdirSync(path, { recursive: true });
++            // fs.rmdirSync stopped accepting `recursive` in Node 22, and this
++            // package still passes it, so `prisma generate` fails outright on any
++            // supported Node version. fs.rmSync is the documented replacement and
++            // has been available since Node 14.
++            fs_1.default.rmSync(path, { recursive: true, force: true });
+         }
+         catch (err) {
+             if (err instanceof Error)

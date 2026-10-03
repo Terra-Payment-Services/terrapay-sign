@@ -1,11 +1,16 @@
 import { parseMessageDescriptor } from '@documenso/lib/utils/i18n';
+import {
+  canCommitSignature,
+  initialSignaturePadDialogState,
+  signaturePadDialogReducer,
+} from '@documenso/lib/utils/signature-pad-dialog';
 import { Dialog, DialogClose, DialogContent, DialogFooter } from '@documenso/ui/primitives/dialog';
 
 import type { MessageDescriptor } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { motion } from 'framer-motion';
 import type { HTMLAttributes } from 'react';
-import { useState } from 'react';
+import { useReducer } from 'react';
 
 import { cn } from '../../lib/utils';
 import { Button } from '../button';
@@ -38,8 +43,16 @@ export const SignaturePadDialog = ({
 }: SignaturePadDialogProps) => {
   const { i18n } = useLingui();
 
-  const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [signature, setSignature] = useState<string>(value ?? '');
+  const [dialogState, dispatch] = useReducer(signaturePadDialogReducer, value ?? '', initialSignaturePadDialogState);
+
+  /**
+   * Opening and dismissing both reseed the pending signature from the field, so
+   * a drawing the signer walked away from cannot be committed on a later visit.
+   * Radix routes Cancel, escape and a click on the overlay through here.
+   */
+  const onOpenChange = (open: boolean) => {
+    dispatch(open ? { type: 'open', committed: value ?? '' } : { type: 'dismiss', committed: value ?? '' });
+  };
 
   return (
     <div
@@ -62,7 +75,7 @@ export const SignaturePadDialog = ({
         type="button"
         disabled={disabled}
         className="absolute inset-0 flex items-center justify-center bg-transparent"
-        onClick={() => setShowSignatureModal(true)}
+        onClick={() => onOpenChange(true)}
         whileHover="onHover"
       >
         {!value && !disableAnimation && (
@@ -109,7 +122,7 @@ export const SignaturePadDialog = ({
         )}
       </motion.button>
 
-      <Dialog open={showSignatureModal} onOpenChange={disabled ? undefined : setShowSignatureModal}>
+      <Dialog open={dialogState.isOpen} onOpenChange={disabled ? undefined : onOpenChange}>
         <DialogContent hideClose={true} className="p-6 pt-4">
           <SignaturePad
             id="signature"
@@ -117,7 +130,7 @@ export const SignaturePadDialog = ({
             value={value}
             className={className}
             disabled={disabled}
-            onChange={({ value }) => setSignature(value)}
+            onChange={(signature) => dispatch({ type: 'edit', value: signature.value })}
             typedSignatureEnabled={typedSignatureEnabled}
             uploadSignatureEnabled={uploadSignatureEnabled}
             drawSignatureEnabled={drawSignatureEnabled}
@@ -132,10 +145,10 @@ export const SignaturePadDialog = ({
 
             <Button
               type="button"
-              disabled={!signature}
+              disabled={!canCommitSignature(dialogState)}
               onClick={() => {
-                onChange(signature);
-                setShowSignatureModal(false);
+                onChange(dialogState.pending);
+                dispatch({ type: 'commit' });
               }}
             >
               {dialogConfirmText ? parseMessageDescriptor(i18n._, dialogConfirmText) : <Trans>Next</Trans>}

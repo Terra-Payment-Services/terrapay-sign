@@ -1,7 +1,7 @@
 import { prisma } from '@documenso/prisma';
 import { SigningStatus, WebhookTriggerEvents } from '@prisma/client';
 
-import { triggerWebhook } from '../../../server-only/webhooks/trigger/trigger-webhook';
+import { triggerTeamWebhook } from '../../../server-only/webhooks/trigger/trigger-webhook';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../../types/document-audit-logs';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../../types/webhook-payload';
 import { createDocumentAuditLogData } from '../../../utils/document-audit-logs';
@@ -65,10 +65,11 @@ export const run = async ({ payload, io }: { payload: TProcessRecipientExpiredJo
   });
 
   // Trigger webhook for recipient expiration.
-  await triggerWebhook({
+  // No acting user: expiry is a clock firing. Scope by the envelope's team so
+  // an author who has left still leaves their team notified.
+  await triggerTeamWebhook({
     event: WebhookTriggerEvents.RECIPIENT_EXPIRED,
     data: ZWebhookDocumentSchema.parse(mapEnvelopeToWebhookDocumentPayload(envelope)),
-    userId: envelope.userId,
     teamId: envelope.teamId,
   });
 

@@ -14,6 +14,7 @@ import { createElement } from 'react';
 
 import { getI18nInstance } from '../../../client-only/providers/i18n-server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../../constants/app';
+import { isTemplateRecipientEmailPlaceholder } from '../../../constants/placeholder-recipients';
 import { RECIPIENT_ROLE_TO_EMAIL_TYPE, RECIPIENT_ROLES_DESCRIPTION } from '../../../constants/recipient-roles';
 import { buildEnvelopeEmailHeaders } from '../../../server-only/email/build-envelope-email-headers';
 import { getEmailContext } from '../../../server-only/email/get-email-context';
@@ -185,7 +186,23 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
     reportUrl,
   });
 
-  if (isRecipientEmailValidForSending(recipient)) {
+  // An in-person signer is allowed to have no email address, and the schema permits it.
+  // Nothing is mailed to them, so nothing about a mail may be written down afterwards.
+  // A placeholder address is never mailed. sendDocument refuses these, so reaching
+  // here means a path that skipped it.
+  const isPlaceholderRecipient = isTemplateRecipientEmailPlaceholder(recipient.email);
+
+  if (isPlaceholderRecipient) {
+    io.logger.warn({
+      msg: 'Not mailing a signing request to a placeholder recipient',
+      envelopeId: envelope.id,
+      recipientId: recipient.id,
+    });
+  }
+
+  const willSendEmail = !isPlaceholderRecipient && isRecipientEmailValidForSending(recipient);
+
+  if (willSendEmail) {
     try {
       await assertOrganisationRatesAndLimits({
         organisationId,
@@ -255,6 +272,15 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
     sentAt,
     lastReminderSentAt: null,
   });
+
+  // The EMAIL_SENT rows reach the signing certificate, which is the evidence produced
+  // when a counterparty disputes a signature. A row here for a recipient who was never
+  // mailed puts a false assertion on that document, so it is written only when an email
+  // went out. Where there is no row the certificate falls back to the DOCUMENT_SENT
+  // timestamp, which says the document was distributed without claiming a notification.
+  if (!willSendEmail) {
+    return;
+  }
 
   await prisma.documentAuditLog.create({
     data: createDocumentAuditLogData({

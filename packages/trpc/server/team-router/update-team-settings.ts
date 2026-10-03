@@ -1,6 +1,7 @@
 import { ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/organisations';
 import { TEAM_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/teams';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { warnIgnoredEmailId } from '@documenso/lib/server-only/email/warn-ignored-email-id';
 import { normalizeBrandingColors } from '@documenso/lib/utils/normalize-branding-colors';
 import { buildOrganisationWhereQuery } from '@documenso/lib/utils/organisations';
 import { type SanitizeBrandingCssWarning, sanitizeBrandingCss } from '@documenso/lib/utils/sanitize-branding-css';
@@ -86,21 +87,7 @@ export const updateTeamSettingsRoute = authenticatedProcedure
       });
     }
 
-    // Validate that the email ID belongs to the organisation.
-    if (emailId) {
-      const email = await prisma.organisationEmail.findFirst({
-        where: {
-          id: emailId,
-          organisationId: team.organisationId,
-        },
-      });
-
-      if (!email) {
-        throw new AppError(AppErrorCode.NOT_FOUND, {
-          message: 'Email not found',
-        });
-      }
-    }
+    warnIgnoredEmailId({ emailId, teamId, organisationId: team.organisationId, logger: ctx.logger });
 
     const organisation = await prisma.organisation.findFirst({
       where: buildOrganisationWhereQuery({
@@ -180,7 +167,6 @@ export const updateTeamSettingsRoute = authenticatedProcedure
             brandingCss: sanitizedBrandingCss,
 
             // Email related settings.
-            emailId,
             emailReplyTo,
             // emailReplyToName,
             emailDocumentSettings: emailDocumentSettings === null ? Prisma.DbNull : emailDocumentSettings,

@@ -18,11 +18,10 @@ export const SYNC_ORGANISATION_SEATS_JOB_DEFINITION = {
     name: SYNC_ORGANISATION_SEATS_JOB_DEFINITION_ID,
     schema: SYNC_ORGANISATION_SEATS_JOB_DEFINITION_SCHEMA,
   },
-  handler: async ({ payload, io }) => {
-    const handler = await import('./sync-organisation-seats.handler');
-
-    await handler.run({ payload, io });
-  },
+  // Stripe billing was removed. The definition stays, disabled, so jobs already
+  // queued under this id are skipped rather than failing for want of one.
+  enabled: false,
+  handler: async () => {},
 } as const satisfies JobDefinition<
   typeof SYNC_ORGANISATION_SEATS_JOB_DEFINITION_ID,
   TSyncOrganisationSeatsJobDefinition

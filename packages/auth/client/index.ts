@@ -331,26 +331,6 @@ export class AuthClient {
         window.location.href = data.redirectUrl;
       }
     },
-    org: {
-      signIn: async ({ orgUrl }: { orgUrl: string }) => {
-        const response = await this.client['oauth'].authorize.oidc.org[':orgUrl'].$post({
-          param: { orgUrl },
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-
-          throw AppError.parseError(error);
-        }
-
-        const data = await response.json();
-
-        // Redirect to external OIDC provider URL.
-        if (data.redirectUrl) {
-          window.location.href = data.redirectUrl;
-        }
-      },
-    },
   };
 }
 

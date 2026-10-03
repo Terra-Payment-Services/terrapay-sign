@@ -2,20 +2,18 @@ import { useDebouncedValue } from '@documenso/lib/client-only/hooks/use-debounce
 import { useCurrentEnvelopeEditor } from '@documenso/lib/client-only/providers/envelope-editor-provider';
 import { useCurrentEnvelopeRender } from '@documenso/lib/client-only/providers/envelope-render-provider';
 import { PDF_VIEWER_ERROR_MESSAGES } from '@documenso/lib/constants/pdf-viewer-i18n';
-import type { NormalizedFieldWithContext } from '@documenso/lib/server-only/ai/envelope/detect-fields/types';
-import {
-  FIELD_META_DEFAULT_VALUES,
-  type TCheckboxFieldMeta,
-  type TDateFieldMeta,
-  type TDropdownFieldMeta,
-  type TEmailFieldMeta,
-  type TFieldMetaSchema,
-  type TInitialsFieldMeta,
-  type TNameFieldMeta,
-  type TNumberFieldMeta,
-  type TRadioFieldMeta,
-  type TSignatureFieldMeta,
-  type TTextFieldMeta,
+import type {
+  TCheckboxFieldMeta,
+  TDateFieldMeta,
+  TDropdownFieldMeta,
+  TEmailFieldMeta,
+  TFieldMetaSchema,
+  TInitialsFieldMeta,
+  TNameFieldMeta,
+  TNumberFieldMeta,
+  TRadioFieldMeta,
+  TSignatureFieldMeta,
+  TTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
 import { getOverlappingFieldPairs } from '@documenso/lib/utils/fields-overlap';
@@ -29,15 +27,13 @@ import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
-import { AlertTriangleIcon, FileTextIcon, PencilIcon, SparklesIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { FieldType, RecipientRole } from '@prisma/client';
+import { AlertTriangleIcon, FileTextIcon, PencilIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRevalidator, useSearchParams } from 'react-router';
 import { isDeepEqual } from 'remeda';
 import { match } from 'ts-pattern';
 
-import { AiFeaturesEnableDialog } from '~/components/dialogs/ai-features-enable-dialog';
-import { AiFieldDetectionDialog } from '~/components/dialogs/ai-field-detection-dialog';
 import { EnvelopeItemEditDialog } from '~/components/dialogs/envelope-item-edit-dialog';
 import { EditorFieldCheckboxForm } from '~/components/forms/editor/editor-field-checkbox-form';
 import { EditorFieldDateForm } from '~/components/forms/editor/editor-field-date-form';
@@ -85,8 +81,6 @@ export const EnvelopeEditorFieldsPage = () => {
 
   const { _ } = useLingui();
 
-  const [isAiFieldDialogOpen, setIsAiFieldDialogOpen] = useState(false);
-  const [isAiEnableDialogOpen, setIsAiEnableDialogOpen] = useState(false);
   const { revalidate } = useRevalidator();
 
   const envelopeItemPermissions = useMemo(
@@ -157,24 +151,6 @@ export const EnvelopeEditorFieldsPage = () => {
     }
   };
 
-  const onFieldDetectionComplete = (fields: NormalizedFieldWithContext[]) => {
-    for (const field of fields) {
-      editorFields.addField({
-        height: field.height,
-        width: field.width,
-        positionX: field.positionX,
-        positionY: field.positionY,
-        type: field.type,
-        envelopeItemId: field.envelopeItemId,
-        recipientId: field.recipientId,
-        page: field.pageNumber,
-        fieldMeta: structuredClone(FIELD_META_DEFAULT_VALUES[field.type]),
-      });
-    }
-
-    setIsAiFieldDialogOpen(false);
-  };
-
   /**
    * Set the selected recipient to the first recipient in the envelope.
    */
@@ -185,22 +161,6 @@ export const EnvelopeEditorFieldsPage = () => {
 
     editorFields.setSelectedRecipient(firstSelectableRecipient?.id ?? null);
   }, []);
-
-  const onDetectClick = () => {
-    if (!team.preferences.aiFeaturesEnabled) {
-      setIsAiEnableDialogOpen(true);
-      return;
-    }
-
-    setIsAiFieldDialogOpen(true);
-  };
-
-  const onAiFeaturesEnabled = () => {
-    void revalidate().then(() => {
-      setIsAiEnableDialogOpen(false);
-      setIsAiFieldDialogOpen(true);
-    });
-  };
 
   return (
     <div className="relative flex h-full">
@@ -348,41 +308,6 @@ export const EnvelopeEditorFieldsPage = () => {
               selectedRecipientId={editorFields.selectedRecipient?.id ?? null}
               selectedEnvelopeItemId={currentEnvelopeItem?.id ?? null}
             />
-
-            {editorConfig.fields?.allowAIDetection && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 w-full"
-                  onClick={onDetectClick}
-                  disabled={envelope.status !== DocumentStatus.DRAFT}
-                  title={
-                    envelope.status !== DocumentStatus.DRAFT
-                      ? _(msg`You can only detect fields in draft envelopes`)
-                      : undefined
-                  }
-                >
-                  <SparklesIcon className="mr-2 -ml-1 h-4 w-4" />
-                  <Trans>Detect with AI</Trans>
-                </Button>
-
-                <AiFieldDetectionDialog
-                  open={isAiFieldDialogOpen}
-                  onOpenChange={setIsAiFieldDialogOpen}
-                  onComplete={onFieldDetectionComplete}
-                  envelopeId={envelope.id}
-                  teamId={envelope.teamId}
-                />
-
-                <AiFeaturesEnableDialog
-                  open={isAiEnableDialogOpen}
-                  onOpenChange={setIsAiEnableDialogOpen}
-                  onEnabled={onAiFeaturesEnabled}
-                />
-              </>
-            )}
           </section>
 
           {/* Field details section. */}

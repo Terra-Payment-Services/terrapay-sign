@@ -8,8 +8,12 @@ printf "🔐 Checking certificate configuration...\n"
 
 CERT_PATH="${NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH:-/opt/documenso/cert.p12}"
 
-if [ -f "$CERT_PATH" ] && [ -r "$CERT_PATH" ]; then
-    printf "✅ Certificate file found and readable - document signing is ready!\n"
+# The certificate arrives either as a file or, as it does on Fargate, as base64
+# in the environment. Testing only the path made the first deployed task print
+# "signing will be unavailable" while /api/health reported the certificate as
+# ok, which is a banner that teaches whoever reads the logs to distrust them.
+if [ -n "${NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS:-}" ] || { [ -f "$CERT_PATH" ] && [ -r "$CERT_PATH" ]; }; then
+    printf "✅ Certificate available - document signing is ready!\n"
 else
     printf "⚠️ Certificate not found or not readable\n"
     printf "💡 Tip: Documenso will still start, but document signing will be unavailable\n"
@@ -28,4 +32,8 @@ printf "🗄️  Running database migrations...\n"
 npx prisma migrate deploy --schema ../../packages/prisma/schema.prisma
 
 printf "🌟 Starting Documenso server...\n"
-HOSTNAME=0.0.0.0 node build/server/main.js
+# exec, so node replaces this shell as PID 1 and receives the SIGTERM that ECS
+# sends on a deploy. Without it the shell takes the signal, does not pass it on,
+# and node is killed 30 seconds later with requests and jobs still running.
+export HOSTNAME=0.0.0.0
+exec node build/server/main.js

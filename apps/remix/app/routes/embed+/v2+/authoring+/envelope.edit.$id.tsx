@@ -12,7 +12,6 @@ import {
 } from '@documenso/lib/types/envelope-editor';
 import type { TEnvelopeFieldAndMeta } from '@documenso/lib/types/field-meta';
 import { buildEmbeddedEditorOptions, PRESIGNED_ENVELOPE_ITEM_ID_PREFIX } from '@documenso/lib/utils/embed-config';
-import { prisma } from '@documenso/prisma';
 import { trpc } from '@documenso/trpc/react';
 import type { TUpdateEmbeddingEnvelopePayload } from '@documenso/trpc/server/embedding-router/update-embedding-envelope.types';
 import { Spinner } from '@documenso/ui/primitives/spinner';
@@ -76,19 +75,6 @@ export const loader = async ({ request, params }: Route.LoaderArgs) => {
     throw redirect(`/embed/v2/authoring/error/not-found`);
   }
 
-  const organisationEmails = await prisma.organisationEmail.findMany({
-    where: {
-      organisationId: envelope.team.organisationId,
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    select: {
-      id: true,
-      email: true,
-    },
-  });
-
   let brandingLogo: string | undefined;
 
   if (settings.brandingEnabled && settings.brandingLogo) {
@@ -110,7 +96,6 @@ export const loader = async ({ request, params }: Route.LoaderArgs) => {
   return superLoaderJson({
     token,
     envelope,
-    organisationEmails,
     brandingLogo,
   });
 };
@@ -161,7 +146,7 @@ type EnvelopeEditPageProps = {
 };
 
 const EnvelopeEditPage = ({ embedAuthoringOptions }: EnvelopeEditPageProps) => {
-  const { envelope, token, brandingLogo, organisationEmails } = useSuperLoaderData<typeof loader>();
+  const { envelope, token, brandingLogo } = useSuperLoaderData<typeof loader>();
 
   const { t } = useLingui();
   const { toast } = useToast();
@@ -369,11 +354,7 @@ const EnvelopeEditPage = ({ embedAuthoringOptions }: EnvelopeEditPageProps) => {
         </div>
       )}
 
-      <EnvelopeEditorProvider
-        initialEnvelope={initialEnvelope}
-        editorConfig={editorConfig}
-        organisationEmails={organisationEmails}
-      >
+      <EnvelopeEditorProvider initialEnvelope={initialEnvelope} editorConfig={editorConfig}>
         <EnvelopeEditorRenderProviderWrapper presignedToken={token}>
           <EnvelopeEditor />
         </EnvelopeEditorRenderProviderWrapper>

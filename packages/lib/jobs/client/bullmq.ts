@@ -11,9 +11,11 @@ import type { Job } from 'bullmq';
 import { Queue, Worker } from 'bullmq';
 import type { Context as HonoContext } from 'hono';
 import { Hono } from 'hono';
-import IORedis from 'ioredis';
+import type IORedis from 'ioredis';
+import type { Cluster } from 'ioredis';
 
 import { env } from '../../utils/env';
+import { createRedisConnection, redisKeyPrefix } from '../../utils/redis-connection';
 import type { JobDefinition, JobRunIO, SimpleTriggerJobOptions } from './_internal/job';
 import type { Json } from './_internal/json';
 import { BaseJobProvider } from './base';
@@ -32,7 +34,7 @@ declare global {
 export class BullMQJobProvider extends BaseJobProvider {
   private _queue: Queue;
   private _worker: Worker;
-  private _connection: IORedis;
+  private _connection: IORedis | Cluster;
   private _jobDefinitions: Record<string, JobDefinition> = {};
 
   private constructor() {
@@ -44,9 +46,11 @@ export class BullMQJobProvider extends BaseJobProvider {
       throw new Error('[JOBS]: NEXT_PRIVATE_REDIS_URL is required when using the BullMQ jobs provider');
     }
 
-    const prefix = env('NEXT_PRIVATE_REDIS_PREFIX') || 'documenso';
+    const prefix = redisKeyPrefix();
 
-    this._connection = new IORedis(redisUrl, {
+    // maxRetriesPerRequest must be null for a BullMQ worker: its blocking
+    // commands sit open for far longer than any retry budget.
+    this._connection = createRedisConnection(redisUrl, {
       maxRetriesPerRequest: null,
     });
 
@@ -164,6 +168,16 @@ export class BullMQJobProvider extends BaseJobProvider {
         );
       }),
     );
+  }
+
+  /**
+   * Stop the worker taking new jobs and wait for the ones it holds. A job left
+   * running when the process dies keeps its lock until it expires, and BullMQ
+   * gives up on a job that stalls twice.
+   */
+  public override async close() {
+    await this._worker.close();
+    await this._queue.close();
   }
 
   public override getApiHandler(): (c: HonoContext) => Promise<Response | void> {

@@ -13,7 +13,11 @@ export const TemplateDocumentImage = ({ assetBaseUrl, className }: TemplateDocum
         <Column />
 
         <Column>
-          <Img className="mx-auto h-42" src={getEmailAssetUrl(assetBaseUrl, 'static/document.png')} alt="Documenso" />
+          <Img
+            className="mx-auto h-42"
+            src={getEmailAssetUrl(assetBaseUrl, 'static/document.png')}
+            alt="TerraPay Sign"
+          />
         </Column>
 
         <Column />

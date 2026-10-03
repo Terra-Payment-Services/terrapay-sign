@@ -5,8 +5,8 @@ import {
   IS_MICROSOFT_SSO_ENABLED,
   IS_OIDC_AUTO_REDIRECT_DISABLED,
   IS_OIDC_SSO_ENABLED,
+  isPasskeyEnabled,
   isSigninEnabledForProvider,
-  isSignupEnabledForProvider,
   OIDC_PROVIDER_LABEL,
 } from '@documenso/lib/constants/auth';
 import { isValidReturnTo, normalizeReturnTo } from '@documenso/lib/utils/is-valid-return-to';
@@ -15,8 +15,8 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { Loader2Icon } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link, redirect, useSearchParams } from 'react-router';
+import { useEffect } from 'react';
+import { redirect, useSearchParams } from 'react-router';
 
 import { SignInForm } from '~/components/forms/signin';
 import { SIGNUP_ERROR_MESSAGES } from '~/components/forms/signup';
@@ -36,6 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const isGoogleSSOEnabled = IS_GOOGLE_SSO_ENABLED && isSigninEnabledForProvider('google');
   const isMicrosoftSSOEnabled = IS_MICROSOFT_SSO_ENABLED && isSigninEnabledForProvider('microsoft');
   const isOIDCSSOEnabled = IS_OIDC_SSO_ENABLED && isSigninEnabledForProvider('oidc');
+  const isPasskeySigninEnabled = isPasskeyEnabled();
 
   // Automatically redirect to OIDC when it is the only enabled signin transport,
   // unless the redirect has been explicitly disabled via env.
@@ -45,12 +46,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const shouldAutoRedirectToOIDC = isOIDCOnlyTransport && !IS_OIDC_AUTO_REDIRECT_DISABLED;
 
   const oidcProviderLabel = OIDC_PROVIDER_LABEL;
-
-  const isSignupEnabled =
-    isSignupEnabledForProvider('email') ||
-    (IS_GOOGLE_SSO_ENABLED && isSignupEnabledForProvider('google')) ||
-    (IS_MICROSOFT_SSO_ENABLED && isSignupEnabledForProvider('microsoft')) ||
-    (IS_OIDC_SSO_ENABLED && isSignupEnabledForProvider('oidc'));
 
   let returnTo = new URL(request.url).searchParams.get('returnTo') ?? undefined;
 
@@ -65,7 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     isGoogleSSOEnabled,
     isMicrosoftSSOEnabled,
     isOIDCSSOEnabled,
-    isSignupEnabled,
+    isPasskeySigninEnabled,
     oidcProviderLabel,
     returnTo,
     shouldAutoRedirectToOIDC,
@@ -78,7 +73,7 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
     isGoogleSSOEnabled,
     isMicrosoftSSOEnabled,
     isOIDCSSOEnabled,
-    isSignupEnabled,
+    isPasskeySigninEnabled,
     oidcProviderLabel,
     returnTo,
     shouldAutoRedirectToOIDC,
@@ -87,18 +82,9 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
   const { _ } = useLingui();
 
   const [searchParams] = useSearchParams();
-  const [isEmbeddedRedirect, setIsEmbeddedRedirect] = useState(false);
 
   const errorParam = searchParams.get('error');
   const signupError = errorParam ? SIGNUP_ERROR_MESSAGES[errorParam] : undefined;
-
-  useEffect(() => {
-    const hash = window.location.hash.slice(1);
-
-    const params = new URLSearchParams(hash);
-
-    setIsEmbeddedRedirect(params.get('embedded') === 'true');
-  }, []);
 
   useEffect(() => {
     if (!shouldAutoRedirectToOIDC) {
@@ -123,7 +109,7 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="w-screen max-w-lg px-4">
-      <div className="z-10 rounded-xl border border-border bg-neutral-100 p-6 dark:bg-background">
+      <div className="z-10 rounded-lg bg-card p-6 shadow-elevation-card dark:border dark:border-border">
         {signupError && (
           <Alert variant="destructive" className="mb-4">
             <AlertDescription>{_(signupError)}</AlertDescription>
@@ -135,7 +121,7 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
         </h1>
 
         <p className="mt-2 text-muted-foreground text-sm">
-          <Trans>Welcome back, we are lucky to have you.</Trans>
+          <Trans>Sign in with your TerraPay account.</Trans>
         </p>
         <hr className="-mx-6 my-4" />
 
@@ -144,23 +130,10 @@ export default function SignIn({ loaderData }: Route.ComponentProps) {
           isGoogleSSOEnabled={isGoogleSSOEnabled}
           isMicrosoftSSOEnabled={isMicrosoftSSOEnabled}
           isOIDCSSOEnabled={isOIDCSSOEnabled}
+          isPasskeySigninEnabled={isPasskeySigninEnabled}
           oidcProviderLabel={oidcProviderLabel}
           returnTo={returnTo}
         />
-
-        {!isEmbeddedRedirect && isSignupEnabled && (
-          <p className="mt-6 text-center text-muted-foreground text-sm">
-            <Trans>
-              Don't have an account?{' '}
-              <Link
-                to={returnTo ? `/signup?returnTo=${encodeURIComponent(returnTo)}` : '/signup'}
-                className="text-documenso-700 duration-200 hover:opacity-70"
-              >
-                Sign up
-              </Link>
-            </Trans>
-          </p>
-        )}
       </div>
     </div>
   );

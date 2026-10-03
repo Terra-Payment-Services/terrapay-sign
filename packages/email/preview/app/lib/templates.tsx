@@ -17,7 +17,6 @@ import { DocumentReminderEmailTemplate } from '../../../templates/document-remin
 import { DocumentSelfSignedEmailTemplate } from '../../../templates/document-self-signed';
 import { DocumentSuperDeleteEmailTemplate } from '../../../templates/document-super-delete';
 import { ForgotPasswordTemplate } from '../../../templates/forgot-password';
-import { OrganisationAccountLinkConfirmationTemplate } from '../../../templates/organisation-account-link-confirmation';
 import { OrganisationDeleteEmailTemplate } from '../../../templates/organisation-delete';
 import { OrganisationInviteEmailTemplate } from '../../../templates/organisation-invite';
 import { OrganisationJoinEmailTemplate } from '../../../templates/organisation-join';
@@ -291,14 +290,6 @@ export const templates: Record<string, TemplateDefinition> = {
     name: 'Organisation limit alert',
     group: 'Organisations',
     component: OrganisationLimitAlertEmailTemplate,
-    fields: {
-      organisationName: { type: 'text', label: 'Organisation name', default: 'Documenso' },
-    },
-  },
-  'organisation-account-link-confirmation': {
-    name: 'Account link confirmation',
-    group: 'Organisations',
-    component: OrganisationAccountLinkConfirmationTemplate,
     fields: {
       organisationName: { type: 'text', label: 'Organisation name', default: 'Documenso' },
     },

@@ -20,6 +20,7 @@ export const ZOrganisationSchema = OrganisationSchema.pick({
     originalSubscriptionClaimId: true,
     teamCount: true,
     memberCount: true,
+    envelopeItemCount: true,
     recipientCount: true,
     flags: true,
   }),
@@ -53,6 +54,11 @@ export const ZOrganisationAccountLinkMetadataSchema = z.object({
     accessToken: z.string(),
     expiresAt: z.number(),
     idToken: z.string(),
+    // The authority the token was verified against when the link was offered.
+    // Required, so that no Account row is written from a link token without
+    // one. Link tokens minted before this field existed stop parsing, which
+    // costs the holder another sign in and nothing else.
+    issuer: z.string().min(1),
   }),
 });
 

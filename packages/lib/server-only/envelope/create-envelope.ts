@@ -20,6 +20,7 @@ import {
   WebhookTriggerEvents,
 } from '@prisma/client';
 
+import { formatPlaceholderRecipientEmail } from '../../constants/placeholder-recipients';
 import type {
   TDocumentAccessAuthTypes,
   TDocumentActionAuthTypes,
@@ -34,8 +35,14 @@ import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { putPdfFileServerSide } from '../../universal/upload/put-file.server';
 import { extractDerivedDocumentMeta } from '../../utils/document';
-import { createDocumentAuthOptions, createRecipientAuthOptions } from '../../utils/document-auth';
+import {
+  assertAccountAccessAuthNotAdded,
+  createDocumentAuthOptions,
+  createRecipientAuthOptions,
+} from '../../utils/document-auth';
 import { buildTeamWhereQuery } from '../../utils/teams';
+import { assertDocumentDataAccess } from '../document-data/assert-document-data-access';
+import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
@@ -149,6 +156,12 @@ export const createEnvelope = async ({
     strict: true,
   });
 
+  assertAccountAccessAuthNotAdded({ requested: globalAccessAuth });
+
+  for (const recipient of data.recipients ?? []) {
+    assertAccountAccessAuthNotAdded({ requested: recipient.accessAuth });
+  }
+
   const team = await prisma.team.findFirst({
     where: buildTeamWhereQuery({ teamId, userId }),
     include: {
@@ -165,6 +178,16 @@ export const createEnvelope = async ({
       message: 'Team not found',
     });
   }
+
+  // The envelope item IDs arrive from the client on the embedding and API
+  // routes, so bind them to the team before anything reads the bytes behind
+  // them. Without this a caller could name another team's PDF and then read it
+  // through their own envelope.
+  await assertDocumentDataAccess({
+    teamId,
+    userId,
+    documentDataIds: data.envelopeItems.map((item) => item.documentDataId),
+  });
 
   // Enforce the organisation document-creation limit before doing any work.
   // Only documents count towards the limit (templates are exempt).
@@ -242,11 +265,14 @@ export const createEnvelope = async ({
 
         const titleToUse = item.title || title;
 
-        const { documentData: newDocumentData } = await putPdfFileServerSide({
-          name: titleToUse,
-          type: 'application/pdf',
-          arrayBuffer: async () => Promise.resolve(normalizedPdf),
-        });
+        const { documentData: newDocumentData } = await putPdfFileServerSide(
+          {
+            name: titleToUse,
+            type: 'application/pdf',
+            arrayBuffer: async () => Promise.resolve(normalizedPdf),
+          },
+          { owner: { userId, teamId } },
+        );
 
         return {
           title: titleToUse.endsWith('.pdf') ? titleToUse.slice(0, -4) : titleToUse,
@@ -282,23 +308,9 @@ export const createEnvelope = async ({
 
   const visibility = visibilityOverride || settings.documentVisibility;
 
-  const emailId = meta?.emailId;
-
-  // Validate that the email ID belongs to the organisation.
-  if (emailId) {
-    const email = await prisma.organisationEmail.findFirst({
-      where: {
-        id: emailId,
-        organisationId: team.organisationId,
-      },
-    });
-
-    if (!email) {
-      throw new AppError(AppErrorCode.NOT_FOUND, {
-        message: 'Email not found',
-      });
-    }
-  }
+  // Organisation sender addresses were removed: emailId is accepted and logged, and
+  // extractDerivedDocumentMeta never stores it.
+  warnIgnoredEmailId({ emailId: meta?.emailId, teamId, organisationId: team.organisationId });
 
   // userTimezone is last because it's always passed in regardless of the organisation/team settings
   // for uploads from the frontend
@@ -511,7 +523,7 @@ export const createEnvelope = async ({
 
         const placeholderRecipients = Array.from(uniqueRecipientRefs.entries(), ([recipientIndex, name]) => ({
           envelopeId: envelope.id,
-          email: `recipient.${recipientIndex}@documenso.com`,
+          email: formatPlaceholderRecipientEmail(recipientIndex),
           name,
           role: RecipientRole.SIGNER,
           signingOrder: recipientIndex,

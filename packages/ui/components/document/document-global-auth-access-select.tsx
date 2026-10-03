@@ -24,16 +24,22 @@ export const DocumentGlobalAuthAccessSelect = ({
 }: DocumentGlobalAuthAccessSelectProps) => {
   const { _ } = useLingui();
 
+  const isAccountAccessAlreadySet = [...(value ?? []), ...(defaultValue ?? [])].includes(DocumentAccessAuth.ACCOUNT);
+
   // Convert auth types to MultiSelect options
   const authOptions: Option[] = [
     {
       value: '-1',
       label: _(msg`No restrictions`),
     },
-    ...Object.values(DocumentAccessAuth).map((authType) => ({
-      value: authType,
-      label: _(DOCUMENT_AUTH_TYPES[authType].value),
-    })),
+    // TerraPay Sign no longer offers "Require account". It is listed only while an existing envelope already
+    // carries it, so saving other settings does not silently drop the restriction.
+    ...Object.values(DocumentAccessAuth)
+      .filter((authType) => authType !== DocumentAccessAuth.ACCOUNT || isAccountAccessAlreadySet)
+      .map((authType) => ({
+        value: authType,
+        label: _(DOCUMENT_AUTH_TYPES[authType].value),
+      })),
   ];
 
   // Convert string array to Option array for MultiSelect
@@ -88,11 +94,6 @@ export const DocumentGlobalAuthAccessTooltip = () => (
       </p>
 
       <ul className="ml-3.5 list-outside list-disc space-y-0.5 py-2">
-        <li>
-          <Trans>
-            <strong>Require account</strong> - The recipient must be signed in to view the document
-          </Trans>
-        </li>
         <li>
           <Trans>
             <strong>No restrictions</strong> - The document can be accessed directly by the URL sent to the recipient

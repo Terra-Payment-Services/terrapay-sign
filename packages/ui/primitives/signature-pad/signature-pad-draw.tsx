@@ -6,7 +6,7 @@ import { Undo2 } from 'lucide-react';
 import type { StrokeOptions } from 'perfect-freehand';
 import { getStroke } from 'perfect-freehand';
 import type { MouseEvent, PointerEvent, TouchEvent } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../../lib/utils';
 import { checkSignatureValidity, getSvgPathFromStroke } from './helper';
@@ -17,10 +17,19 @@ export type SignaturePadDrawProps = {
   className?: string;
   value: string;
   onChange: (_signatureDataUrl: string) => void;
+  isTypedSignatureAvailable?: boolean;
 };
 
-export const SignaturePadDraw = ({ className, value, onChange, ...props }: SignaturePadDrawProps) => {
+export const SignaturePadDraw = ({
+  className,
+  value,
+  onChange,
+  isTypedSignatureAvailable = false,
+  ...props
+}: SignaturePadDrawProps) => {
   const { t } = useLingui();
+
+  const typeTabHintId = useId();
 
   const $el = useRef<HTMLCanvasElement>(null);
 
@@ -238,6 +247,9 @@ export const SignaturePadDraw = ({ className, value, onChange, ...props }: Signa
       <canvas
         data-testid="signature-pad-draw"
         ref={$el}
+        role="img"
+        aria-label={t`Draw your signature here`}
+        aria-describedby={isTypedSignatureAvailable ? typeTabHintId : undefined}
         className={cn('h-full w-full', {
           'dark:hue-rotate-180 dark:invert': selectedColor === 'black',
         })}
@@ -249,6 +261,12 @@ export const SignaturePadDraw = ({ className, value, onChange, ...props }: Signa
         onPointerEnter={(event) => onMouseEnter(event)}
         {...props}
       />
+
+      {isTypedSignatureAvailable && (
+        <span id={typeTabHintId} className="sr-only">
+          <Trans>If you cannot draw your signature, use the Type tab to type it instead.</Trans>
+        </span>
+      )}
 
       <SignaturePadColorPicker
         className={cn('transition-opacity duration-100', {
@@ -265,7 +283,7 @@ export const SignaturePadDraw = ({ className, value, onChange, ...props }: Signa
       >
         <button
           type="button"
-          className="rounded-full p-0 text-[0.688rem] text-muted-foreground/60 ring-offset-background hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-full p-0 text-muted-foreground text-xs ring-offset-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => onClearClick()}
         >
           <Trans>Clear Signature</Trans>
@@ -278,7 +296,7 @@ export const SignaturePadDraw = ({ className, value, onChange, ...props }: Signa
             'pointer-events-none opacity-0': isPressed,
           })}
         >
-          <span className="text-destructive text-xs">
+          <span className="text-destructive-text text-xs">
             <Trans>Signature is too small</Trans>
           </span>
         </div>

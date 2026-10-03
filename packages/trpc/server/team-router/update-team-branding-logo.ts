@@ -1,8 +1,6 @@
-import { IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
 import { TEAM_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/teams';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { buildBrandingLogoData } from '@documenso/lib/server-only/branding/store-branding-logo';
-import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
 import { buildTeamWhereQuery } from '@documenso/lib/utils/teams';
 import { prisma } from '@documenso/prisma';
 
@@ -38,18 +36,6 @@ export const updateTeamBrandingLogoRoute = authenticatedProcedure
       throw new AppError(AppErrorCode.UNAUTHORIZED, {
         message: 'You do not have permission to update this team.',
       });
-    }
-
-    // Setting a logo requires the custom-branding entitlement; clearing it is
-    // always allowed so a downgraded team can still remove its logo.
-    if (brandingLogo && IS_BILLING_ENABLED()) {
-      const claim = await getOrganisationClaimByTeamId({ teamId });
-
-      if (claim.flags?.allowCustomBranding !== true) {
-        throw new AppError(AppErrorCode.UNAUTHORIZED, {
-          message: 'Your plan does not allow custom branding.',
-        });
-      }
     }
 
     const brandingLogoValue = brandingLogo ? await buildBrandingLogoData(brandingLogo) : '';

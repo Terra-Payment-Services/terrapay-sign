@@ -1,3 +1,4 @@
+import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
 import type { Prisma } from '@prisma/client';
@@ -54,6 +55,10 @@ route.get(
           qrToken: token,
         },
       };
+    }
+
+    if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+      return c.json({ error: 'Access code required' }, 401);
     }
 
     // Validate envelope access.

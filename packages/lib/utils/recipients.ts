@@ -3,6 +3,7 @@ import type { Envelope, Field, Recipient } from '@prisma/client';
 import { RecipientRole, SigningStatus } from '@prisma/client';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../constants/app';
+import { isTemplateRecipientEmailPlaceholder } from '../constants/placeholder-recipients';
 import { AppError, AppErrorCode } from '../errors/app-error';
 import type { TRecipientLite } from '../types/recipient';
 import { extractLegacyIds } from '../universal/id';
@@ -162,6 +163,24 @@ export const findRecipientByEmail = <T extends { email: string }>({
 
 export const isRecipientEmailValidForSending = (recipient: Pick<TRecipientLite, 'email'>) => {
   return zEmail().safeParse(recipient.email).success;
+};
+
+/**
+ * Refuses to distribute an envelope while any recipient still carries a template
+ * placeholder address, in the current or the legacy Documenso form. Every role is
+ * checked, since a CC recipient is mailed the completed document. The direct-link
+ * recipient is not a placeholder by this test and keeps its own flow.
+ */
+export const assertNoPlaceholderRecipients = (recipients: Pick<Recipient, 'id' | 'email'>[]) => {
+  const placeholderRecipients = recipients.filter((recipient) => isTemplateRecipientEmailPlaceholder(recipient.email));
+
+  if (placeholderRecipients.length > 0) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Replace the placeholder recipients before sending: ${placeholderRecipients
+        .map((recipient) => `${recipient.email} (id: ${recipient.id})`)
+        .join(', ')}.`,
+    });
+  }
 };
 
 /**

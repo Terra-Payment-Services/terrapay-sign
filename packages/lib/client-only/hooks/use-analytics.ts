@@ -1,83 +1,39 @@
-import { extractPostHogConfig } from '@documenso/lib/constants/feature-flags';
-
-let posthogPromise: Promise<typeof import('posthog-js')> | null = null;
-
-const getPosthog = async () => {
-  if (!posthogPromise) {
-    posthogPromise = import('posthog-js');
-  }
-
-  return posthogPromise;
-};
-
+/**
+ * Browser analytics, permanently inert on this deployment.
+ *
+ * Upstream Documenso wired these four functions to posthog-js, which sent
+ * pageviews, automatically captured exceptions with stack traces, and two
+ * explicit events carrying the user's plaintext email address, to PostHog's
+ * EU cloud by way of the same-origin `/ingest` reverse proxy. Session
+ * recording was also switchable on remotely from the PostHog project console
+ * without any change here.
+ *
+ * TerraPay self-hosts this instance so that contract content, signatory
+ * identities and usage patterns stay inside our own infrastructure, so the
+ * whole path is gone: posthog-js is no longer a dependency, the `/ingest`
+ * proxy route has been deleted, and these are unconditional no-ops.
+ *
+ * The functions are kept rather than removed because roughly fifty call sites
+ * across the signing and editor flows call `captureException` in their error
+ * handlers. Keeping the shape means those handlers stay intact and there is
+ * exactly one place to look to confirm nothing is transmitted. There is no
+ * environment variable that can switch any of this back on.
+ */
 export function useAnalytics() {
-  // const featureFlags = useFeatureFlags();
-  const isPostHogEnabled = extractPostHogConfig();
-
-  /**
-   * Capture an analytic event.
-   *
-   * @param event The event name.
-   * @param properties Properties to attach to the event.
-   */
-  const capture = (event: string, properties?: Record<string, unknown>) => {
-    if (!isPostHogEnabled) {
-      return;
-    }
-
-    void getPosthog().then(({ default: posthog }) => {
-      posthog.capture(event, properties);
-    });
-  };
-
-  /**
-   * Capture an exception event.
-   *
-   * @param error The error to capture.
-   * @param properties Properties to attach to the event, such as `source`, `location`,
-   * `recipientId` or `envelopeId`. Never attach recipient tokens.
-   */
-  const captureException = (error: unknown, properties?: Record<string, unknown>) => {
-    if (!isPostHogEnabled) {
-      return;
-    }
-
-    const errorToCapture = error instanceof Error ? error : new Error(String(error));
-
-    void getPosthog().then(({ default: posthog }) => {
-      posthog.captureException(errorToCapture, properties);
-    });
-  };
-
-  /**
-   * Start the session recording.
-   *
-   * @param eventFlag The event to check against feature flags to determine whether tracking is enabled.
-   */
-  const startSessionRecording = (eventFlag?: string) => {
+  const capture = (_event: string, _properties?: Record<string, unknown>) => {
     return;
-    // const isSessionRecordingEnabled = featureFlags.getFlag(FEATURE_FLAG_GLOBAL_SESSION_RECORDING);
-    // const isSessionRecordingEnabledForEvent = Boolean(eventFlag && featureFlags.getFlag(eventFlag));
-
-    // if (!isPostHogEnabled || !isSessionRecordingEnabled || !isSessionRecordingEnabledForEvent) {
-    //   return;
-    // }
-
-    // posthog.startSessionRecording();
   };
 
-  /**
-   * Stop the current session recording.
-   */
+  const captureException = (_error: unknown, _properties?: Record<string, unknown>) => {
+    return;
+  };
+
+  const startSessionRecording = (_eventFlag?: string) => {
+    return;
+  };
+
   const stopSessionRecording = () => {
     return;
-    // const isSessionRecordingEnabled = featureFlags.getFlag(FEATURE_FLAG_GLOBAL_SESSION_RECORDING);
-
-    // if (!isPostHogEnabled || !isSessionRecordingEnabled) {
-    //   return;
-    // }
-
-    // posthog.stopSessionRecording();
   };
 
   return {

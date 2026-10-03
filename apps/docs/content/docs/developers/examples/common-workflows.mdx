@@ -704,7 +704,7 @@ type WebhookPayload = {
 
 app.post('/webhooks/documenso', (req, res) => {
   // Verify webhook signature
-  const secret = req.headers['x-documenso-secret'] as string;
+  const secret = req.headers['x-terrapay-secret'] as string;
 
   if (secret !== WEBHOOK_SECRET) {
     console.error('Invalid webhook secret');

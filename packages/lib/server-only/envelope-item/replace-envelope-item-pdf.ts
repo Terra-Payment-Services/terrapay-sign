@@ -12,7 +12,7 @@ import { findRecipientByPlaceholder } from '../pdf/helpers';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
 
 type UnsafeReplaceEnvelopeItemPdfOptions = {
-  envelope: Pick<Envelope, 'id' | 'type' | 'formValues'>;
+  envelope: Pick<Envelope, 'id' | 'type' | 'formValues' | 'teamId'>;
 
   /**
    * Recipients used to resolve placeholder field assignments.
@@ -88,11 +88,14 @@ export const UNSAFE_replaceEnvelopeItemPdf = async ({
   const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
 
   // Upload the new PDF and get a new DocumentData record.
-  const { documentData: newDocumentData, filePageCount } = await putPdfFileServerSide({
-    name: data.file.name,
-    type: 'application/pdf',
-    arrayBuffer: async () => Promise.resolve(cleanedPdf),
-  });
+  const { documentData: newDocumentData, filePageCount } = await putPdfFileServerSide(
+    {
+      name: data.file.name,
+      type: 'application/pdf',
+      arrayBuffer: async () => Promise.resolve(cleanedPdf),
+    },
+    { owner: { userId: user.id, teamId: envelope.teamId } },
+  );
 
   let didFieldsChange = false;
 

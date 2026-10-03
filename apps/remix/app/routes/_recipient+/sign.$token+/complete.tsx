@@ -11,7 +11,6 @@ import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get
 import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-email';
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { trpc } from '@documenso/trpc/react';
-import { DocumentShareButton } from '@documenso/ui/components/document/document-share-button';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
 import { cn } from '@documenso/ui/lib/utils';
 import { Badge } from '@documenso/ui/primitives/badge';
@@ -223,12 +222,12 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
 
             {match({ status: signingStatus, deletedAt: document.deletedAt })
               .with({ status: 'COMPLETED' }, () => (
-                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
                   <Trans>Everyone has signed! You will receive an email copy of the signed document.</Trans>
                 </p>
               ))
               .with({ status: 'PROCESSING' }, () => (
-                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
                   <Trans>
                     All recipients have signed. The document is being processed and you will receive an email copy
                     shortly.
@@ -236,12 +235,12 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 </p>
               ))
               .with({ deletedAt: null }, () => (
-                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
                   <Trans>You will receive an email copy of the signed document once everyone has signed.</Trans>
                 </p>
               ))
               .otherwise(() => (
-                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground/60 text-sm md:text-base">
+                <p className="mt-2.5 max-w-[60ch] text-center font-medium text-muted-foreground text-sm md:text-base">
                   <Trans>
                     This document has been cancelled by the owner and is no longer available for others to sign.
                   </Trans>
@@ -249,12 +248,6 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
               ))}
 
             <div className="mt-8 flex w-full max-w-xs flex-col items-stretch gap-4 md:w-auto md:max-w-none md:flex-row md:items-center">
-              <DocumentShareButton
-                documentId={document.id}
-                token={recipient.token}
-                className="w-full max-w-none md:flex-1"
-              />
-
               {isDocumentCompleted(document) && (
                 <EnvelopeDownloadDialog
                   envelopeId={document.envelopeId}
@@ -287,7 +280,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                   <Trans>Need to sign documents?</Trans>
                 </h2>
 
-                <p className="mt-4 max-w-[55ch] text-center text-muted-foreground/60 leading-normal">
+                <p className="mt-4 max-w-[55ch] text-center text-muted-foreground leading-normal">
                   <Trans>Create your account and start using state-of-the-art document signing.</Trans>
                 </p>
 

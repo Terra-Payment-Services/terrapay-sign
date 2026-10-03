@@ -1,8 +1,26 @@
+import { createDocumentAuthOptions } from '@documenso/lib/utils/document-auth';
 import { seedBlankDocument, seedDraftDocument, seedPendingDocument } from '@documenso/prisma/seed/documents';
 import { seedUser } from '@documenso/prisma/seed/users';
 import { expect, test } from '@playwright/test';
 
 import { apiSignin } from '../fixtures/authentication';
+
+test('[DOCUMENT_FLOW]: keeps "Require account" on a document that already has it', async ({ page }) => {
+  const { user, team } = await seedUser();
+  const document = await seedBlankDocument(user, team.id, {
+    createDocumentOptions: {
+      authOptions: createDocumentAuthOptions({ globalAccessAuth: ['ACCOUNT'], globalActionAuth: [] }),
+    },
+  });
+
+  await apiSignin({
+    page,
+    email: user.email,
+    redirectPath: `/t/${team.url}/documents/${document.id}/edit`,
+  });
+
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+});
 
 test('[DOCUMENT_FLOW]: add settings', async ({ page }) => {
   const { user, team } = await seedUser();
@@ -19,8 +37,9 @@ test('[DOCUMENT_FLOW]: add settings', async ({ page }) => {
 
   // Set access auth.
   await page.getByTestId('documentAccessSelectValue').click();
-  await page.getByRole('option').filter({ hasText: 'Require account' }).click();
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await expect(page.getByRole('option').filter({ hasText: 'Require account' })).toHaveCount(0);
+  await page.getByRole('option').filter({ hasText: 'Require 2FA' }).click();
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 
   // Action auth should NOT be visible.
   await expect(page.getByTestId('documentActionSelectValue')).not.toBeVisible();
@@ -35,7 +54,7 @@ test('[DOCUMENT_FLOW]: add settings', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
 
   await expect(page.getByLabel('Title')).toHaveValue('New Title');
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 });
 
 test('[DOCUMENT_FLOW]: title should be disabled depending on document status', async ({ page }) => {

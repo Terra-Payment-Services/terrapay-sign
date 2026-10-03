@@ -1,10 +1,15 @@
 import { env } from '@documenso/lib/utils/env';
+import {
+  assertEmbeddedSignaturesIntact,
+  EmbeddedSignatureBrokenError,
+} from '@documenso/signing/helpers/embedded-signatures';
 import { PDF } from '@libpdf/core';
 import { DocumentDataType } from '@prisma/client';
 import { base64 } from '@scure/base';
 import { match } from 'ts-pattern';
 
 import { AppError } from '../../errors/app-error';
+import type { DocumentDataOwner } from '../../server-only/document-data/create-document-data';
 import { createDocumentData } from '../../server-only/document-data/create-document-data';
 import { normalizePdf } from '../../server-only/pdf/normalize-pdf';
 import { uploadS3File } from './server-actions';
@@ -15,11 +20,17 @@ type File = {
   arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
+type PutPdfOptions = {
+  /** Who the stored bytes belong to. Every route through here has to say. */
+  owner: DocumentDataOwner;
+  initialData?: string;
+};
+
 /**
  * Uploads a document file to the appropriate storage location and creates
  * a document data record.
  */
-export const putPdfFileServerSide = async (file: File, initialData?: string) => {
+export const putPdfFileServerSide = async (file: File, { owner, initialData }: PutPdfOptions) => {
   const isEncryptedDocumentsAllowed = false; // Was feature flag.
 
   const arrayBuffer = await file.arrayBuffer();
@@ -40,7 +51,7 @@ export const putPdfFileServerSide = async (file: File, initialData?: string) => 
 
   const { type, data } = await putFileServerSide(file);
 
-  const createdData = await createDocumentData({ type, data, initialData });
+  const createdData = await createDocumentData({ type, data, initialData, owner });
 
   return {
     documentData: createdData,
@@ -51,10 +62,13 @@ export const putPdfFileServerSide = async (file: File, initialData?: string) => 
 /**
  * Uploads a pdf file and normalizes it.
  */
-export const putNormalizedPdfFileServerSide = async (file: File, options: { flattenForm?: boolean } = {}) => {
+export const putNormalizedPdfFileServerSide = async (
+  file: File,
+  options: { owner: DocumentDataOwner; flattenForm?: boolean },
+) => {
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const normalized = await normalizePdf(buffer, options);
+  const normalized = await normalizePdf(buffer, { flattenForm: options.flattenForm });
 
   const fileName = file.name.endsWith('.pdf') ? file.name : `${file.name}.pdf`;
 
@@ -67,19 +81,62 @@ export const putNormalizedPdfFileServerSide = async (file: File, options: { flat
   return await createDocumentData({
     type: documentData.type,
     data: documentData.data,
+    owner: options.owner,
   });
 };
 
 /**
  * Uploads a file to the appropriate storage location.
+ *
+ * Every document reaching storage passes through here, which is why the
+ * signature check sits here rather than at each caller. Four separate routes
+ * were found reaching storage having rewritten a signed PDF, and each was a
+ * step somebody added without knowing this mattered. Guarding the callers
+ * means guarding the ones that exist today.
  */
 export const putFileServerSide = async (file: File) => {
   const NEXT_PUBLIC_UPLOAD_TRANSPORT = env('NEXT_PUBLIC_UPLOAD_TRANSPORT');
+
+  await assertNoSignatureWasBroken(file);
 
   return await match(NEXT_PUBLIC_UPLOAD_TRANSPORT)
     .with('s3', async () => putFileInObjectStorage(file))
     .with('azure-blob', async () => putFileInObjectStorage(file))
     .otherwise(async () => putFileInDatabase(file));
+};
+
+/**
+ * Refuse to store a PDF whose existing signatures no longer cover it.
+ *
+ * Only PDFs are examined, by their header rather than by their declared type,
+ * so a branding logo or anything else passes straight through. A file that
+ * does not parse is not this function's problem and is rejected elsewhere.
+ */
+const assertNoSignatureWasBroken = async (file: File) => {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  if (bytes.length < 5 || String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') {
+    return;
+  }
+
+  try {
+    await assertEmbeddedSignaturesIntact(bytes);
+  } catch (error) {
+    if (!(error instanceof EmbeddedSignatureBrokenError)) {
+      throw error;
+    }
+
+    // Surfaced as a refusal the caller already knows how to show, rather than
+    // as an unhandled error. Refusing is the documented behaviour, so it has
+    // to look like a refusal and not like a crash. The detail goes to the log
+    // because it names which signature and why, and the operator is the one
+    // who can act on that.
+    console.error(`Refusing to store a document with a broken signature: ${error.message}`);
+
+    throw new AppError('INVALID_DOCUMENT_FILE', {
+      message: 'This document carries a signature that would be invalidated by storing it',
+    });
+  }
 };
 
 const putFileInDatabase = async (file: File) => {

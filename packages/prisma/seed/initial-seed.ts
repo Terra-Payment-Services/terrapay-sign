@@ -8,7 +8,11 @@ import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { incrementDocumentId, incrementTemplateId } from '@documenso/lib/server-only/envelope/increment-id';
 import { SignatureLevel } from '@documenso/lib/types/signature-level';
 import { nanoid, prefixedId } from '@documenso/lib/universal/id';
-import { DIRECT_TEMPLATE_RECIPIENT_EMAIL, DIRECT_TEMPLATE_RECIPIENT_NAME } from '../../lib/constants/direct-templates';
+import {
+  DIRECT_TEMPLATE_RECIPIENT_EMAIL,
+  DIRECT_TEMPLATE_RECIPIENT_NAME,
+  isDirectTemplateRecipientEmail,
+} from '../../lib/constants/direct-templates';
 import { prisma } from '..';
 import {
   DocumentDataType,
@@ -361,7 +365,7 @@ export const seedAlignmentTestDocument = async ({
   const { id, recipients, envelopeItems } = createdEnvelope;
 
   if (isDirectTemplate) {
-    const directTemplateRecipient = recipients.find((recipient) => recipient.email === DIRECT_TEMPLATE_RECIPIENT_EMAIL);
+    const directTemplateRecipient = recipients.find((recipient) => isDirectTemplateRecipientEmail(recipient.email));
 
     if (!directTemplateRecipient) {
       throw new Error('Need to create a direct template recipient');

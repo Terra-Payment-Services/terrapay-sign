@@ -3,7 +3,6 @@ import { authClient } from '@documenso/auth/client';
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { ZNameSchema } from '@documenso/lib/types/name';
-import { env } from '@documenso/lib/utils/env';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { ZPasswordSchema } from '@documenso/trpc/server/auth-router/schema';
 import { cn } from '@documenso/ui/lib/utils';
@@ -18,9 +17,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import type { TurnstileInstance } from '@marsidev/react-turnstile';
-import { Turnstile } from '@marsidev/react-turnstile';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { FaIdCardClip } from 'react-icons/fa6';
 import { FcGoogle } from 'react-icons/fc';
@@ -84,9 +81,12 @@ export const SignUpForm = ({
 
   const utmSrc = searchParams.get('utm_source') ?? null;
 
-  const turnstileSiteKey = env('NEXT_PUBLIC_TURNSTILE_SITE_KEY');
-  const turnstileRef = useRef<TurnstileInstance>(null);
-
+  // Cloudflare Turnstile has been removed from this deployment. The widget loaded
+  // Cloudflare's api.js in the visitor's browser and the server posted the
+  // challenge token together with the visitor's IP address to
+  // challenges.cloudflare.com, which told a third party who was signing in and
+  // when. NEXT_PUBLIC_TURNSTILE_SITE_KEY and NEXT_PRIVATE_TURNSTILE_SECRET_KEY
+  // are both inert now; see packages/lib/server-only/captcha/verify-captcha.ts.
   const hasSocialAuthEnabled = isGoogleSignupEnabled || isMicrosoftSignupEnabled || isOidcSignupEnabled;
 
   const form = useForm<TSignUpFormSchema>({
@@ -104,21 +104,7 @@ export const SignUpForm = ({
 
   const onFormSubmit = async ({ name, email, password, signature }: TSignUpFormSchema) => {
     try {
-      let token: string | undefined;
-
-      if (turnstileSiteKey) {
-        token = await turnstileRef.current?.getResponsePromise(3000).catch((_err) => undefined);
-
-        if (!token) {
-          toast({
-            title: _(msg`Human verification required`),
-            description: _(msg`Please complete the CAPTCHA challenge before signing in.`),
-            variant: 'destructive',
-          });
-
-          return;
-        }
-      }
+      const token: string | undefined = undefined;
 
       await authClient.emailPassword.signUp({
         name,
@@ -153,8 +139,6 @@ export const SignUpForm = ({
         description: _(errorMessage),
         variant: 'destructive',
       });
-
-      turnstileRef.current?.reset();
     }
   };
 
@@ -232,7 +216,7 @@ export const SignUpForm = ({
         </div>
       </div>
 
-      <div className="relative z-10 flex min-h-[min(850px,80vh)] w-full max-w-lg flex-col rounded-xl border border-border bg-neutral-100 p-6 dark:bg-background">
+      <div className="relative z-10 flex min-h-[min(850px,80vh)] w-full max-w-lg flex-col rounded-lg bg-card p-6 shadow-elevation-card dark:border dark:border-border">
         <div className="h-20">
           <h1 className="font-semibold text-xl md:text-2xl">
             <Trans>Create a new account</Trans>
@@ -326,17 +310,6 @@ export const SignUpForm = ({
                 </>
               )}
 
-              {turnstileSiteKey && (
-                <Turnstile
-                  ref={turnstileRef}
-                  siteKey={turnstileSiteKey}
-                  options={{
-                    size: 'flexible',
-                    appearance: 'always',
-                  }}
-                />
-              )}
-
               {hasSocialAuthEnabled && (
                 <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">
                   <div className="h-px flex-1 bg-border" />
@@ -406,22 +379,15 @@ export const SignUpForm = ({
             )}
           </form>
         </Form>
+        {/* These point at our own legal pages. TerraPay still needs /terms and /privacy to exist. */}
         <p className="mt-6 text-muted-foreground text-xs">
           <Trans>
             By proceeding, you agree to our{' '}
-            <Link
-              to="https://documen.so/terms"
-              target="_blank"
-              className="text-documenso-700 duration-200 hover:opacity-70"
-            >
+            <Link to="/terms" target="_blank" className="text-documenso-700 duration-200 hover:opacity-70">
               Terms of Service
             </Link>{' '}
             and{' '}
-            <Link
-              to="https://documen.so/privacy"
-              target="_blank"
-              className="text-documenso-700 duration-200 hover:opacity-70"
-            >
+            <Link to="/privacy" target="_blank" className="text-documenso-700 duration-200 hover:opacity-70">
               Privacy Policy
             </Link>
             .

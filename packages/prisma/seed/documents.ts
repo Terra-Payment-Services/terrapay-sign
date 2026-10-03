@@ -47,8 +47,11 @@ type DocumentToSeed = {
 
 export const seedDocuments = async (documents: DocumentToSeed[]) => {
   await Promise.all(
-    // eslint-disable-next-line @typescript-eslint/require-await
-    documents.map(async (document, i) =>
+    // `.with()` calls the matching handler at once but returns the match
+    // builder, not the handler's promise. Without `.run()` nothing here waits
+    // for the documents, and a test reads the database while they are still
+    // being written.
+    documents.map((document, i) =>
       match(document.type)
         .with(DocumentStatus.DRAFT, async () =>
           seedDraftDocument(document.sender, document.teamId, document.recipients, {
@@ -67,7 +70,8 @@ export const seedDocuments = async (documents: DocumentToSeed[]) => {
             key: i,
             createDocumentOptions: document.documentOptions,
           }),
-        ),
+        )
+        .run(),
     ),
   );
 };
@@ -116,14 +120,6 @@ export const seedBlankDocument = async (owner: User, teamId: number, options: Cr
 };
 
 export const seedTeamDocumentWithMeta = async (team: Team) => {
-  const documentData = await prisma.documentData.create({
-    data: {
-      type: DocumentDataType.BYTES_64,
-      data: examplePdf,
-      initialData: examplePdf,
-    },
-  });
-
   const { organisation } = await prisma.team.findFirstOrThrow({
     where: {
       id: team.id,
@@ -138,6 +134,17 @@ export const seedTeamDocumentWithMeta = async (team: Team) => {
   });
 
   const ownerUser = organisation.owner;
+
+  // Stamped with the uploader, as the upload route stamps it. createEnvelope
+  // refuses bytes that nobody owns.
+  const documentData = await prisma.documentData.create({
+    data: {
+      type: DocumentDataType.BYTES_64,
+      data: examplePdf,
+      initialData: examplePdf,
+      userId: ownerUser.id,
+    },
+  });
 
   const document = await createEnvelope({
     userId: ownerUser.id,
@@ -208,14 +215,6 @@ export const seedTeamDocumentWithMeta = async (team: Team) => {
 };
 
 export const seedTeamTemplateWithMeta = async (team: Team) => {
-  const documentData = await prisma.documentData.create({
-    data: {
-      type: DocumentDataType.BYTES_64,
-      data: examplePdf,
-      initialData: examplePdf,
-    },
-  });
-
   const { organisation } = await prisma.team.findFirstOrThrow({
     where: {
       id: team.id,
@@ -230,6 +229,17 @@ export const seedTeamTemplateWithMeta = async (team: Team) => {
   });
 
   const ownerUser = organisation.owner;
+
+  // Stamped with the uploader, as the upload route stamps it. createEnvelope
+  // refuses bytes that nobody owns.
+  const documentData = await prisma.documentData.create({
+    data: {
+      type: DocumentDataType.BYTES_64,
+      data: examplePdf,
+      initialData: examplePdf,
+      userId: ownerUser.id,
+    },
+  });
 
   const template = await createEnvelope({
     internalVersion: 1,

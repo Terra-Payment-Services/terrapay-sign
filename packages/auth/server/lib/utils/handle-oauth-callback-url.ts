@@ -5,21 +5,28 @@ import {
   isSignupEnabledForProvider,
 } from '@documenso/lib/constants/auth';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { addUserToSoleOrganisation } from '@documenso/lib/server-only/organisation/add-user-to-sole-organisation';
 import { getEmailBlocklistDomains } from '@documenso/lib/server-only/site-settings/get-email-blocklist-domains';
 import { onCreateUserHook } from '@documenso/lib/server-only/user/create-user';
 import { deletedServiceAccountEmail } from '@documenso/lib/server-only/user/service-accounts/deleted-account';
 import { legacyServiceAccountEmail } from '@documenso/lib/server-only/user/service-accounts/legacy-service-account';
+import { decideAccountForIssuer } from '@documenso/lib/utils/account-issuer';
+import { env } from '@documenso/lib/utils/env';
 import { isValidReturnTo, normalizeReturnTo } from '@documenso/lib/utils/is-valid-return-to';
+import { logger } from '@documenso/lib/utils/logger';
 import { prisma } from '@documenso/prisma';
 import { UserSecurityAuditLogType } from '@prisma/client';
-import { decodeIdToken, OAuth2Client } from 'arctic';
 import type { Context } from 'hono';
 import { deleteCookie } from 'hono/cookie';
 
 import type { OAuthClientOptions } from '../../config';
 import { AuthenticationErrorCode } from '../errors/error-codes';
 import { onAuthorize } from './authorizer';
+import { assertIdTokenClaims } from './id-token-claims';
+import { extractEmailFromClaims, extractNameFromClaims } from './oauth-claims';
 import { getOpenIdConfiguration } from './open-id';
+import { exchangeAuthorizationCode } from './token-exchange';
+import { verifyIdToken } from './verify-id-token';
 
 type HandleOAuthCallbackUrlOptions = {
   c: Context;
@@ -31,7 +38,7 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
 
   const requestMeta = c.get('requestMetadata');
 
-  const { email, name, sub, accessToken, accessTokenExpiresAt, idToken, redirectPath } = await validateOauth({
+  const { email, name, sub, issuer, accessToken, accessTokenExpiresAt, idToken, redirectPath } = await validateOauth({
     c,
     clientOptions,
   });
@@ -41,23 +48,52 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
   }
 
   // Find the account if possible.
-  const existingAccount = await prisma.account.findFirst({
+  //
+  // `provider` is our own label for a configured authority, not the authority's
+  // issuer, so on its own it would let two authorities share a namespace of
+  // subjects and let two people resolve to one row. `validateOauth` closes the
+  // half of that which is visible at sign in, by refusing any token whose `iss`
+  // is not the issuer this provider's discovery document publishes.
+  //
+  // The other half is a label pointed at a different authority after rows
+  // already exist under it, and only the issuer on the row can see that. Rows
+  // are fetched on the label or the issuer so that both a repointed label and an
+  // identity already linked under another label are visible to the decision.
+  const candidates = await prisma.account.findMany({
     where: {
-      provider: clientOptions.id,
       providerAccountId: sub,
+      OR: [{ provider: clientOptions.id }, { issuer }],
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-        },
-      },
+    select: {
+      id: true,
+      userId: true,
+      provider: true,
+      issuer: true,
     },
   });
 
+  const decision = decideAccountForIssuer(candidates, { provider: clientOptions.id, issuer });
+
+  if (decision.action === 'refuse') {
+    throw new AppError(AuthenticationErrorCode.InvalidRequest, {
+      message: decision.reason,
+    });
+  }
+
   // Directly log in user if account already exists.
-  if (existingAccount) {
-    await onAuthorize({ userId: existingAccount.user.id }, c);
+  if (decision.action === 'use' || decision.action === 'adopt') {
+    // A row written before the issuer column existed. Stamping it here is what
+    // makes the estate converge without waiting on the backfill, and it happens
+    // before the session is issued so a row that cannot be stamped does not
+    // quietly stay ambiguous.
+    if (decision.action === 'adopt') {
+      await prisma.account.update({
+        where: { id: decision.account.id },
+        data: { issuer },
+      });
+    }
+
+    await onAuthorize({ userId: decision.account.userId }, c);
 
     return c.redirect(redirectPath, 302);
   }
@@ -80,6 +116,7 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
           type: 'oauth',
           provider: clientOptions.id,
           providerAccountId: sub,
+          issuer,
           access_token: accessToken,
           expires_at: Math.floor(accessTokenExpiresAt.getTime() / 1000),
           token_type: 'Bearer',
@@ -163,6 +200,7 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
         type: 'oauth',
         provider: clientOptions.id,
         providerAccountId: sub,
+        issuer,
         access_token: accessToken,
         expires_at: Math.floor(accessTokenExpiresAt.getTime() / 1000),
         token_type: 'Bearer',
@@ -174,10 +212,24 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
     return user;
   });
 
-  await onCreateUserHook(createdUser).catch((err) => {
+  // Everyone here works inside the TerraPay organisation's teams. A personal
+  // organisation would be the only team a new user has, so sign in lands them
+  // there instead of on the inbox.
+  await onCreateUserHook(createdUser, { skipPersonalOrganisation: true }).catch((err) => {
     // Todo: (RR7) Add logging.
     console.error(err);
   });
+
+  // Only Microsoft sign in is checked against the TerraPay Entra tenant (see
+  // validateOauth), so only it can vouch that the new user is staff. A failure
+  // here must not block the sign in; the user can still be invited by hand.
+  if (clientOptions.id === 'microsoft') {
+    try {
+      await addUserToSoleOrganisation({ userId: createdUser.id });
+    } catch (err) {
+      logger.error({ msg: 'Could not add the new user to the organisation', userId: createdUser.id, err });
+    }
+  }
 
   await onAuthorize({ userId: createdUser.id }, c);
 
@@ -191,11 +243,14 @@ export const validateOauth = async (options: HandleOAuthCallbackUrlOptions) => {
     throw new AppError(AppErrorCode.NOT_SETUP);
   }
 
-  const { token_endpoint } = await getOpenIdConfiguration(clientOptions.wellKnownUrl, {
+  const {
+    token_endpoint,
+    issuer,
+    jwks_uri,
+    id_token_signing_alg_values_supported: signingAlgorithms,
+  } = await getOpenIdConfiguration(clientOptions.wellKnownUrl, {
     requiredScopes: clientOptions.scope,
   });
-
-  const oAuthClient = new OAuth2Client(clientOptions.clientId, clientOptions.clientSecret, clientOptions.redirectUrl);
 
   const code = c.req.query('code');
   const state = c.req.query('state');
@@ -226,30 +281,52 @@ export const validateOauth = async (options: HandleOAuthCallbackUrlOptions) => {
 
   redirectPath = normalizeReturnTo(redirectPath) || defaultRedirectPath;
 
-  const tokens = await oAuthClient.validateAuthorizationCode(token_endpoint, code, storedCodeVerifier);
+  // The exchange is made here rather than by arctic, which offers no way to
+  // control what its fetch does with a redirect. See token-exchange.ts.
+  const { accessToken, accessTokenExpiresAt, idToken } = await exchangeAuthorizationCode({
+    tokenEndpoint: token_endpoint,
+    clientId: clientOptions.clientId,
+    clientSecret: clientOptions.clientSecret,
+    redirectUri: clientOptions.redirectUrl,
+    code,
+    codeVerifier: storedCodeVerifier,
+  });
 
-  const accessToken = tokens.accessToken();
-  const accessTokenExpiresAt = tokens.accessTokenExpiresAt();
-  const idToken = tokens.idToken();
+  // The signature is checked before anything in the token is read. Everything
+  // below uses these claims to decide who is signing in, and an unverified
+  // claim is a string the authority may never have written.
+  //
+  // The issuer, the key set and the algorithm list all come from the discovery
+  // document of the authority this provider is configured against, so a token
+  // is accepted only from the authority we sent the person to. That is also
+  // what makes `provider` safe as half of the account key further down: only
+  // one issuer can produce a token that gets this far under a given label.
+  const claims = await verifyIdToken({
+    idToken,
+    issuer,
+    audience: clientOptions.clientId,
+    jwksUri: jwks_uri,
+    advertisedSigningAlgorithms: signingAlgorithms,
+  });
 
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  const claims = decodeIdToken(tokens.idToken()) as Record<string, unknown>;
+  // Now the claims a general purpose JWT library has no opinion about. The
+  // Entra directory is the one that matters for this deployment, since a
+  // verified signature from the right issuer still leaves `tid` unexamined.
+  assertIdTokenClaims(claims, {
+    audience: clientOptions.clientId,
+    tenantId: clientOptions.id === 'microsoft' ? env('NEXT_PRIVATE_MICROSOFT_TENANT') : null,
+  });
 
-  const email = claims.email;
-  const name = claims.name;
+  const email = extractEmailFromClaims(claims, clientOptions.id);
   const sub = claims.sub;
 
-  if (typeof email !== 'string') {
+  if (email === null) {
     throw new AppError(AuthenticationErrorCode.InvalidRequest, {
       message: 'Missing email',
     });
   }
 
-  if (typeof name !== 'string') {
-    throw new AppError(AuthenticationErrorCode.InvalidRequest, {
-      message: 'Missing name',
-    });
-  }
+  const name = extractNameFromClaims(claims, email);
 
   if (typeof sub !== 'string') {
     throw new AppError(AuthenticationErrorCode.InvalidRequest, {
@@ -267,6 +344,10 @@ export const validateOauth = async (options: HandleOAuthCallbackUrlOptions) => {
     email,
     name,
     sub,
+    // The authority the token was verified against, taken from the discovery
+    // document that supplied the key set. Whatever is configured under this
+    // label later cannot change what this token was checked against.
+    issuer,
     accessToken,
     accessTokenExpiresAt,
     idToken,

@@ -69,8 +69,6 @@ services:
       # Features
       - key: NEXT_PUBLIC_POSTHOG_KEY
         sync: false
-      - key: NEXT_PUBLIC_FEATURE_BILLING_ENABLED
-        sync: false
 
       # Storage
       - key: NEXT_PUBLIC_UPLOAD_TRANSPORT

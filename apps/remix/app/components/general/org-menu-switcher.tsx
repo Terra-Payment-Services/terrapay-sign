@@ -1,7 +1,7 @@
 import { authClient } from '@documenso/auth/client';
+import { useIsOrganisationCreationAllowed } from '@documenso/lib/client-only/hooks/use-is-organisation-creation-allowed';
 import { useOptionalCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
 import { useSession } from '@documenso/lib/client-only/providers/session';
-import { IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
 import { EXTENDED_ORGANISATION_MEMBER_ROLE_MAP } from '@documenso/lib/constants/organisations-translations';
 import { EXTENDED_TEAM_MEMBER_ROLE_MAP } from '@documenso/lib/constants/teams-translations';
 import { formatAvatarUrl } from '@documenso/lib/utils/avatars';
@@ -41,6 +41,7 @@ export const OrgMenuSwitcher = () => {
   const [hoveredOrgId, setHoveredOrgId] = useState<string | null>(null);
 
   const isUserAdmin = isAdmin(user);
+  const isOrganisationCreationAllowed = useIsOrganisationCreationAllowed();
 
   const isPathOrgUrl = (orgUrl: string) => {
     if (!pathname || !pathname.startsWith(`/o/`)) {
@@ -178,12 +179,14 @@ export const OrgMenuSwitcher = () => {
                 </div>
               ))}
 
-              <Button variant="ghost" className="w-full justify-start" asChild>
-                <Link to="/settings/organisations?action=add-organisation">
-                  <Plus className="mr-2 h-4 w-4" />
-                  <Trans>Create Organisation</Trans>
-                </Link>
-              </Button>
+              {isOrganisationCreationAllowed && (
+                <Button variant="ghost" className="w-full justify-start" asChild>
+                  <Link to="/settings/organisations?action=add-organisation">
+                    <Plus className="mr-2 h-4 w-4" />
+                    <Trans>Create Organisation</Trans>
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -290,14 +293,6 @@ export const OrgMenuSwitcher = () => {
                   <Trans>Account</Trans>
                 </Link>
               </DropdownMenuItem>
-
-              {IS_BILLING_ENABLED() && (
-                <DropdownMenuItem className="px-4 py-2 text-muted-foreground" asChild>
-                  <Link to="/settings/billing">
-                    <Trans>Billing</Trans>
-                  </Link>
-                </DropdownMenuItem>
-              )}
 
               <DropdownMenuItem
                 className="px-4 py-2 text-muted-foreground"

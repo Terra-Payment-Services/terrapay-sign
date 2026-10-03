@@ -250,9 +250,9 @@ test('[USER][DELETE_ACCOUNT]: deleting the owner removes the org but keeps membe
   expect(await prisma.user.findUnique({ where: { id: owner.id } })).toBeNull();
 });
 
-// ─── Subscription cancellation is scheduled for owned orgs ───────────────────
+// ─── No subscription cancellation is scheduled, even for a subscribed org ────
 
-test('[USER][DELETE_ACCOUNT]: a cancel-subscription job is enqueued for an owned org that has a subscription', async ({
+test('[USER][DELETE_ACCOUNT]: no cancel-subscription job is enqueued for an owned org that has a subscription', async ({
   page,
 }) => {
   const { user, organisation } = await seedUser();
@@ -273,34 +273,16 @@ test('[USER][DELETE_ACCOUNT]: a cancel-subscription job is enqueued for an owned
 
   await waitForOrganisationToBeGone(organisation.id);
 
-  // The deletion must schedule the Stripe subscription cancellation job with the
-  // captured planId (the Subscription row itself cascades away with the org).
-  await expect
-    .poll(
-      async () => {
-        const job = await prisma.backgroundJob.findFirst({
-          where: {
-            jobId: 'internal.cancel-organisation-subscription',
-            payload: { path: ['organisationId'], equals: organisation.id },
-          },
-        });
+  // Stripe billing was removed, so the teardown no longer schedules a
+  // cancellation. The Subscription row still cascades away with the org.
+  const job = await prisma.backgroundJob.findFirst({
+    where: {
+      jobId: 'internal.cancel-organisation-subscription',
+      payload: { path: ['organisationId'], equals: organisation.id },
+    },
+  });
 
-        if (!job) {
-          return null;
-        }
-
-        return (job.payload as { stripeSubscriptionId?: string }).stripeSubscriptionId ?? null;
-      },
-      {
-        message: 'cancel-organisation-subscription job was not enqueued',
-        timeout: 15_000,
-        intervals: [250, 500, 1000],
-      },
-    )
-    .toBe(planId);
-
-  // The local Subscription row cascades away with the organisation — which is
-  // exactly why the planId has to be captured into the job payload beforehand.
+  expect(job).toBeNull();
   expect(await prisma.subscription.findUnique({ where: { planId } })).toBeNull();
 });
 

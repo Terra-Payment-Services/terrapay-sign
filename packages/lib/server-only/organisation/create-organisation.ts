@@ -1,9 +1,7 @@
-import { createCustomer } from '@documenso/ee/server-only/stripe/create-customer';
 import { getSubscriptionClaim } from '@documenso/lib/server-only/subscription/get-subscription-claim';
 import { prisma } from '@documenso/prisma';
 import { OrganisationMemberRole, OrganisationType, Prisma, type SubscriptionClaim } from '@prisma/client';
 
-import { IS_BILLING_ENABLED } from '../../constants/app';
 import { ORGANISATION_INTERNAL_GROUPS } from '../../constants/organisations';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID } from '../../types/subscription';
@@ -21,33 +19,6 @@ type CreateOrganisationOptions = {
 };
 
 export const createOrganisation = async ({ name, url, type, userId, customerId, claim }: CreateOrganisationOptions) => {
-  let customerIdToUse = customerId;
-
-  if (!customerId && IS_BILLING_ENABLED()) {
-    const user = await prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-    });
-
-    if (!user) {
-      throw new AppError(AppErrorCode.NOT_FOUND, {
-        message: 'User not found',
-      });
-    }
-
-    customerIdToUse = await createCustomer({
-      name: user.name || user.email,
-      email: user.email,
-    })
-      .then((customer) => customer.id)
-      .catch((err) => {
-        console.error(err);
-
-        return undefined;
-      });
-  }
-
   return await prisma.$transaction(async (tx) => {
     const organisationSetting = await tx.organisationGlobalSettings.create({
       data: {
@@ -94,7 +65,7 @@ export const createOrganisation = async ({ name, url, type, userId, customerId, 
               id: generateDatabaseId('org_group'),
             })),
           },
-          customerId: customerIdToUse,
+          customerId,
         },
         include: {
           groups: true,

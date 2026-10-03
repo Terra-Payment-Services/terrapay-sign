@@ -15,12 +15,6 @@ export const signingStatusEnvelopeRoute = maybeAuthenticatedProcedure
   .query(async ({ input, ctx }) => {
     const { token } = input;
 
-    ctx.logger.info({
-      input: {
-        token,
-      },
-    });
-
     const envelope = await prisma.envelope.findFirst({
       where: {
         type: EnvelopeType.DOCUMENT,
@@ -48,6 +42,12 @@ export const signingStatusEnvelopeRoute = maybeAuthenticatedProcedure
         message: 'Envelope not found',
       });
     }
+
+    // The recipient token is a bearer credential for the signing link, so it is
+    // never logged. The envelope it opened is enough to trace the request.
+    ctx.logger.info({
+      envelopeId: envelope.id,
+    });
 
     // Check if envelope is rejected
     if (envelope.status === DocumentStatus.REJECTED) {

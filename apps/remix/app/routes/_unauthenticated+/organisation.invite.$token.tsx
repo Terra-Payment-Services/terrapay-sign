@@ -285,12 +285,12 @@ const PendingInvitation = ({
 
         <p className="mt-2 mb-4 text-muted-foreground text-sm">
           <Trans>
-            You have been invited to join <strong>{organisationName}</strong> on Documenso.
+            You have been invited to join <strong>{organisationName}</strong> on TerraPay Sign.
           </Trans>
         </p>
 
         {acceptFailureReason && (
-          <p className="mt-2 mb-4 text-destructive text-sm">
+          <p className="mt-2 mb-4 text-destructive-text text-sm">
             {match(acceptFailureReason)
               .with('CapExceeded', () => (
                 <Trans>

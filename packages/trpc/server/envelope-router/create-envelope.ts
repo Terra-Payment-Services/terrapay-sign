@@ -1,7 +1,10 @@
-import { getServerLimits } from '@documenso/ee/server-only/limits/server';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { convertToPdf } from '@documenso/lib/server-only/document-conversion';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
+import {
+  assertEnvelopeItemCountWithinLimit,
+  getEnvelopeItemLimit,
+} from '@documenso/lib/server-only/organisation/get-envelope-item-limit';
 import { extractPdfPlaceholders } from '@documenso/lib/server-only/pdf/auto-place-fields';
 import { normalizePdf } from '@documenso/lib/server-only/pdf/normalize-pdf';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
@@ -88,24 +91,9 @@ export const createEnvelopeRouteCaller = async ({
     delegatedDocumentOwner,
   } = payload;
 
-  const { remaining, maximumEnvelopeItemCount } = await getServerLimits({
-    userId,
-    teamId,
-  });
+  const maximumEnvelopeItemCount = await getEnvelopeItemLimit({ userId, teamId });
 
-  if (remaining.documents <= 0) {
-    throw new AppError(AppErrorCode.LIMIT_EXCEEDED, {
-      message: 'You have reached your document limit for this month. Please upgrade your plan.',
-      statusCode: 400,
-    });
-  }
-
-  if (files.length > maximumEnvelopeItemCount) {
-    throw new AppError('ENVELOPE_ITEM_LIMIT_EXCEEDED', {
-      message: `You cannot upload more than ${maximumEnvelopeItemCount} envelope items per envelope`,
-      statusCode: 400,
-    });
-  }
+  assertEnvelopeItemCountWithinLimit({ count: files.length, limit: maximumEnvelopeItemCount });
 
   // For each file: convert to PDF if needed, normalize, extract & clean placeholders, then upload.
   const envelopeItems = await Promise.all(
@@ -127,11 +115,14 @@ export const createEnvelopeRouteCaller = async ({
       // Todo: Embeds - Might need to add this for client-side embeds in the future.
       const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
 
-      const { documentData } = await putPdfFileServerSide({
-        name: file.name,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(cleanedPdf),
-      });
+      const { documentData } = await putPdfFileServerSide(
+        {
+          name: file.name,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(cleanedPdf),
+        },
+        { owner: { userId, teamId } },
+      );
 
       return {
         title: file.name,

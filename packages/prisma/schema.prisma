@@ -63,8 +63,9 @@ model User {
   twoFactorEnabled     Boolean @default(false)
   twoFactorBackupCodes String?
 
-  folders   Folder[]
-  envelopes Envelope[]
+  folders      Folder[]
+  envelopes    Envelope[]
+  documentData DocumentData[]
 
   verificationTokens VerificationToken[]
   apiTokens          ApiToken[]
@@ -355,10 +356,20 @@ model Account {
   id_token          String?  @db.Text
   session_state     String?
   password          String?
+  // The `iss` of the authority that issued the token this row was created from.
+  // `provider` is our own label and the URL behind it is editable, so the label
+  // alone cannot tell a returning person from a token minted by an authority
+  // somebody repointed the label at. Null on rows written before this column
+  // existed; see the backfill script in scripts/.
+  issuer            String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  // Nulls do not collide in a Postgres unique index, so this is safe while rows
+  // are unbackfilled. The constraint above stays until the backfill has run
+  // everywhere; dropping it is a separate migration.
+  @@unique([issuer, providerAccountId])
 }
 
 model Session {
@@ -486,6 +497,7 @@ model Envelope {
   documentMeta   DocumentMeta @relation(fields: [documentMetaId], references: [id])
 
   envelopeAttachments EnvelopeAttachment[]
+  envelopeArchives    EnvelopeArchive[]
 
   @@index([type])
   @@index([status])
@@ -510,8 +522,54 @@ model EnvelopeItem {
 
   field Field[]
 
+  archive EnvelopeArchive?
+
   @@unique([documentDataId])
   @@index([envelopeId])
+}
+
+/// Record of a completed document having been filed into the SharePoint
+/// contract library.
+///
+/// This is a copy, not a move: the sealed PDF referenced by the envelope item
+/// remains the system of record and is never touched by the archive. A row here
+/// says only where a copy was put.
+///
+/// The unique constraint on `envelopeItemId` is what makes filing idempotent,
+/// since one document can only ever hold one archive record. A null
+/// `archivedAt` is what the sweep looks for when deciding what still needs
+/// filing.
+model EnvelopeArchive {
+  id String @id
+
+  envelopeId String
+  envelope   Envelope @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
+
+  envelopeItemId String       @unique
+  envelopeItem   EnvelopeItem @relation(fields: [envelopeItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Set once the copy is confirmed stored. Null means unfiled, whether it has
+  /// been attempted or not.
+  archivedAt DateTime?
+
+  /// Filing attempts made, so a document that keeps failing is visible.
+  attempts Int @default(0)
+
+  /// Why the last attempt failed. Never holds a token or a secret.
+  lastError String?
+
+  /// Where the copy went, recorded so a filed contract can be found again
+  /// without querying Graph.
+  driveId String?
+  itemId  String?
+  webUrl  String?
+  path    String?
+
+  @@index([envelopeId])
+  @@index([archivedAt])
 }
 
 model DocumentAuditLog {
@@ -544,12 +602,45 @@ enum DocumentSigningOrder {
   SEQUENTIAL
 }
 
+/// The stored bytes of one PDF, plus who put them there.
+///
+/// `EnvelopeItem` is unique per row, so bytes that an envelope holds belong to
+/// that envelope's team. Bytes nothing holds used to belong to nobody, and any
+/// caller who learned the ID could name it as an item of their own envelope.
+/// `userId` and `teamId` record the identity at the moment of upload so an
+/// unheld row can still be refused.
+///
+/// Both are nullable and neither is knowable everywhere. `POST
+/// /api/files/upload-pdf` authenticates a user and is told no team, so its rows
+/// carry a user alone. The sealing job and the direct-link template path run
+/// with no user at all and carry a team alone. Rows written before this column
+/// existed carry neither until the backfill runs, and a row the backfill cannot
+/// resolve keeps neither. A row with neither is refused to everybody.
 model DocumentData {
   id           String           @id @default(cuid())
   type         DocumentDataType
   data         String
   initialData  String
   envelopeItem EnvelopeItem?
+
+  /// The person whose request minted these bytes, where a request had one.
+  /// Kept on user deletion rather than cascaded, because the bytes may be a
+  /// signed contract that outlives the account.
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// The team the bytes were minted for, where the caller knew one.
+  teamId Int?
+  team   Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// When the row was written. Null on rows that predate the column. An upload
+  /// nobody attaches now sits here holding an owner, so an operator needs to be
+  /// able to find the old ones.
+  createdAt DateTime? @default(now())
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([createdAt])
 }
 
 enum DocumentDistributionMethod {
@@ -1051,11 +1142,12 @@ model Team {
 
   profile TeamProfile?
 
-  envelopes  Envelope[]
-  folders    Folder[]
-  apiTokens  ApiToken[]
-  webhooks   Webhook[]
-  teamGroups TeamGroup[]
+  envelopes    Envelope[]
+  folders      Folder[]
+  apiTokens    ApiToken[]
+  webhooks     Webhook[]
+  teamGroups   TeamGroup[]
+  documentData DocumentData[]
 
   organisationId String
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)

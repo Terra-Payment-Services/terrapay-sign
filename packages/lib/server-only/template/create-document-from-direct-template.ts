@@ -342,11 +342,16 @@ export const createDocumentFromDirectTemplate = async ({
 
       const titleToUse = item.title || directTemplateEnvelope.title;
 
-      const { documentData: newDocumentData } = await putPdfFileServerSide({
-        name: titleToUse,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(buffer),
-      });
+      const { documentData: newDocumentData } = await putPdfFileServerSide(
+        {
+          name: titleToUse,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(buffer),
+        },
+        // Whoever follows a direct link may not be signed in at all, so the
+        // template's team is all the identity there is.
+        { owner: { userId: null, teamId: directTemplateEnvelope.teamId } },
+      );
 
       const newEnvelopeItemId = prefixedId('envelope_item');
 

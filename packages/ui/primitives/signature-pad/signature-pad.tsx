@@ -171,7 +171,12 @@ export const SignaturePad = ({
         value="draw"
         className="relative flex aspect-signature-pad items-center justify-center rounded-md border border-border bg-muted/25 text-center"
       >
-        <SignaturePadDraw className="h-full w-full" onChange={onDrawSignatureChange} value={drawSignature} />
+        <SignaturePadDraw
+          className="h-full w-full"
+          onChange={onDrawSignatureChange}
+          value={drawSignature}
+          isTypedSignatureAvailable={typedSignatureEnabled}
+        />
       </TabsContent>
 
       <TabsContent

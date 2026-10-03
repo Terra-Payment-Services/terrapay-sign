@@ -110,7 +110,7 @@ export default function RejectedSigningPage({ loaderData }: Route.ComponentProps
             </h2>
           </div>
 
-          <div className="mt-4 flex items-center text-center text-destructive text-sm">
+          <div className="mt-4 flex items-center text-center text-destructive-text text-sm">
             <Trans>You have rejected this document</Trans>
           </div>
 

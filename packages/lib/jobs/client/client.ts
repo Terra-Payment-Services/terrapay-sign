@@ -39,4 +39,11 @@ export class JobClient<T extends ReadonlyArray<JobDefinition> = []> {
   public startCron() {
     this._provider.startCron();
   }
+
+  /**
+   * Stop taking jobs and wait for the running ones to finish. Called on SIGTERM.
+   */
+  public async close() {
+    await this._provider.close();
+  }
 }

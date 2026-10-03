@@ -1,5 +1,3 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
 import { useSession } from '@documenso/lib/client-only/providers/session';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
@@ -10,11 +8,10 @@ import type { TCreateTemplatePayloadSchema } from '@documenso/trpc/server/templa
 import { buildDropzoneRejectionDescription } from '@documenso/ui/lib/handle-dropzone-rejection';
 import { cn } from '@documenso/ui/lib/utils';
 import { DocumentUploadButton as DocumentUploadButtonPrimitive } from '@documenso/ui/primitives/document-upload-button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@documenso/ui/primitives/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger } from '@documenso/ui/primitives/tooltip';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
 import { EnvelopeType } from '@prisma/client';
 import { useMemo, useState } from 'react';
 import type { FileRejection } from 'react-dropzone';
@@ -37,13 +34,10 @@ export const DocumentUploadButtonLegacy = ({ className, type }: DocumentUploadBu
   const team = useCurrentTeam();
 
   const navigate = useNavigate();
-  const organisation = useCurrentOrganisation();
 
   const userTimezone =
     TIME_ZONES.find((timezone) => timezone === Intl.DateTimeFormat().resolvedOptions().timeZone) ??
     DEFAULT_DOCUMENT_TIME_ZONE;
-
-  const { quota, remaining, refreshLimits } = useLimits();
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -55,21 +49,8 @@ export const DocumentUploadButtonLegacy = ({ className, type }: DocumentUploadBu
       return msg`Verify your email to upload documents.`;
     }
 
-    // No errors for templates.
-    if (type === EnvelopeType.TEMPLATE) {
-      return;
-    }
-
-    if (organisation.subscription && remaining.documents === 0) {
-      return msg`Document upload disabled due to unpaid invoices`;
-    }
-
-    if (remaining.documents === 0) {
-      return msg`You have reached your document limit.`;
-    }
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining.documents, user.emailVerified, team, type]);
+  }, [user.emailVerified, team, type]);
 
   const onFileDrop = async (file: File) => {
     try {
@@ -91,8 +72,6 @@ export const DocumentUploadButtonLegacy = ({ className, type }: DocumentUploadBu
       // Handle legacy document creation.
       if (type === EnvelopeType.DOCUMENT) {
         const { envelopeId: id } = await createDocument(formData);
-
-        void refreshLimits();
 
         await navigate(`${formatDocumentsPath(team.url)}/${id}/edit`);
 
@@ -161,19 +140,6 @@ export const DocumentUploadButtonLegacy = ({ className, type }: DocumentUploadBu
               />
             </div>
           </TooltipTrigger>
-
-          {team?.id === undefined &&
-            type === EnvelopeType.DOCUMENT &&
-            remaining.documents > 0 &&
-            Number.isFinite(remaining.documents) && (
-              <TooltipContent>
-                <p className="text-sm">
-                  <Trans>
-                    {remaining.documents} of {quota.documents} documents remaining this month.
-                  </Trans>
-                </p>
-              </TooltipContent>
-            )}
         </Tooltip>
       </TooltipProvider>
     </div>

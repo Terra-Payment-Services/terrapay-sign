@@ -74,3 +74,14 @@ tmp/
 
 # opencode
 .opencode/package-lock.json
+
+# Signing key material. The P12 holds a private key and must never be committed;
+# production loads it from AWS Secrets Manager or uses the gcloud-hsm transport.
+apps/remix/signing/*.p12
+
+# Session handover notes, written by the /quit skill. Working state about how a
+# session went, not about the fork, and rewritten wholesale each time. Durable
+# knowledge belongs in ARCHITECTURE.md instead, where it survives the next
+# session overwriting this file. Kept out of the tree because every file we
+# track is one more thing to reconcile when upstream is merged.
+HANDOVER.md

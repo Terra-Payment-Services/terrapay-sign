@@ -19,11 +19,12 @@ import { buildEnvelopeEmailHeaders } from '../../../server-only/email/build-enve
 import { getEmailContext } from '../../../server-only/email/get-email-context';
 import { assertOrganisationRatesAndLimits } from '../../../server-only/rate-limit/assert-organisation-rates-and-limits';
 import { updateRecipientNextReminder } from '../../../server-only/recipient/update-recipient-next-reminder';
-import { triggerWebhook } from '../../../server-only/webhooks/trigger/trigger-webhook';
+import { triggerTeamWebhook } from '../../../server-only/webhooks/trigger/trigger-webhook';
 import { DOCUMENT_AUDIT_LOG_TYPE, DOCUMENT_EMAIL_TYPE } from '../../../types/document-audit-logs';
 import { extractDerivedDocumentEmailSettings } from '../../../types/document-email';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../../types/webhook-payload';
 import { createDocumentAuditLogData } from '../../../utils/document-audit-logs';
+import { isRecipientEmailValidForSending } from '../../../utils/recipients';
 import { renderCustomEmailTemplate } from '../../../utils/render-custom-email-template';
 import { renderEmailWithI18N } from '../../../utils/render-email-with-i18n';
 import type { JobRunIO } from '../../client/_internal/job';
@@ -81,6 +82,17 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
 
   if (!recipient) {
     io.logger.warn(`Recipient ${recipientId} not found`);
+    return;
+  }
+
+  // An in-person signer has no email address, so there is nowhere to send a reminder.
+  // Without this the transport is handed an empty address and, if it tolerates one,
+  // an EMAIL_SENT row lands on the signing certificate for a mail nobody received.
+  // The atomic claim above already cleared nextReminderAt, so returning here stops
+  // the reminder chain for this recipient rather than deferring it.
+  if (!isRecipientEmailValidForSending(recipient)) {
+    io.logger.info(`Recipient ${recipientId} has no email address, skipping reminder`);
+
     return;
   }
 
@@ -236,10 +248,12 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
       }),
     });
 
-    await triggerWebhook({
+    // No acting user: the reminder is scheduled, not requested. Scope by the
+    // envelope's team so an author who has left still leaves their team
+    // notified.
+    await triggerTeamWebhook({
       event: WebhookTriggerEvents.DOCUMENT_REMINDER_SENT,
       data: ZWebhookDocumentSchema.parse(mapEnvelopeToWebhookDocumentPayload(envelope)),
-      userId: envelope.userId,
       teamId: envelope.teamId,
     });
   }

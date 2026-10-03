@@ -25,7 +25,7 @@ import { extractDerivedDocumentEmailSettings } from '../../types/document-email'
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { isDocumentCompleted } from '../../utils/document';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
-import { isRecipientEmailValidForSending } from '../../utils/recipients';
+import { assertNoPlaceholderRecipients, isRecipientEmailValidForSending } from '../../utils/recipients';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { buildEnvelopeEmailHeaders } from '../email/build-envelope-email-headers';
 import { getEmailContext } from '../email/get-email-context';
@@ -105,6 +105,8 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
   if (isDocumentCompleted(envelope.status)) {
     throw new Error('Can not send completed document');
   }
+
+  assertNoPlaceholderRecipients(envelope.recipients);
 
   // A recipientCount of 0 means unlimited recipients are allowed. Block resending
   // when the document has more recipients than the organisation is allowed to send

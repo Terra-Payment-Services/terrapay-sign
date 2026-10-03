@@ -20,33 +20,33 @@ import type { TCssVarsSchema } from '../types/css-vars';
  * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  */
 export const DEFAULT_BRAND_COLORS = {
-  background: '#ffffff', //              0 0% 100%
-  foreground: '#0f172a', //              222.2 47.4% 11.2%
-  muted: '#f1f5f9', //                   210 40% 96.1%
-  mutedForeground: '#64748b', //         215.4 16.3% 46.9%
-  popover: '#ffffff', //                 0 0% 100%
-  popoverForeground: '#0f172a', //       222.2 47.4% 11.2%
-  card: '#ffffff', //                    0 0% 100%
-  cardBorder: '#e2e8f0', //              214.3 31.8% 91.4%
-  cardForeground: '#0f172a', //          222.2 47.4% 11.2%
-  fieldCard: '#e2f8d3', //               95 74% 90%
-  fieldCardBorder: '#a2e771', //         95.08 71.08% 67.45%
-  fieldCardForeground: '#0f172a', //     222.2 47.4% 11.2%
-  widget: '#f7f7f7', //                  0 0% 97%
-  widgetForeground: '#f2f2f2', //        0 0% 95%
-  border: '#e2e8f0', //                  214.3 31.8% 91.4%
-  input: '#e2e8f0', //                   214.3 31.8% 91.4%
-  primary: '#a2e771', //                 95.08 71.08% 67.45%
-  primaryForeground: '#162c07', //       95.08 71.08% 10%
-  secondary: '#f1f5f9', //               210 40% 96.1%
-  secondaryForeground: '#0f172a', //     222.2 47.4% 11.2%
-  accent: '#f1f5f9', //                  210 40% 96.1%
-  accentForeground: '#0f172a', //        222.2 47.4% 11.2%
-  destructive: '#ff0000', //             0 100% 50%
-  destructiveForeground: '#f8fafc', //   210 40% 98%
-  ring: '#a2e771', //                    95.08 71.08% 67.45%
-  warning: '#e1cb05', //                 54 96% 45%
-  envelopeEditorBackground: '#f8fafc', //210 40% 98.04%
+  background: '#ffffff', //              0 0% 100%            white
+  foreground: '#213871', //              223 54.8% 28.6%      blue-900
+  muted: '#eeeff0', //                   210 6.2% 93.7%       grey-100
+  mutedForeground: '#6e7586', //         223 9.8% 47.8%       grey-500
+  popover: '#ffffff', //                 0 0% 100%            white
+  popoverForeground: '#213871', //       223 54.8% 28.6%      blue-900
+  card: '#ffffff', //                    0 0% 100%            white
+  cardBorder: '#dedfe2', //              225 6.5% 87.8%       grey-200
+  cardForeground: '#213871', //          223 54.8% 28.6%      blue-900
+  fieldCard: '#e8eefb', //               221 70.4% 94.7%      blue-100
+  fieldCardBorder: '#213871', //         223 54.8% 28.6%      blue-900
+  fieldCardForeground: '#213871', //     223 54.8% 28.6%      blue-900
+  widget: '#f6f7f7', //                  180 5.9% 96.7%       grey-50
+  widgetForeground: '#eeeff0', //        210 6.2% 93.7%       grey-100
+  border: '#dedfe2', //                  225 6.5% 87.8%       grey-200
+  input: '#6e7586', //                   223 9.8% 47.8%       grey-500
+  primary: '#213871', //                 223 54.8% 28.6%      blue-900
+  primaryForeground: '#ffffff', //       0 0% 100%            white
+  secondary: '#eeeff0', //               210 6.2% 93.7%       grey-100
+  secondaryForeground: '#213871', //     223 54.8% 28.6%      blue-900
+  accent: '#e8eefb', //                  221 70.4% 94.7%      blue-100
+  accentForeground: '#213871', //        223 54.8% 28.6%      blue-900
+  destructive: '#c84a44', //             3 54.5% 52.5%        coral-700
+  destructiveForeground: '#ffffff', //   0 0% 100%            white
+  ring: '#213871', //                    223 54.8% 28.6%      blue-900
+  warning: '#ff9a62', //                 21 100% 69.2%        orange-500
+  envelopeEditorBackground: '#f1f5fe', //222 86.7% 97.1%      blue-50
   // `cardBorderTint` is intentionally excluded from the colour-picker UI:
   // unlike the rest of these tokens it is consumed via `rgb(var(--token))`
   // (not `hsl(...)`) and stored as raw RGB triplets in `theme.css`. It does
@@ -56,3 +56,11 @@ export const DEFAULT_BRAND_COLORS = {
 } as const satisfies Record<keyof Omit<TCssVarsSchema, 'radius' | 'cardBorderTint'>, string>;
 
 export const DEFAULT_BRAND_RADIUS = '0.5rem';
+
+/**
+ * `--destructive-text` in `theme.css`: 2 58.6% 45.5%, TOPS coral-text.
+ *
+ * Kept out of `DEFAULT_BRAND_COLORS` because that record is typed against the
+ * tenant branding schema, and error text is not a colour tenants set.
+ */
+export const DEFAULT_DESTRUCTIVE_TEXT_COLOR = '#b83530';

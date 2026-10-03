@@ -5,6 +5,44 @@ import type { Recipient } from '@prisma/client';
 import { FieldType } from '@prisma/client';
 import { match } from 'ts-pattern';
 
+import {
+  formatPlaceholderRecipientEmail,
+  isPlaceholderRecipientEmailForIndex,
+} from '../../constants/placeholder-recipients';
+
+/**
+ * The font files shipped for server-side PDF rendering, keyed by the family name
+ * the renderers ask for.
+ *
+ * Exported so a test can check the certificate's font stack against the glyphs these
+ * files carry. Without that check the coverage of an evidence document depends on the
+ * font book of whichever machine produced it.
+ *
+ * Every file is a static instance. Skia's PDF backend cannot embed a variable font as
+ * TrueType, so it writes one Type 3 font per weight drawn, and on the Linux runtime
+ * image those fonts carry glyphs of the wrong weight: a word set at 500 comes out with
+ * some letters at 400, and the other way round. macOS does not show it. The browser
+ * still loads the variable files through app.css, which is why both copies ship.
+ * The Japanese and Korean files are Regular instances cut from the variable Noto
+ * fonts, matching the static Regular Chinese file beside them.
+ */
+export const PDF_FONT_FILES: Record<string, string[]> = {
+  Caveat: ['caveat.ttf'],
+  Inter: ['inter-regular.ttf', 'inter-semibold.ttf', 'inter-bold.ttf'],
+  'Source Sans 3': ['SourceSans3-Regular.ttf', 'SourceSans3-Medium.ttf'],
+  'TT Firs Neue': ['TTFirsNeue-Regular.ttf', 'TTFirsNeue-Medium.ttf', 'TTFirsNeue-DemiBold.ttf'],
+  'Noto Sans': ['noto-sans.ttf'],
+  'Noto Sans Arabic': ['noto-sans-arabic.ttf'],
+  'Noto Sans Japanese': ['noto-sans-japanese-regular.ttf'],
+  'Noto Sans Chinese': ['noto-sans-chinese.ttf'],
+  'Noto Sans Korean': ['noto-sans-korean-regular.ttf'],
+};
+
+const resolveFontFiles = (fontPath: string, families: string[]) =>
+  Object.fromEntries(
+    families.map((family) => [family, PDF_FONT_FILES[family].map((file) => path.join(fontPath, file))]),
+  );
+
 /**
  * Ensure all required fonts are registered in the skia-canvas FontLibrary.
  *
@@ -16,26 +54,35 @@ export const ensureFontLibrary = () => {
 
   if (!FontLibrary.has('Caveat')) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    FontLibrary.use({
-      ['Caveat']: [path.join(fontPath, 'caveat.ttf')],
-    });
+    FontLibrary.use(resolveFontFiles(fontPath, ['Caveat']));
   }
 
   if (!FontLibrary.has('Inter')) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    FontLibrary.use({
-      ['Inter']: [path.join(fontPath, 'inter-variablefont_opsz,wght.ttf')],
-    });
+    FontLibrary.use(resolveFontFiles(fontPath, ['Inter']));
+  }
+
+  if (!FontLibrary.has('Source Sans 3')) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    FontLibrary.use(resolveFontFiles(fontPath, ['Source Sans 3']));
+  }
+
+  if (!FontLibrary.has('TT Firs Neue')) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    FontLibrary.use(resolveFontFiles(fontPath, ['TT Firs Neue']));
   }
 
   if (!FontLibrary.has('Noto Sans')) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    FontLibrary.use({
-      ['Noto Sans']: [path.join(fontPath, 'noto-sans.ttf')],
-      ['Noto Sans Japanese']: [path.join(fontPath, 'noto-sans-japanese.ttf')],
-      ['Noto Sans Chinese']: [path.join(fontPath, 'noto-sans-chinese.ttf')],
-      ['Noto Sans Korean']: [path.join(fontPath, 'noto-sans-korean.ttf')],
-    });
+    FontLibrary.use(
+      resolveFontFiles(fontPath, [
+        'Noto Sans',
+        'Noto Sans Arabic',
+        'Noto Sans Japanese',
+        'Noto Sans Chinese',
+        'Noto Sans Korean',
+      ]),
+    );
   }
 };
 
@@ -137,7 +184,7 @@ const extractRecipientPlaceholder = (placeholder: string): RecipientPlaceholderI
   const recipientIndex = Number(indexMatch[1]);
 
   return {
-    email: `recipient.${recipientIndex}@documenso.com`,
+    email: formatPlaceholderRecipientEmail(recipientIndex),
     name: `Recipient ${recipientIndex}`,
     recipientIndex,
   };
@@ -174,8 +221,8 @@ export const findRecipientByPlaceholder = (
   /*
     Use email-based matching for placeholder recipients.
   */
-  const { email } = extractRecipientPlaceholder(recipientPlaceholder);
-  const recipient = createdRecipients.find((r) => r.email === email);
+  const { recipientIndex } = extractRecipientPlaceholder(recipientPlaceholder);
+  const recipient = createdRecipients.find((r) => isPlaceholderRecipientEmailForIndex(r.email, recipientIndex));
 
   if (!recipient) {
     throw new AppError(AppErrorCode.INVALID_BODY, {

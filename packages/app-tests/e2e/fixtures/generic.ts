@@ -10,7 +10,7 @@ export const expectTextToNotBeVisible = async (page: Page, text: string) => {
 };
 
 export const expectToastTextToBeVisible = async (page: Page, text: string) => {
-  await expect(page.locator('[role="status"]').getByText(text)).toBeVisible();
+  await expect(page.locator('[data-testid="toast"]').getByText(text)).toBeVisible();
 };
 
 export const openDropdownMenu = async (page: Page, dropdownButton: Locator) => {

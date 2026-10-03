@@ -1,107 +1,22 @@
-import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-
-import { logger } from '../../utils/logger';
-
-const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-
-type TurnstileVerifyResponse = {
-  success: boolean;
-  'error-codes': string[];
-  challenge_ts?: string;
-  hostname?: string;
-};
-
 /**
- * Verify a captcha token server-side.
+ * Server-side captcha verification, permanently inert on this deployment.
  *
- * Currently supports Cloudflare Turnstile. This is a no-op if
- * `NEXT_PRIVATE_TURNSTILE_SECRET_KEY` is not configured, making captcha
- * verification an opt-in feature.
+ * Upstream supported Cloudflare Turnstile. When `NEXT_PRIVATE_TURNSTILE_SECRET_KEY`
+ * was set, this posted the challenge token and the visitor's IP address to
+ * `https://challenges.cloudflare.com/turnstile/v0/siteverify`, and the matching
+ * browser widget loaded Cloudflare's `api.js`, which sees the visitor's IP,
+ * user agent, TLS fingerprint and behavioural signals.
+ *
+ * This instance must not disclose anything about who is using it, so the
+ * Turnstile widget has been removed from the sign in, sign up and claim account
+ * forms and this verifier no longer calls out. The two functions had to be
+ * disabled together: leaving the server side live while removing the widget
+ * would have rejected every sign in the moment someone set the secret key.
+ *
+ * Both `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `NEXT_PRIVATE_TURNSTILE_SECRET_KEY`
+ * are now inert. If bot protection on the authentication forms is ever wanted,
+ * it needs a deliberate code change and a provider we host ourselves, not an
+ * environment variable.
  */
-export const verifyCaptchaToken = async ({
-  token,
-  ipAddress,
-}: {
-  token?: string | null;
-  ipAddress?: string | null;
-}) => {
-  const secretKey = process.env.NEXT_PRIVATE_TURNSTILE_SECRET_KEY;
-
-  // If no secret key is configured, skip verification.
-  if (!secretKey) {
-    return;
-  }
-
-  if (!token) {
-    logger.warn({
-      msg: 'Captcha verification rejected: missing token',
-      ipAddress,
-    });
-
-    throw new AppError(AppErrorCode.INVALID_CAPTCHA, {
-      message: 'Captcha token is required',
-      statusCode: 400,
-    });
-  }
-
-  const formData = new URLSearchParams();
-
-  formData.append('secret', secretKey);
-  formData.append('response', token);
-
-  if (ipAddress) {
-    formData.append('remoteip', ipAddress);
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(TURNSTILE_VERIFY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    });
-  } catch (err) {
-    logger.error({
-      msg: 'Captcha verification failed: network error calling siteverify',
-      err,
-      ipAddress,
-    });
-
-    throw new AppError(AppErrorCode.INVALID_CAPTCHA, {
-      message: 'Captcha verification failed',
-      statusCode: 400,
-    });
-  }
-
-  if (!response.ok) {
-    logger.error({
-      msg: 'Captcha verification failed: non-2xx response from siteverify',
-      status: response.status,
-      ipAddress,
-    });
-
-    throw new AppError(AppErrorCode.INVALID_CAPTCHA, {
-      message: `Captcha verification request failed with status ${response.status}`,
-      statusCode: 400,
-    });
-  }
-
-  const result: TurnstileVerifyResponse = await response.json();
-
-  if (!result.success) {
-    logger.warn({
-      msg: 'Captcha verification rejected by provider',
-      errorCodes: result['error-codes'],
-      hostname: result.hostname,
-      ipAddress,
-    });
-
-    throw new AppError(AppErrorCode.INVALID_CAPTCHA, {
-      message: `Captcha verification failed: ${result['error-codes']?.join(', ') ?? 'unknown'}`,
-      statusCode: 400,
-    });
-  }
-};
+export const verifyCaptchaToken = (_options: { token?: string | null; ipAddress?: string | null }): Promise<void> =>
+  Promise.resolve();

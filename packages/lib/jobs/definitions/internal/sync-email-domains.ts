@@ -17,9 +17,9 @@ export const SYNC_EMAIL_DOMAINS_JOB_DEFINITION = {
     schema: SYNC_EMAIL_DOMAINS_JOB_DEFINITION_SCHEMA,
     cron: '0 * * * *', // Every hour, on the hour.
   },
-  handler: async ({ payload, io }) => {
-    const handler = await import('./sync-email-domains.handler');
-
-    await handler.run({ payload, io });
-  },
+  // Organisation email domains were removed. The definition stays, disabled, because the
+  // hourly scheduler already registered in Redis keeps firing under this id; the job runner
+  // skips a disabled definition but throws for a missing one.
+  enabled: false,
+  handler: async () => {},
 } as const satisfies JobDefinition<typeof SYNC_EMAIL_DOMAINS_JOB_DEFINITION_ID, TSyncEmailDomainsJobDefinition>;

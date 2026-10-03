@@ -4,6 +4,7 @@ import { viewedDocument } from '@documenso/lib/server-only/document/viewed-docum
 import { getCompletedFieldsForToken } from '@documenso/lib/server-only/field/get-completed-fields-for-token';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
+import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 
 import { procedure } from '../trpc';
 import {
@@ -31,6 +32,19 @@ export const getMultiSignDocumentRoute = procedure
       if (!document || !recipient) {
         throw new AppError(AppErrorCode.NOT_FOUND, {
           message: 'Document or recipient not found',
+        });
+      }
+
+      // Multi-sign cannot satisfy access auth, and applyMultiSignSignature
+      // refuses these documents, so do not hand out their contents either.
+      const { recipientAccessAuthRequired } = extractDocumentAuthMethods({
+        documentAuth: document.authOptions,
+        recipientAuth: recipient.authOptions,
+      });
+
+      if (recipientAccessAuthRequired) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Documents that require additional authentication cannot be multi signed at the moment',
         });
       }
 

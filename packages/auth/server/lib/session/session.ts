@@ -98,6 +98,14 @@ export const validateSessionToken = async (token: string): Promise<SessionValida
 
   const { user, ...session } = result;
 
+  // A disabled account keeps no session. `disableUser` deletes the rows, and
+  // this refuses any that survive it, so a page loader cannot serve a disabled
+  // user on a cookie issued before the account was disabled.
+  if (user.disabled) {
+    await prisma.session.deleteMany({ where: { id: sessionId } });
+    return { session: null, user: null, isAuthenticated: false };
+  }
+
   if (Date.now() >= session.expiresAt.getTime()) {
     await prisma.session.delete({ where: { id: sessionId } });
     return { session: null, user: null, isAuthenticated: false };

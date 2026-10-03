@@ -11,9 +11,14 @@ import { TEAM_DOCUMENT_VISIBILITY_MAP } from '../../constants/teams';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { TDocumentAccessAuthTypes, TDocumentActionAuthTypes } from '../../types/document-auth';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
-import { createDocumentAuthOptions, extractDocumentAuthMethods } from '../../utils/document-auth';
+import {
+  assertAccountAccessAuthNotAdded,
+  createDocumentAuthOptions,
+  extractDocumentAuthMethods,
+} from '../../utils/document-auth';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { buildTeamWhereQuery, canAccessTeamDocument } from '../../utils/teams';
+import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { recomputeNextReminderForEnvelope } from '../recipient/update-recipient-next-reminder';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
 import { assertCompatibleSigningOrder } from '../signature-level/assert-compatible-signing-order';
@@ -126,6 +131,8 @@ export const updateEnvelope = async ({
   const newGlobalAccessAuth = data?.globalAccessAuth === undefined ? documentGlobalAccessAuth : data.globalAccessAuth;
   const newGlobalActionAuth = data?.globalActionAuth === undefined ? documentGlobalActionAuth : data.globalActionAuth;
 
+  assertAccountAccessAuthNotAdded({ requested: newGlobalAccessAuth, existing: documentGlobalAccessAuth });
+
   // Check if user has permission to set the global action auth.
   if (newGlobalActionAuth.length > 0 && !envelope.team.organisation.organisationClaim.flags.cfr21) {
     throw new AppError(AppErrorCode.UNAUTHORIZED, {
@@ -138,23 +145,10 @@ export const updateEnvelope = async ({
     globalActionAuth: newGlobalActionAuth,
   });
 
-  const emailId = meta.emailId;
+  // Organisation sender addresses were removed: emailId is accepted, logged and never stored.
+  const { emailId, ...metaWithoutEmailId } = meta;
 
-  // Validate the emailId belongs to the organisation.
-  if (emailId) {
-    const email = await prisma.organisationEmail.findFirst({
-      where: {
-        id: emailId,
-        organisationId: envelope.team.organisationId,
-      },
-    });
-
-    if (!email) {
-      throw new AppError(AppErrorCode.NOT_FOUND, {
-        message: 'Email not found',
-      });
-    }
-  }
+  warnIgnoredEmailId({ emailId, teamId, organisationId: envelope.team.organisationId });
 
   let folderUpdateQuery: Prisma.FolderUpdateOneWithoutEnvelopesNestedInput | undefined;
 
@@ -334,7 +328,7 @@ export const updateEnvelope = async ({
         folder: folderUpdateQuery,
         documentMeta: {
           update: {
-            ...meta,
+            ...metaWithoutEmailId,
             emailSettings: meta?.emailSettings || undefined,
           },
         },

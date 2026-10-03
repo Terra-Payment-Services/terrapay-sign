@@ -2,7 +2,6 @@ import { authClient } from '@documenso/auth/client';
 import { AuthenticationErrorCode } from '@documenso/auth/server/lib/errors/error-codes';
 import { formatPath } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { env } from '@documenso/lib/utils/env';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { trpc } from '@documenso/trpc/react';
 import { ZCurrentPasswordSchema } from '@documenso/trpc/server/auth-router/schema';
@@ -19,11 +18,9 @@ import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import type { TurnstileInstance } from '@marsidev/react-turnstile';
-import { Turnstile } from '@marsidev/react-turnstile';
 import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser';
 import { KeyRoundIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { FaIdCardClip } from 'react-icons/fa6';
 import { FcGoogle } from 'react-icons/fc';
@@ -63,6 +60,7 @@ export type SignInFormProps = {
   isGoogleSSOEnabled?: boolean;
   isMicrosoftSSOEnabled?: boolean;
   isOIDCSSOEnabled?: boolean;
+  isPasskeySigninEnabled?: boolean;
   oidcProviderLabel?: string;
   returnTo?: string;
 };
@@ -74,6 +72,7 @@ export const SignInForm = ({
   isGoogleSSOEnabled,
   isMicrosoftSSOEnabled,
   isOIDCSSOEnabled,
+  isPasskeySigninEnabled = true,
   oidcProviderLabel,
   returnTo,
 }: SignInFormProps) => {
@@ -89,10 +88,12 @@ export const SignInForm = ({
 
   const hasSocialAuthEnabled = isGoogleSSOEnabled || isMicrosoftSSOEnabled || isOIDCSSOEnabled;
 
-  const turnstileSiteKey = env('NEXT_PUBLIC_TURNSTILE_SITE_KEY');
-  const turnstileRef = useRef<TurnstileInstance>(null);
-  const twoFactorTurnstileRef = useRef<TurnstileInstance>(null);
-
+  // Cloudflare Turnstile has been removed from this deployment. The widget loaded
+  // Cloudflare's api.js in the visitor's browser and the server posted the
+  // challenge token together with the visitor's IP address to
+  // challenges.cloudflare.com, which told a third party who was signing in and
+  // when. NEXT_PUBLIC_TURNSTILE_SITE_KEY and NEXT_PRIVATE_TURNSTILE_SECRET_KEY
+  // are both inert now; see packages/lib/server-only/captcha/verify-captcha.ts.
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
 
   const redirectPath = useMemo(() => {
@@ -199,24 +200,8 @@ export const SignInForm = ({
   };
 
   const onFormSubmit = async ({ email, password, totpCode, backupCode }: TSignInFormSchema) => {
-    const $turnstile = isTwoFactorAuthenticationDialogOpen ? twoFactorTurnstileRef.current : turnstileRef.current;
-
     try {
-      let token: string | undefined;
-
-      if (turnstileSiteKey) {
-        token = await $turnstile?.getResponsePromise(3000).catch((_err) => undefined);
-
-        if (!token) {
-          toast({
-            title: _(msg`Human verification required`),
-            description: _(msg`Please complete the CAPTCHA challenge before signing in.`),
-            variant: 'destructive',
-          });
-
-          return;
-        }
-      }
+      const token: string | undefined = undefined;
 
       await authClient.emailPassword.signIn({
         email,
@@ -262,8 +247,6 @@ export const SignInForm = ({
         description: _(errorMessage),
         variant: 'destructive',
       });
-
-      $turnstile?.reset();
     }
   };
 
@@ -374,22 +357,11 @@ export const SignInForm = ({
                 )}
               />
 
-              {turnstileSiteKey && !isTwoFactorAuthenticationDialogOpen && (
-                <Turnstile
-                  ref={turnstileRef}
-                  siteKey={turnstileSiteKey}
-                  options={{
-                    size: 'flexible',
-                    appearance: 'always',
-                  }}
-                />
-              )}
-
               <Button
                 type="submit"
                 size="lg"
                 loading={isSubmitting}
-                className="dark:bg-documenso dark:hover:opacity-90"
+                className="dark:bg-documenso-400 dark:hover:opacity-90"
               >
                 {isSubmitting ? <Trans>Signing in...</Trans> : <Trans>Sign In</Trans>}
               </Button>
@@ -431,8 +403,8 @@ export const SignInForm = ({
                   disabled={isSubmitting}
                   onClick={onSignInWithMicrosoftClick}
                 >
-                  <img className="mr-2 h-4 w-4" alt="Microsoft Logo" src={'/static/microsoft.svg'} />
-                  Microsoft
+                  <img className="mr-2 h-4 w-4" alt="" src={'/static/microsoft.svg'} />
+                  <Trans>Sign in with Microsoft</Trans>
                 </Button>
               )}
 
@@ -452,18 +424,20 @@ export const SignInForm = ({
             </>
           )}
 
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            disabled={isSubmitting}
-            loading={isPasskeyLoading}
-            className="border bg-background text-muted-foreground"
-            onClick={onSignInWithPasskey}
-          >
-            {!isPasskeyLoading && <KeyRoundIcon className="mr-1 -ml-1 h-5 w-5" />}
-            <Trans>Passkey</Trans>
-          </Button>
+          {isPasskeySigninEnabled && (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              disabled={isSubmitting}
+              loading={isPasskeyLoading}
+              className="border bg-background text-muted-foreground"
+              onClick={onSignInWithPasskey}
+            >
+              {!isPasskeyLoading && <KeyRoundIcon className="mr-1 -ml-1 h-5 w-5" />}
+              <Trans>Passkey</Trans>
+            </Button>
+          )}
         </fieldset>
       </form>
 
@@ -517,19 +491,6 @@ export const SignInForm = ({
                     </FormItem>
                   )}
                 />
-              )}
-
-              {turnstileSiteKey && (
-                <div className="mt-4">
-                  <Turnstile
-                    ref={twoFactorTurnstileRef}
-                    siteKey={turnstileSiteKey}
-                    options={{
-                      size: 'flexible',
-                      appearance: 'always',
-                    }}
-                  />
-                </div>
               )}
 
               <DialogFooter className="mt-4">

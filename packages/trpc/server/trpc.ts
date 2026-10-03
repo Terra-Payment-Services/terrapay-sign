@@ -145,9 +145,9 @@ export const authenticatedMiddleware = t.middleware(async ({ ctx, next, path, me
     });
   }
 
-  // Reject session requests from a disabled account. The session may still be
-  // valid (sessions aren't invalidated by `disableUser`), so we gate every
-  // authenticated TRPC call here.
+  // Reject session requests from a disabled account. `disableUser` deletes the
+  // account's sessions and session validation refuses a disabled user, so this
+  // is defence in depth, kept so the guard survives a change to either.
   assertUserNotDisabled(ctx.user);
 
   // Recreate the logger with a sub request ID to differentiate between batched

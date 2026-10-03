@@ -25,6 +25,7 @@ These variables must be set for Documenso to function:
 | ---------------------------------- | ------------------------------------------------------------ | -------------------------------- |
 | `PORT`                             | Port the server listens on                                   | `3000`                           |
 | `NEXT_PRIVATE_INTERNAL_WEBAPP_URL` | Internal URL for the app to request itself (background jobs) | Same as `NEXT_PUBLIC_WEBAPP_URL` |
+| `NEXT_PRIVATE_TRUSTED_PROXY_HOPS`  | Number of proxies in front of the app that append to `X-Forwarded-For`. The client address is read this many entries from the right, so entries a client adds itself are ignored | `1` |
 
 ---
 
@@ -416,6 +417,70 @@ No additional configuration required. Jobs are stored in PostgreSQL and processe
 | `NEXT_PRIVATE_INNGEST_APP_ID`    | No       | Custom Inngest app ID                        |
 
 For setup guides and provider recommendations, see [Background Jobs](/docs/self-hosting/configuration/background-jobs).
+
+---
+
+## Directory Reconciliation (Microsoft Entra ID)
+
+An hourly job that disables accounts for people who have left the Entra ID directory. It reads the directory over Microsoft Graph using app-only client credentials, then disables enabled non-admin accounts whose email address is no longer entitled. With an access group configured, the entitled people are the group's transitive members. Without one, they are every enabled member user in the tenant; guest users are treated as absent. Disabling an account signs out all of its sessions and expires its API tokens. It never deletes an account, never re-enables one, and never touches an administrator.
+
+This is a cron job, so it only runs under the `bullmq` jobs provider. On `local` or `inngest` the schedule is inert.
+
+The app registration needs the `User.Read.All` application permission with admin consent, and `GroupMember.Read.All` as well when an access group is set. Leave the first three variables unset to keep the job inert.
+
+| Variable                                        | Required | Description                                                                                  | Default |
+| ----------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- | ------- |
+| `NEXT_PRIVATE_ENTRA_TENANT_ID`                  | Yes      | Entra tenant id                                                                              |         |
+| `NEXT_PRIVATE_ENTRA_CLIENT_ID`                  | Yes      | Application (client) id                                                                      |         |
+| `NEXT_PRIVATE_ENTRA_CLIENT_SECRET`              | Yes      | Client secret                                                                                |         |
+| `NEXT_PRIVATE_ENTRA_ACCESS_GROUP_ID`            | No       | Object id of the group whose membership confers access. Unset, the whole tenant does         |         |
+| `NEXT_PRIVATE_ENTRA_RECONCILE_DRY_RUN`          | No       | Set to `false` to let the job disable accounts. Any other value, including unset, is a dry run | `true`  |
+| `NEXT_PRIVATE_ENTRA_RECONCILE_MINIMUM_MEMBERS`  | No       | Abort the run if the directory returns fewer members than this                               | `10`    |
+| `NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO`| No       | Abort the run if it would disable more than this fraction of the accounts considered         | `0.1`   |
+
+A run that breaches either threshold disables nobody, logs the numbers, and fails so the stop is visible in Bull Board. A Graph failure aborts the run for the same reason: an unreadable directory is not evidence that anybody has left.
+
+---
+
+## SharePoint Contract Archive
+
+Files a copy of every completed document into a SharePoint document library, so that the retention, eDiscovery and sensitivity labelling already configured on that library apply to executed contracts.
+
+This is an archival copy. The sealed PDF in object storage remains the system of record, and nothing here moves, rewrites or deletes it. Filing runs entirely after an envelope reaches `COMPLETED`, and a SharePoint outage can never block signing or sealing.
+
+Two jobs drive it. `internal.archive-envelope` files one envelope and is triggered from the seal handler the moment a document completes, which is the timely path; that trigger is swallowed on failure so an unreachable queue cannot fail a seal. `internal.archive-envelope-sweep` runs every twenty minutes, asks the database which completed documents are still unfiled, and queues them, which is the path that carries the guarantee. Running both is harmless: a document already recorded as filed is skipped, and the path written to is deterministic.
+
+The sweep is a cron job, so it only runs under the `bullmq` jobs provider or the `local` provider's in-process poller. On `inngest` the schedule is inert and the archive depends on the completion trigger alone.
+
+### What an administrator has to grant
+
+The app registration needs the **`Sites.Selected`** application permission with admin consent. It confers nothing on its own; a site administrator then grants that application the **`write`** role on the single target site, for example:
+
+```http
+POST https://graph.microsoft.com/v1.0/sites/{siteId}/permissions
+{
+  "roles": ["write"],
+  "grantedToIdentities": [{ "application": { "id": "{clientId}", "displayName": "Documenso Archive" } }]
+}
+```
+
+Do not grant `Sites.ReadWrite.All`. This host holds contract PDFs and the client secret sits in its environment, so a tenant-wide grant would turn one leaked secret into a route into every SharePoint site and OneDrive-backed library in the tenant. `Sites.Selected` keeps the blast radius at the one library.
+
+| Variable                                   | Required | Description                                                                             | Default                 |
+| ------------------------------------------ | -------- | --------------------------------------------------------------------------------------- | ----------------------- |
+| `NEXT_PRIVATE_SHAREPOINT_TENANT_ID`        | Yes      | Entra tenant id. Falls back to `NEXT_PRIVATE_ENTRA_TENANT_ID`                            |                         |
+| `NEXT_PRIVATE_SHAREPOINT_CLIENT_ID`        | Yes      | Application (client) id. Falls back to `NEXT_PRIVATE_ENTRA_CLIENT_ID`                    |                         |
+| `NEXT_PRIVATE_SHAREPOINT_CLIENT_SECRET`    | Yes      | Client secret. Falls back to `NEXT_PRIVATE_ENTRA_CLIENT_SECRET` only if the client id does too |                   |
+| `NEXT_PRIVATE_SHAREPOINT_SITE_ID`          | Yes      | Graph site id, from `GET /sites/{hostname}:/sites/{path}`                                 |                         |
+| `NEXT_PRIVATE_SHAREPOINT_DRIVE_ID`         | Yes      | Drive id of the library, from `GET /sites/{siteId}/drives`                                |                         |
+| `NEXT_PRIVATE_SHAREPOINT_FOLDER_TEMPLATE`  | No       | Folder path relative to the drive root, supporting `{yyyy}`, `{MM}` and `{dd}`            | `Contracts/{yyyy}/{MM}` |
+| `NEXT_PRIVATE_SHAREPOINT_ARCHIVE_FROM`     | No       | ISO date before which the sweep will not look for unfiled documents                       | no floor                |
+
+Sharing the Entra app registration means one registration holds `GroupMember.Read.All`, `User.Read.All` and `Sites.Selected` together, so one leaked secret reads the directory and writes the contract library. Separate registrations are the better posture and are what the SharePoint variables exist for.
+
+Leave any of the first five unset and the feature is a clean no-op, logging one line naming what to set.
+
+Files are named from the envelope title, the completion date and the envelope id, sanitised for the characters SharePoint rejects, so a contract can be found by browsing rather than only by query. A document that cannot be filed stays unfiled, keeps its last error and attempt count on the `EnvelopeArchive` row, and is picked up again by the next sweep.
 
 ---
 

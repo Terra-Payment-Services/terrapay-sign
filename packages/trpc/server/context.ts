@@ -14,9 +14,18 @@ import { z } from 'zod';
 type CreateTrpcContextOptions = {
   c: Context<HonoEnv>;
   requestSource: 'app' | 'apiV1' | 'apiV2';
+
+  /**
+   * Headers merged into the tRPC response, for procedures that set cookies.
+   */
+  resHeaders?: Headers;
 };
 
-export const createTrpcContext = async ({ c, requestSource }: CreateTrpcContextOptions): Promise<TrpcContext> => {
+export const createTrpcContext = async ({
+  c,
+  requestSource,
+  resHeaders,
+}: CreateTrpcContextOptions): Promise<TrpcContext> => {
   const { session, user } = await getOptionalSession(c);
 
   const req = c.req.raw;
@@ -52,6 +61,7 @@ export const createTrpcContext = async ({ c, requestSource }: CreateTrpcContextO
       teamId,
       req,
       res,
+      resHeaders,
       metadata,
     };
   }
@@ -63,6 +73,7 @@ export const createTrpcContext = async ({ c, requestSource }: CreateTrpcContextO
     teamId,
     req,
     res,
+    resHeaders,
     metadata,
   };
 };
@@ -80,6 +91,7 @@ export type TrpcContext = (
   teamId: number | undefined;
   req: Request;
   res: Response;
+  resHeaders?: Headers;
   metadata: ApiRequestMetadata;
   logger: Logger;
 };

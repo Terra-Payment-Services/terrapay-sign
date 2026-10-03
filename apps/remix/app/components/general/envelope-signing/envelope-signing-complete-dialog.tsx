@@ -101,15 +101,6 @@ export const EnvelopeSignerCompleteDialog = () => {
         ...(nextSigner?.email && nextSigner?.name ? { nextSigner } : {}),
       });
 
-      // TSP envelopes can't be completed via the SES path; the mutation returns
-      // a credential-scope OAuth URL the recipient must follow to acquire a SAD
-      // before the sync sign mutation can run. Short-circuit here so the
-      // analytics / completion handlers don't run with a still-unsigned doc.
-      if (result.status === 'REDIRECT') {
-        window.location.href = result.redirectUrl;
-        return;
-      }
-
       // The document was already completed by an earlier request (retry,
       // stale tab or concurrent submission). Let the user know this click
       // didn't complete the document, then continue to the completed page.

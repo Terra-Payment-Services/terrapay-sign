@@ -1,5 +1,5 @@
-import { isPrivateUrl } from '@documenso/lib/server-only/webhooks/is-private-url';
 import { URL_PATTERN } from '@documenso/lib/types/name';
+import { isPrivateUrl } from '@documenso/lib/universal/is-private-url';
 import { WebhookTriggerEvents } from '@prisma/client';
 import { z } from 'zod';
 

@@ -122,7 +122,7 @@ export const FolderDeleteDialog = ({ folder, isOpen, onOpenChange }: FolderDelet
                     <FormLabel>
                       <Trans>
                         Confirm by typing:{' '}
-                        <span className="font-semibold text-destructive text-sm">{deleteMessage}</span>
+                        <span className="font-semibold text-destructive-text text-sm">{deleteMessage}</span>
                       </Trans>
                     </FormLabel>
                     <FormControl>

@@ -34,7 +34,6 @@ import type * as DialogPrimitive from '@radix-ui/react-dialog';
 import { InfoIcon, UserPlusIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router';
 import { match } from 'ts-pattern';
 import { z } from 'zod';
 
@@ -186,19 +185,7 @@ export const TeamMemberCreateDialog = ({ trigger, ...props }: TeamMemberCreateDi
                     <InfoIcon className="mx-2 h-4 w-4" />
                   </TooltipTrigger>
                   <TooltipContent className="z-[99999] max-w-xs text-muted-foreground">
-                    <Trans>
-                      To be able to add members to a team, you must first add them to the organisation. For more
-                      information, please see the{' '}
-                      <Link
-                        to="https://docs.documenso.com/users/organisations/members"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-documenso-700 hover:text-documenso-600 hover:underline"
-                      >
-                        documentation
-                      </Link>
-                      .
-                    </Trans>
+                    <Trans>To be able to add members to a team, you must first add them to the organisation.</Trans>
                   </TooltipContent>
                 </Tooltip>
               </DialogTitle>

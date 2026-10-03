@@ -1,7 +1,13 @@
 import { RecipientRole } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
-import { isAssistantLastSigner, normalizeRecipientSigningOrders, sortRecipientsForSigningOrder } from './recipients';
+import { DIRECT_TEMPLATE_RECIPIENT_EMAIL, LEGACY_DIRECT_TEMPLATE_RECIPIENT_EMAIL } from '../constants/direct-templates';
+import {
+  assertNoPlaceholderRecipients,
+  isAssistantLastSigner,
+  normalizeRecipientSigningOrders,
+  sortRecipientsForSigningOrder,
+} from './recipients';
 
 describe('recipient signing order helpers', () => {
   it('sorts CC recipients after ordered active recipients', () => {
@@ -67,5 +73,26 @@ describe('recipient signing order helpers', () => {
         { role: RecipientRole.CC },
       ]),
     ).toBe(false);
+  });
+});
+
+describe('assertNoPlaceholderRecipients', () => {
+  it('refuses the current and the legacy placeholder forms', () => {
+    expect(() => assertNoPlaceholderRecipients([{ id: 1, email: 'recipient.1@placeholder.invalid' }])).toThrow(
+      /recipient\.1@placeholder\.invalid/,
+    );
+    expect(() => assertNoPlaceholderRecipients([{ id: 2, email: 'recipient.2@documenso.com' }])).toThrow(
+      /recipient\.2@documenso\.com/,
+    );
+  });
+
+  it('allows real addresses and the direct-link recipient in either form', () => {
+    expect(() =>
+      assertNoPlaceholderRecipients([
+        { id: 1, email: 'signer@terrapay.com' },
+        { id: 2, email: DIRECT_TEMPLATE_RECIPIENT_EMAIL },
+        { id: 3, email: LEGACY_DIRECT_TEMPLATE_RECIPIENT_EMAIL },
+      ]),
+    ).not.toThrow();
   });
 });

@@ -122,9 +122,6 @@ export const UnifiedSettingsLayout = ({ activeScope, preferredTeamUrl = null }: 
         }
       : null,
     team: teamForSidebar ? { url: teamForSidebar.url, currentTeamRole: teamForSidebar.currentTeamRole } : null,
-    hasManageableBillingOrgs: organisations.some((org) =>
-      canExecuteOrganisationAction('MANAGE_BILLING', org.currentOrganisationRole),
-    ),
   });
 
   const canManageOrg =

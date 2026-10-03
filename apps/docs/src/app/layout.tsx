@@ -1,7 +1,6 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import PlausibleProvider from 'next-plausible';
 
 import './global.css';
 
@@ -30,9 +29,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
-        <PlausibleProvider domain="documenso.com">
-          <RootProvider>{children}</RootProvider>
-        </PlausibleProvider>
+        <RootProvider>{children}</RootProvider>
       </body>
     </html>
   );

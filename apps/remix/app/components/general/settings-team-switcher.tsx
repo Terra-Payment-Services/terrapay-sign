@@ -65,7 +65,6 @@ export const SettingsTeamSwitcher = ({ currentOrgUrl, currentTeamUrl }: Settings
         organisationClaim: currentOrg.organisationClaim,
       },
       team: { url: destinationTeam.url, currentTeamRole: destinationTeam.currentTeamRole },
-      hasManageableBillingOrgs: false,
     }).team;
 
     if (!destinationGroup) {

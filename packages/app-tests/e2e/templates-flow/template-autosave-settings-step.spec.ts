@@ -81,8 +81,8 @@ test.describe('AutoSave Settings Step - Templates', () => {
   test('should autosave the template access change', async ({ page }) => {
     const { user, template, team } = await setupTemplate(page);
 
-    const access = 'Require account';
-    const accessValue = 'ACCOUNT';
+    const access = 'Require 2FA';
+    const accessValue = 'TWO_FACTOR_AUTH';
 
     await page.getByRole('combobox').nth(1).click();
     await page.getByRole('option', { name: access }).click();
@@ -238,7 +238,7 @@ test.describe('AutoSave Settings Step - Templates', () => {
     await page.getByRole('option', { name: 'German' }).click();
 
     await page.getByRole('combobox').nth(1).click();
-    await page.getByRole('option', { name: 'Require account' }).click();
+    await page.getByRole('option', { name: 'Require 2FA' }).click();
 
     await page.getByRole('button', { name: 'Advanced Options' }).click();
     const newExternalId = 'MULTI-TEST-123';
@@ -261,7 +261,7 @@ test.describe('AutoSave Settings Step - Templates', () => {
 
       expect(retrievedTemplate.title).toBe(newTitle);
       expect(retrievedTemplate.templateMeta?.language).toBe('de');
-      expect(retrievedTemplate.authOptions?.globalAccessAuth).toContain('ACCOUNT');
+      expect(retrievedTemplate.authOptions?.globalAccessAuth).toContain('TWO_FACTOR_AUTH');
       expect(retrievedTemplate.externalId).toBe(newExternalId);
       expect(retrievedTemplate.templateMeta?.timezone).toBe('Europe/Berlin');
     }).toPass();

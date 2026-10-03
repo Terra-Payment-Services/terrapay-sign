@@ -16,6 +16,7 @@ import { UAParser } from 'ua-parser-js';
 
 import { DOCUMENT_STATUS } from '../../constants/document';
 import { APP_I18N_OPTIONS } from '../../constants/i18n';
+import { PDF_BODY_FONT_FAMILY, PDF_DISPLAY_FONT_FAMILY } from '../../constants/pdf';
 import { RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLog } from '../../types/document-audit-logs';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
@@ -48,13 +49,15 @@ type GenerateAuditLogsOptions = {
 
 const parser = new UAParser();
 
-const textMutedForegroundLight = '#929DAE';
-const textForeground = '#000';
-const textMutedForeground = '#64748B';
+const textMutedForegroundLight = '#8b92a0';
+const textForeground = '#213871';
+const textMutedForeground = '#6e7586';
 const textBase = 10;
 const textSm = 9;
 const textXs = 8;
 const fontMedium = '500';
+const fontBody = PDF_BODY_FONT_FAMILY;
+const fontDisplay = PDF_DISPLAY_FONT_FAMILY;
 
 const pageTopMargin = 60;
 const pageBottomMargin = 27;
@@ -83,7 +86,7 @@ const renderOverviewCardLabels = (options: RenderOverviewCardLabelAndTextOptions
     y: 0,
     text: options.label,
     fontStyle: fontMedium,
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fill: textForeground,
     fontSize: textSm,
   });
@@ -95,7 +98,7 @@ const renderOverviewCardLabels = (options: RenderOverviewCardLabelAndTextOptions
       x: 0,
       y: label.height() + labelYSpacing,
       width: width - label.width(),
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       text,
       fill: textForeground,
       wrap: 'char',
@@ -109,7 +112,7 @@ const renderOverviewCardLabels = (options: RenderOverviewCardLabelAndTextOptions
         x: 0,
         y: group.getClientRect().height + 4,
         width: width - label.width(),
-        fontFamily: 'Inter',
+        fontFamily: fontBody,
         text: '• ' + textValue,
         fill: textForeground,
         wrap: 'char',
@@ -143,7 +146,7 @@ const renderVerticalLabelAndText = (options: RenderVerticalLabelAndTextOptions) 
 
   const konvaLabel = new Konva.Text({
     align: align ?? 'left',
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     width,
     text: label,
     fontSize: textXs,
@@ -155,7 +158,7 @@ const renderVerticalLabelAndText = (options: RenderVerticalLabelAndTextOptions) 
   const konvaText = new Konva.Text({
     y: group.getClientRect().height + 6,
     align: align ?? 'left',
-    fontFamily: textFontFamily ?? 'Inter',
+    fontFamily: textFontFamily ?? fontBody,
     width,
     text: text,
     fontSize: textXs,
@@ -289,7 +292,7 @@ const renderOverviewCard = (options: RenderOverviewCardOptions) => {
     y: 0,
     width,
     height: overviewCard.getClientRect().height + cardPadding * 2,
-    stroke: '#e5e7eb',
+    stroke: '#dedfe2',
     strokeWidth: 1.5,
     cornerRadius: 8,
   });
@@ -331,7 +334,7 @@ const renderRow = (options: RenderRowOptions) => {
     y: 0,
     width: columnWidth - indicatorWidth - indicatorPaddingRight,
     text: auditLog.type.replace(/_/g, ' '),
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fontSize: textSm,
     fontStyle: fontMedium,
     fill: textMutedForeground,
@@ -342,7 +345,7 @@ const renderRow = (options: RenderRowOptions) => {
     y: auditLogTypeText.height() + 4,
     width: columnWidth - indicatorWidth - indicatorPaddingRight,
     text: formatDocumentAuditLogAction(i18n, auditLog).description,
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fontSize: textSm,
     fill: textForeground,
   });
@@ -351,7 +354,7 @@ const renderRow = (options: RenderRowOptions) => {
     x: columnWidth + columnSpacing,
     width: columnWidth,
     text: DateTime.fromJSDate(auditLog.createdAt).setLocale(APP_I18N_OPTIONS.defaultLocale).toLocaleString(dateFormat),
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     align: 'right',
     fontSize: textSm,
     fill: textMutedForeground,
@@ -372,7 +375,7 @@ const renderRow = (options: RenderRowOptions) => {
   // Draw border line.
   const borderLine = new Konva.Line({
     points: [0, 0, width - paddingWithinCard * 2, 0],
-    stroke: '#e5e7eb',
+    stroke: '#dedfe2',
     strokeWidth: 1,
     x: paddingWithinCard,
     y: rowGroup.getClientRect().height + paddingWithinCard + 12,
@@ -427,7 +430,7 @@ const renderRow = (options: RenderRowOptions) => {
     y: 0,
     width: rowGroup.getClientRect().width,
     height: rowGroup.getClientRect().height + paddingWithinCard * 2,
-    stroke: '#e5e7eb',
+    stroke: '#dedfe2',
     strokeWidth: 1,
     cornerRadius: 8,
   });
@@ -527,7 +530,7 @@ const renderPages = (options: RenderPagesOptions) => {
       verticalAlign: 'middle',
       text: i18n._(msg`Audit Log`),
       fill: textForeground,
-      fontFamily: 'Inter',
+      fontFamily: fontDisplay,
       fontSize: titleFontSize,
       fontStyle: '700',
     });
@@ -622,7 +625,7 @@ export async function renderAuditLogs({
       x: margin,
       y: pageHeight - textXs - 10,
       text: `${i18n._(msg`Envelope ID`)}: ${envelope.id}`,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textXs,
       fill: textMutedForegroundLight,
     });
@@ -667,7 +670,7 @@ export async function renderAuditLogs({
       x: margin,
       y: pageHeight - textXs - 10,
       text: `${i18n._(msg`Envelope ID`)}: ${envelope.id}`,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textXs,
       fill: textMutedForegroundLight,
     });
@@ -699,14 +702,14 @@ const dateFormat: DateTimeFormatOptions = {
  */
 const getAuditLogIndicatorColor = (type: string) =>
   match(type)
-    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_COMPLETED, () => '#22c55e') // bg-green-500
-    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_REJECTED, () => '#ef4444') // bg-red-500
-    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT, () => '#f97316') // bg-orange-500
+    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_COMPLETED, () => '#3CB061') // terrapay green
+    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_REJECTED, () => '#EB5E57') // terrapay coral
+    .with(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT, () => '#E87A3E') // terrapay amber
     .with(
       P.union(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED, DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_UNINSERTED),
-      () => '#3b82f6', // bg-blue-500
+      () => '#213871', // terrapay navy
     )
-    .otherwise(() => '#f1f5f9'); // bg-muted
+    .otherwise(() => '#dedfe2'); // terrapay border grey
 
 const formatUserAgent = (userAgent: string | null | undefined, userAgentInfo: UAParser.IResult) => {
   if (!userAgent) {

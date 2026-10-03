@@ -58,7 +58,7 @@ export const ZTemplateMetaUpsertSchema = z.object({
   timezone: ZDocumentMetaTimezoneSchema.optional(),
   dateFormat: ZDocumentMetaDateFormatSchema.optional(),
   distributionMethod: ZDocumentMetaDistributionMethodSchema.optional(),
-  emailId: z.string().nullish(),
+  emailId: z.string().nullish().describe('Ignored. Organisation sender addresses are no longer supported.'),
   emailReplyTo: zEmail().nullish(),
   emailSettings: ZDocumentEmailSettingsSchema.optional(),
   redirectUrl: ZDocumentMetaRedirectUrlSchema.optional(),

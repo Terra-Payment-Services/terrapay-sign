@@ -79,7 +79,7 @@ export const SignFieldCheckboxDialog = createCallable<SignFieldCheckboxDialogPro
 
             <DialogDescription
               className={cn('mt-4', {
-                'text-destructive': Object.keys(form.formState.errors).length > 0,
+                'text-destructive-text': Object.keys(form.formState.errors).length > 0,
               })}
             >
               {match(validationRule)

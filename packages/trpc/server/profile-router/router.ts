@@ -1,16 +1,13 @@
-import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { SetAvatarImageOptions } from '@documenso/lib/server-only/profile/set-avatar-image';
 import { setAvatarImage } from '@documenso/lib/server-only/profile/set-avatar-image';
 import { deleteUser } from '@documenso/lib/server-only/user/delete-user';
 import { findUserSecurityAuditLogs } from '@documenso/lib/server-only/user/find-user-security-audit-logs';
-import { submitSupportTicket } from '@documenso/lib/server-only/user/submit-support-ticket';
 import { updateProfile } from '@documenso/lib/server-only/user/update-profile';
 
 import { authenticatedProcedure, router } from '../trpc';
 import {
   ZFindUserSecurityAuditLogsSchema,
   ZSetProfileImageMutationSchema,
-  ZSubmitSupportTicketMutationSchema,
   ZUpdateProfileMutationSchema,
 } from './schema';
 
@@ -82,30 +79,4 @@ export const profileRouter = router({
       requestMetadata: ctx.metadata,
     });
   }),
-
-  submitSupportTicket: authenticatedProcedure
-    .input(ZSubmitSupportTicketMutationSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { subject, message, organisationId, teamId } = input;
-
-      const userId = ctx.user.id;
-
-      const parsedTeamId = teamId ? Number(teamId) : null;
-
-      if (typeof parsedTeamId === 'number') {
-        if (Number.isNaN(parsedTeamId) || parsedTeamId <= 0) {
-          throw new AppError(AppErrorCode.INVALID_BODY, {
-            message: 'Invalid team ID provided',
-          });
-        }
-      }
-
-      return await submitSupportTicket({
-        subject,
-        message,
-        userId,
-        organisationId,
-        teamId: parsedTeamId,
-      });
-    }),
 });

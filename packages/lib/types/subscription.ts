@@ -107,7 +107,7 @@ export const SUBSCRIPTION_CLAIM_FEATURE_FLAGS: Record<
   },
   hidePoweredBy: {
     key: 'hidePoweredBy',
-    label: 'Hide Documenso branding by',
+    label: 'Hide TerraPay Sign branding',
   },
   emailDomains: {
     key: 'emailDomains',
@@ -165,6 +165,24 @@ export const SUBSCRIPTION_CLAIM_FEATURE_FLAGS: Record<
     label: 'Disable emails',
   },
 };
+
+/**
+ * Claim flags that nothing in this build reads. They stay in the schema so that
+ * stored claims still parse, but the admin claim forms no longer offer them.
+ */
+export const UNUSED_CLAIM_FLAG_KEYS: ReadonlyArray<keyof TClaimFlags> = [
+  'hipaa',
+  'authenticationPortal',
+  'emailDomains',
+  'cscQesSigning',
+];
+
+/**
+ * The claim flags an admin can switch on or off.
+ */
+export const ADMIN_CLAIM_FEATURE_FLAGS = Object.values(SUBSCRIPTION_CLAIM_FEATURE_FLAGS).filter(
+  ({ key }) => !UNUSED_CLAIM_FLAG_KEYS.includes(key),
+);
 
 export enum INTERNAL_CLAIM_ID {
   FREE = 'free',

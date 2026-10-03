@@ -34,3 +34,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# Signing key material. The builder stage does COPY . . so anything here lands
+# in an image layer. The signing certificate must be supplied at runtime from
+# AWS Secrets Manager, never baked into the image.
+*.p12
+*.pfx
+apps/remix/signing/

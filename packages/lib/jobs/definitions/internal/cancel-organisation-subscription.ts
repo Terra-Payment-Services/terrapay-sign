@@ -32,11 +32,10 @@ export const CANCEL_ORGANISATION_SUBSCRIPTION_JOB_DEFINITION = {
     name: CANCEL_ORGANISATION_SUBSCRIPTION_JOB_DEFINITION_ID,
     schema: CANCEL_ORGANISATION_SUBSCRIPTION_JOB_DEFINITION_SCHEMA,
   },
-  handler: async ({ payload, io }) => {
-    const handler = await import('./cancel-organisation-subscription.handler');
-
-    await handler.run({ payload, io });
-  },
+  // Stripe billing was removed. The definition stays, disabled, so jobs already
+  // queued under this id are skipped rather than failing for want of one.
+  enabled: false,
+  handler: async () => {},
 } as const satisfies JobDefinition<
   typeof CANCEL_ORGANISATION_SUBSCRIPTION_JOB_DEFINITION_ID,
   TCancelOrganisationSubscriptionJobDefinition

@@ -130,3 +130,13 @@ export const isOrganisationUrlProtected = (url: string) => {
 export const ORGANISATION_ACCOUNT_LINK_VERIFICATION_TOKEN_IDENTIFIER = 'organisation-account-link';
 
 export const ORGANISATION_USER_ACCOUNT_TYPE = 'org-oidc';
+
+/**
+ * Envelope item count given to a newly created subscription claim.
+ */
+export const DEFAULT_MINIMUM_ENVELOPE_ITEM_COUNT = 5;
+
+/**
+ * Recipient count given to a newly created subscription claim.
+ */
+export const DEFAULT_RECIPIENT_COUNT = 20;

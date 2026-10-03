@@ -98,7 +98,7 @@ export const DocumentSigningCompleteDialog = ({
   const [showTwoFactorForm, setShowTwoFactorForm] = useState(false);
   const [twoFactorValidationError, setTwoFactorValidationError] = useState<string | null>(null);
 
-  const { derivedRecipientAccessAuth } = useRequiredDocumentSigningAuthContext();
+  const { derivedRecipientAccessAuth, isAccess2FAVerified } = useRequiredDocumentSigningAuthContext();
 
   const { isNameLocked, isEmailLocked } = useEmbedSigningContext() || {};
 
@@ -121,8 +121,8 @@ export const DocumentSigningCompleteDialog = ({
   const isComplete = useMemo(() => !fieldsContainUnsignedRequiredField(fields), [fields]);
 
   const completionRequires2FA = useMemo(
-    () => derivedRecipientAccessAuth.includes('TWO_FACTOR_AUTH'),
-    [derivedRecipientAccessAuth],
+    () => derivedRecipientAccessAuth.includes('TWO_FACTOR_AUTH') && !isAccess2FAVerified,
+    [derivedRecipientAccessAuth, isAccess2FAVerified],
   );
 
   const handleOpenChange = (open: boolean) => {
@@ -170,6 +170,18 @@ export const DocumentSigningCompleteDialog = ({
       await onSignatureComplete(nextSigner, data.accessAuthOptions, recipientOverridePayload);
     } catch (error) {
       const err = AppError.parseError(error);
+
+      // The access code cookie expired while the recipient was signing, so the
+      // server wants the code again.
+      if (
+        AppErrorCode.UNAUTHORIZED === err.code &&
+        derivedRecipientAccessAuth.includes('TWO_FACTOR_AUTH') &&
+        !data.accessAuthOptions
+      ) {
+        setShowTwoFactorForm(true);
+
+        return;
+      }
 
       if (AppErrorCode.TWO_FACTOR_AUTH_FAILED === err.code) {
         // This was a 2FA validation failure - show the 2FA dialog again with error

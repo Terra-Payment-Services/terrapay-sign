@@ -431,6 +431,12 @@ test.describe('document editor', () => {
     });
 
     expect(deletedDocument).toBeNull();
+
+    // A debounced recipient autosave used to fire after the delete, hit the
+    // deleted row, and put a destructive "Save failed" toast over a delete that
+    // had worked. Only one toast is shown at a time, so it replaced the
+    // confirmation the user needed to see.
+    await expect(page.getByText('Save failed')).toBeHidden();
   });
 });
 

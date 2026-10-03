@@ -468,7 +468,7 @@ export const EmbedDirectTemplateClientPage = ({
                     }}
                   />
 
-                  {emailError && <p className="mt-2 font-medium text-destructive text-xs">{emailError}</p>}
+                  {emailError && <p className="mt-2 font-medium text-destructive-text text-xs">{emailError}</p>}
                 </div>
 
                 {hasSignatureField && (

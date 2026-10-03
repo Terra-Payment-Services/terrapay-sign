@@ -15,7 +15,9 @@ import { Hono } from 'hono';
 export const tsRestHonoApp = new Hono<HonoEnv>();
 
 tsRestHonoApp
-  .get('/openapi', (c) => c.redirect('https://openapi-v1.documenso.com'))
+  // The upstream redirect to the vendor's hosted API reference was removed so that a
+  // self-hosted instance never sends its users to a third party. Serve our own document instead.
+  .get('/openapi', (c) => c.redirect('/api/v1/openapi.json'))
   .get('/openapi.json', (c) => c.json(OpenAPIV1))
   .get('/me', async (c) => testCredentialsHandler(c.req.raw));
 

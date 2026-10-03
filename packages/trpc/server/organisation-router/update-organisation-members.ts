@@ -1,7 +1,9 @@
 import { ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/organisations';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { generateDatabaseId } from '@documenso/lib/universal/id';
+import { applyMemberGroupRoleChange } from '@documenso/lib/server-only/organisation/apply-member-group-role-change';
+import { assertOrganisationRoleAssignable } from '@documenso/lib/server-only/organisation/assert-organisation-role-assignable';
 import {
+  assertOrganisationRoleChangeTakesEffect,
   buildOrganisationWhereQuery,
   getHighestOrganisationRoleInGroup,
   isOrganisationRoleWithinUserHierarchy,
@@ -114,8 +116,27 @@ export const updateOrganisationMemberRoute = authenticatedProcedure
       });
     }
 
-    const currentMemberGroup = organisation.groups.find(
-      (group) => group.organisationRole === currentMemberToUpdateOrganisationRole,
+    // The two checks above read the caller's role out of their internal group,
+    // which is the stricter of the two readings and is kept. This one goes
+    // through the shared rule, which reads the highest role across every group
+    // the caller belongs to, and which also refuses a caller raising their own
+    // role. Both have to pass.
+    await assertOrganisationRoleAssignable({
+      organisationId,
+      userId,
+      roleToAssign: data.role,
+      targetUserId: organisationMemberToUpdate.userId,
+      currentTargetRole: currentMemberToUpdateOrganisationRole,
+    });
+
+    const memberToUpdateGroups = organisationMemberToUpdate.organisationGroupMembers.map(({ group }) => group);
+
+    // Read the internal group out of the member's own memberships. Matching the
+    // organisation's internal groups against their highest role picked a group
+    // they were not in whenever that role came from a custom one, and the delete
+    // below then failed on a membership row that never existed.
+    const currentMemberGroup = memberToUpdateGroups.find(
+      (group) => group.type === OrganisationGroupType.INTERNAL_ORGANISATION,
     );
 
     const newMemberGroup = organisation.groups.find((group) => group.organisationRole === data.role);
@@ -128,6 +149,16 @@ export const updateOrganisationMemberRoute = authenticatedProcedure
       });
     }
 
+    // Only the internal group is rewritten below, so a role conferred by any
+    // other group survives the write. Saying the demotion worked when the person
+    // keeps administrator rights through a custom group is the worst outcome
+    // available here, since an organisation administrator can countersign and
+    // read every document. Refuse and name the groups instead.
+    assertOrganisationRoleChangeTakesEffect({
+      requestedRole: data.role,
+      retainedGroups: memberToUpdateGroups.filter((group) => group.id !== currentMemberGroup.id),
+    });
+
     if (!newMemberGroup) {
       console.error('[CRITICAL]: Missing internal group');
 
@@ -136,23 +167,15 @@ export const updateOrganisationMemberRoute = authenticatedProcedure
       });
     }
 
-    // Switch member to new internal group role.
-    await prisma.$transaction(async (tx) => {
-      await tx.organisationGroupMember.delete({
-        where: {
-          organisationMemberId_groupId: {
-            organisationMemberId: organisationMemberToUpdate.id,
-            groupId: currentMemberGroup.id,
-          },
-        },
-      });
-
-      await tx.organisationGroupMember.create({
-        data: {
-          id: generateDatabaseId('group_member'),
-          organisationMemberId: organisationMemberToUpdate.id,
-          groupId: newMemberGroup.id,
-        },
-      });
+    // Switch member to new internal group role. The check above was answered
+    // from groups read before any of this, so the write carries both that group
+    // list and the role it was answered for. It refuses if the member has joined
+    // another group since, or if one of these was promoted.
+    await applyMemberGroupRoleChange({
+      organisationMemberId: organisationMemberToUpdate.id,
+      observedGroupIds: memberToUpdateGroups.map((group) => group.id),
+      requestedRole: data.role,
+      groupIdToRemove: currentMemberGroup.id,
+      groupIdToAdd: newMemberGroup.id,
     });
   });

@@ -20,6 +20,64 @@ import { formatDocumentsPath } from '../../../utils/teams';
 import type { JobRunIO } from '../../client/_internal/job';
 import type { TSendDocumentCompletedEmailsJobDefinition } from './send-document-completed-emails';
 
+/**
+ * Completion emails for an executed contract, sent to the owner and to every
+ * recipient.
+ *
+ * ## Which way this fails
+ *
+ * Sending an email and recording that it was sent cannot be made one atomic
+ * step, so one of two bad outcomes has to be accepted. This code accepts the
+ * duplicate. Writing a marker ahead of the send would mean a transport failure
+ * right afterwards leaves a recipient marked as mailed when nothing reached
+ * them, and nobody finds out, because the failure was recorded as a success.
+ * Transports fail often, through throttling or a reset connection. The write
+ * that follows a successful send fails only when the database has gone away,
+ * and that fails the whole job anyway. So every marker here goes after the
+ * send, and a rare second copy is the price of never losing a first one.
+ *
+ * ## Why the audit row and not only the job marker
+ *
+ * `runTask` namespaces its markers by job id. A second enqueue of this job for
+ * the same envelope, which a retried parent or a duplicated trigger produces,
+ * starts with a clean set of markers and mails everybody all over again. The
+ * audit row this handler writes after each send does not move with the job, so
+ * it is read first and a party who already holds their copy is passed over.
+ * That covers the narrower case too, where the marker write fails after a send
+ * that succeeded.
+ *
+ * What it cannot cover is the audit insert failing after the send. Nothing
+ * can: the email has gone and there is no record that it went. That window is
+ * one database write wide and it fails towards the duplicate, which is the
+ * side chosen above.
+ */
+
+/**
+ * Has the completed-document email for one party already gone out for this
+ * envelope?
+ *
+ * Read from the audit log rather than from the job runtime, because the audit
+ * log survives the job that wrote it. `recipientRole` is part of the test so
+ * that the owner, whose row carries a user id, cannot be confused with a
+ * recipient whose row carries a recipient id.
+ */
+const hasCompletionEmailBeenSent = async (envelopeId: string, recipientId: number, recipientRole: string) => {
+  const sent = await prisma.documentAuditLog.findFirst({
+    where: {
+      envelopeId,
+      type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT,
+      AND: [
+        { data: { path: ['emailType'], equals: 'DOCUMENT_COMPLETED' } },
+        { data: { path: ['recipientId'], equals: recipientId } },
+        { data: { path: ['recipientRole'], equals: recipientRole } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  return sent !== null;
+};
+
 export const run = async ({ payload, io }: { payload: TSendDocumentCompletedEmailsJobDefinition; io: JobRunIO }) => {
   const { envelopeId, requestMetadata } = payload;
 
@@ -121,107 +179,18 @@ export const run = async ({ payload, io }: { payload: TSendDocumentCompletedEmai
     isOwnerDocumentCompletedEmailEnabled &&
     (!envelope.recipients.find((recipient) => recipient.email === owner.email) || !isDocumentCompletedEmailEnabled)
   ) {
-    const template = createElement(DocumentCompletedEmailTemplate, {
-      documentName: envelope.title,
-      assetBaseUrl,
-      downloadLink: documentOwnerDownloadLink,
-    });
-
-    const [html, text] = await Promise.all([
-      renderEmailWithI18N(template, { lang: emailLanguage, branding }),
-      renderEmailWithI18N(template, {
-        lang: emailLanguage,
-        branding,
-        plainText: true,
-      }),
-    ]);
-
-    const i18n = await getI18nInstance(emailLanguage);
-
-    await emailTransport.sendMail({
-      to: [
-        {
-          name: owner.name || '',
-          address: owner.email,
-        },
-      ],
-      from: senderEmail,
-      replyTo: replyToEmail,
-      subject: i18n._(msg`Signing Complete!`),
-      html,
-      text,
-      attachments: completedDocumentEmailAttachments,
-    });
-
-    await prisma.documentAuditLog.create({
-      data: createDocumentAuditLogData({
-        type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT,
-        envelopeId: envelope.id,
-        user: null,
-        requestMetadata,
-        data: {
-          emailType: 'DOCUMENT_COMPLETED',
-          recipientEmail: owner.email,
-          recipientName: owner.name ?? '',
-          recipientId: owner.id,
-          recipientRole: 'OWNER',
-          isResending: false,
-        },
-      }),
-    });
-  }
-
-  if (!isDocumentCompletedEmailEnabled) {
-    return;
-  }
-
-  const recipientsToNotify = envelope.recipients.filter((recipient) => isRecipientEmailValidForSending(recipient));
-
-  await Promise.all(
-    recipientsToNotify.map(async (recipient) => {
-      // A CC recipient never asked to be part of this document, so their completion
-      // email is effectively unsolicited. Meter it against the organisation email
-      // quota/stats so it is correctly logged.
-      if (recipient.role === RecipientRole.CC) {
-        try {
-          await assertOrganisationRatesAndLimits({
-            organisationId,
-            organisationClaim: claims,
-            type: 'email',
-            count: 1,
-          });
-        } catch (_err) {
-          io.logger.warn({
-            msg: 'CC completion email dropped: org email limit exceeded',
-            organisationId,
-            recipientId: recipient.id,
-            envelopeId: envelope.id,
-          });
-
-          // On rate/quota exceeded, early return to allow other recipients to be processed.
-          return;
-        }
+    // One task per email, so a retry of this job resumes where it stopped.
+    // Without it a transport failure part way through sends everybody who
+    // already had their copy a second one.
+    await io.runTask('send-document-completed-emails:owner', async () => {
+      if (await hasCompletionEmailBeenSent(envelope.id, owner.id, 'OWNER')) {
+        return;
       }
-
-      const customEmailTemplate = {
-        'signer.name': recipient.name,
-        'signer.email': recipient.email,
-        'document.name': envelope.title,
-      };
-
-      const downloadLink = `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}/complete`;
-      const reportUrl =
-        recipient.role === RecipientRole.CC ? `${NEXT_PUBLIC_WEBAPP_URL()}/report/${recipient.token}` : undefined;
 
       const template = createElement(DocumentCompletedEmailTemplate, {
         documentName: envelope.title,
         assetBaseUrl,
-        downloadLink: recipient.email === owner.email ? documentOwnerDownloadLink : downloadLink,
-        customBody:
-          isDirectTemplate && envelope.documentMeta?.message
-            ? renderCustomEmailTemplate(envelope.documentMeta.message, customEmailTemplate)
-            : undefined,
-        reportUrl,
+        downloadLink: documentOwnerDownloadLink,
       });
 
       const [html, text] = await Promise.all([
@@ -238,16 +207,13 @@ export const run = async ({ payload, io }: { payload: TSendDocumentCompletedEmai
       await emailTransport.sendMail({
         to: [
           {
-            name: recipient.name,
-            address: recipient.email,
+            name: owner.name || '',
+            address: owner.email,
           },
         ],
         from: senderEmail,
         replyTo: replyToEmail,
-        subject:
-          isDirectTemplate && envelope.documentMeta?.subject
-            ? renderCustomEmailTemplate(envelope.documentMeta.subject, customEmailTemplate)
-            : i18n._(msg`Signing Complete!`),
+        subject: i18n._(msg`Signing Complete!`),
         html,
         text,
         attachments: completedDocumentEmailAttachments,
@@ -261,13 +227,126 @@ export const run = async ({ payload, io }: { payload: TSendDocumentCompletedEmai
           requestMetadata,
           data: {
             emailType: 'DOCUMENT_COMPLETED',
-            recipientEmail: recipient.email,
-            recipientName: recipient.name,
-            recipientId: recipient.id,
-            recipientRole: recipient.role,
+            recipientEmail: owner.email,
+            recipientName: owner.name ?? '',
+            recipientId: owner.id,
+            recipientRole: 'OWNER',
             isResending: false,
           },
         }),
+      });
+    });
+  }
+
+  if (!isDocumentCompletedEmailEnabled) {
+    return;
+  }
+
+  const recipientsToNotify = envelope.recipients.filter((recipient) => isRecipientEmailValidForSending(recipient));
+
+  await Promise.all(
+    recipientsToNotify.map(async (recipient) => {
+      // One task per recipient, keyed on the recipient rather than the batch.
+      // The job system retries this handler from the top, so without a marker
+      // of its own a transport failure on the fifth signer sends the first four
+      // their completion email all over again.
+      await io.runTask(`send-document-completed-emails:recipient:${recipient.id}`, async () => {
+        if (await hasCompletionEmailBeenSent(envelope.id, recipient.id, recipient.role)) {
+          return;
+        }
+
+        // A CC recipient never asked to be part of this document, so their completion
+        // email is effectively unsolicited. Meter it against the organisation email
+        // quota/stats so it is correctly logged.
+        if (recipient.role === RecipientRole.CC) {
+          try {
+            await assertOrganisationRatesAndLimits({
+              organisationId,
+              organisationClaim: claims,
+              type: 'email',
+              count: 1,
+            });
+          } catch (_err) {
+            io.logger.warn({
+              msg: 'CC completion email dropped: org email limit exceeded',
+              organisationId,
+              recipientId: recipient.id,
+              envelopeId: envelope.id,
+            });
+
+            // On rate/quota exceeded, early return to allow other recipients to be processed.
+            // The task is marked done, so a later retry of this job does not
+            // meter the same CC recipient against the quota a second time.
+            return;
+          }
+        }
+
+        const customEmailTemplate = {
+          'signer.name': recipient.name,
+          'signer.email': recipient.email,
+          'document.name': envelope.title,
+        };
+
+        const downloadLink = `${NEXT_PUBLIC_WEBAPP_URL()}/sign/${recipient.token}/complete`;
+        const reportUrl =
+          recipient.role === RecipientRole.CC ? `${NEXT_PUBLIC_WEBAPP_URL()}/report/${recipient.token}` : undefined;
+
+        const template = createElement(DocumentCompletedEmailTemplate, {
+          documentName: envelope.title,
+          assetBaseUrl,
+          downloadLink: recipient.email === owner.email ? documentOwnerDownloadLink : downloadLink,
+          customBody:
+            isDirectTemplate && envelope.documentMeta?.message
+              ? renderCustomEmailTemplate(envelope.documentMeta.message, customEmailTemplate)
+              : undefined,
+          reportUrl,
+        });
+
+        const [html, text] = await Promise.all([
+          renderEmailWithI18N(template, { lang: emailLanguage, branding }),
+          renderEmailWithI18N(template, {
+            lang: emailLanguage,
+            branding,
+            plainText: true,
+          }),
+        ]);
+
+        const i18n = await getI18nInstance(emailLanguage);
+
+        await emailTransport.sendMail({
+          to: [
+            {
+              name: recipient.name,
+              address: recipient.email,
+            },
+          ],
+          from: senderEmail,
+          replyTo: replyToEmail,
+          subject:
+            isDirectTemplate && envelope.documentMeta?.subject
+              ? renderCustomEmailTemplate(envelope.documentMeta.subject, customEmailTemplate)
+              : i18n._(msg`Signing Complete!`),
+          html,
+          text,
+          attachments: completedDocumentEmailAttachments,
+        });
+
+        await prisma.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT,
+            envelopeId: envelope.id,
+            user: null,
+            requestMetadata,
+            data: {
+              emailType: 'DOCUMENT_COMPLETED',
+              recipientEmail: recipient.email,
+              recipientName: recipient.name,
+              recipientId: recipient.id,
+              recipientRole: recipient.role,
+              isResending: false,
+            },
+          }),
+        });
       });
     }),
   );

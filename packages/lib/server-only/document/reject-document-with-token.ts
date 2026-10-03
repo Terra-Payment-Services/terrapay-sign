@@ -17,15 +17,35 @@ import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
 import { assertRecipientNotExpired } from '../../utils/recipients';
+import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
+import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
 
 export type RejectDocumentWithTokenOptions = {
   token: string;
   id: EnvelopeIdOptions;
   reason: string;
+
+  /**
+   * The ID of the signed-in user making the request, if any.
+   */
+  userId?: number;
+
+  /**
+   * Whether the request carries the recipient's access code cookie. A
+   * recipient whose access auth is an emailed code cannot reject without it.
+   */
+  isAccess2FAVerified?: boolean;
   requestMetadata?: RequestMetadata;
 };
 
-export async function rejectDocumentWithToken({ token, id, reason, requestMetadata }: RejectDocumentWithTokenOptions) {
+export async function rejectDocumentWithToken({
+  token,
+  id,
+  reason,
+  userId,
+  isAccess2FAVerified = false,
+  requestMetadata,
+}: RejectDocumentWithTokenOptions) {
   // Find the recipient and document in a single query
   const recipient = await prisma.recipient.findFirst({
     where: {
@@ -51,7 +71,32 @@ export async function rejectDocumentWithToken({ token, id, reason, requestMetada
     });
   }
 
+  // A signing link stays valid after it has been used, so a recipient who has
+  // signed can reopen it and reach the reject button. Rejecting writes a fresh
+  // `signedAt` and cascades the signature row away, which destroys the evidence
+  // that they signed and when. Their decision is already recorded; refuse to
+  // let a second one overwrite it. `rejectDocumentOnBehalfOf` carries the same
+  // guard.
+  if (recipient.signingStatus !== SigningStatus.NOT_SIGNED) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Recipient ${recipient.id} has already actioned this document`,
+    });
+  }
+
   assertRecipientNotExpired(recipient);
+
+  await assertRecipientAccessAuthorized({
+    documentAuthOptions: envelope.authOptions,
+    recipient,
+    userId,
+  });
+
+  if (isRecipientAccess2FARequired({ documentAuthOptions: envelope.authOptions, recipient }) && !isAccess2FAVerified) {
+    throw new AppError(AppErrorCode.UNAUTHORIZED, {
+      message: 'The access code must be entered before rejecting',
+      statusCode: 401,
+    });
+  }
 
   // Update the recipient status to rejected
   const [updatedRecipient] = await prisma.$transaction([

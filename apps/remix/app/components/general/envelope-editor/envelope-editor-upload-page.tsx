@@ -1,8 +1,7 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import { useEnvelopeAutosave } from '@documenso/lib/client-only/hooks/use-envelope-autosave';
+import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
 import { useCurrentEnvelopeEditor } from '@documenso/lib/client-only/providers/envelope-editor-provider';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import type { TEditorEnvelope } from '@documenso/lib/types/envelope-editor';
 import { nanoid } from '@documenso/lib/universal/id';
@@ -42,11 +41,10 @@ type LocalFile = {
 };
 
 export const EnvelopeEditorUploadPage = () => {
-  const organisation = useCurrentOrganisation();
   const cspNonce = useCspNonce();
 
   const { t, i18n } = useLingui();
-  const { maximumEnvelopeItemCount, remaining } = useLimits();
+  const maximumEnvelopeItemCount = useMaximumEnvelopeItemCount();
   const { toast } = useToast();
   const analytics = useAnalytics();
 
@@ -420,10 +418,6 @@ export const EnvelopeEditorUploadPage = () => {
       return msg`Cannot upload items after the document has been sent`;
     }
 
-    if (organisation.subscription && remaining.documents === 0) {
-      return msg`Document upload disabled due to unpaid invoices`;
-    }
-
     if (maximumEnvelopeItemCount <= localFiles.length) {
       return msg({
         message: plural(maximumEnvelopeItemCount, {
@@ -435,7 +429,7 @@ export const EnvelopeEditorUploadPage = () => {
 
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localFiles.length, maximumEnvelopeItemCount, remaining.documents]);
+  }, [localFiles.length, maximumEnvelopeItemCount]);
 
   const onFileDropRejected = (fileRejections: FileRejection[]) => {
     const maxItemsReached = fileRejections.some((fileRejection) =>

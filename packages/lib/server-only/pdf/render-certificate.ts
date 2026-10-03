@@ -16,7 +16,7 @@ import { renderSVG } from 'uqr';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
 import { APP_I18N_OPTIONS } from '../../constants/i18n';
-import { getSignatureFontFamily } from '../../constants/pdf';
+import { getSignatureFontFamily, PDF_BODY_FONT_FAMILY, PDF_DISPLAY_FONT_FAMILY } from '../../constants/pdf';
 import { RECIPIENT_ROLE_SIGNING_REASONS, RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
 import { svgToPng } from '../../utils/images/svg-to-png';
@@ -75,14 +75,16 @@ const getDevice = (userAgent?: string | null): string => {
   return `${result.os.name} - ${result.browser.name} ${result.browser.version}`;
 };
 
-const textMutedForegroundLight = '#929DAE';
-const textForeground = '#000';
-const textMutedForeground = '#64748B';
-const textRejectedRed = '#dc2626';
+const textMutedForegroundLight = '#8b92a0';
+const textForeground = '#213871';
+const textMutedForeground = '#6e7586';
+const textRejectedRed = '#EB5E57';
 const textBase = 10;
 const textSm = 9;
 const textXs = 8;
 const fontMedium = '500';
+const fontBody = PDF_BODY_FONT_FAMILY;
+const fontDisplay = PDF_DISPLAY_FONT_FAMILY;
 
 const columnWidthPercentages = [30, 30, 40];
 const rowPadding = 12;
@@ -117,7 +119,7 @@ const renderLabelAndText = (options: RenderLabelAndTextOptions) => {
     y: 0,
     text: `${options.label}: `,
     fontStyle: fontMedium,
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fill: labelFill,
     fontSize: textSm,
   });
@@ -128,7 +130,7 @@ const renderLabelAndText = (options: RenderLabelAndTextOptions) => {
     x: label.width(),
     y: 0,
     width: width - label.width(),
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     text: options.text,
     fill: valueFill,
     wrap: 'char',
@@ -155,7 +157,7 @@ const renderRowHeader = (options: RenderRowHeaderOptions) => {
   const headerRow = new Konva.Group();
 
   const headerFontStyling = {
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fontSize: 11,
     fontStyle: fontMedium,
     verticalAlign: 'middle',
@@ -211,7 +213,7 @@ const renderColumnOne = (options: RenderColumnOptions) => {
 
   const textFontStyling = {
     x: 0,
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     wrap: 'char',
     lineHeight: 1.2,
     fill: textMutedForeground,
@@ -333,7 +335,7 @@ const renderColumnTwo = (options: RenderColumnOptions) => {
       y: 2,
       width: maxSignatureWidth,
       height: signatureHeight,
-      stroke: 'rgba(122, 196, 85, 0.6)',
+      stroke: 'rgba(60, 176, 97, 0.6)',
       strokeWidth: 1,
       cornerRadius: 8,
     });
@@ -344,7 +346,7 @@ const renderColumnTwo = (options: RenderColumnOptions) => {
       y: 0,
       width: maxSignatureWidth + 4,
       height: signatureHeight + 4,
-      stroke: 'rgba(122, 196, 85, 0.1)',
+      stroke: 'rgba(60, 176, 97, 0.1)',
       strokeWidth: 4,
       cornerRadius: 8,
     });
@@ -357,7 +359,7 @@ const renderColumnTwo = (options: RenderColumnOptions) => {
       text: `${i18n._(msg`Signature ID`)}:`,
       fill: textMutedForeground,
       width: columnWidth,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textSm,
       fontStyle: fontMedium,
       lineHeight: 1.4,
@@ -381,7 +383,7 @@ const renderColumnTwo = (options: RenderColumnOptions) => {
       y: 0,
       text: 'N/A',
       fill: textMutedForeground,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textSm,
     });
     column.add(naText);
@@ -510,7 +512,7 @@ const renderRow = (options: RenderRowOptions) => {
   // Draw top border line.
   const borderLine = new Konva.Line({
     points: [0, 0, width + rowPadding * 2, 0],
-    stroke: '#e5e7eb',
+    stroke: '#dedfe2',
     strokeWidth: 1,
   });
 
@@ -575,7 +577,7 @@ const renderBranding = async ({ qrToken, i18n }: { qrToken: string | null; i18n:
     verticalAlign: 'middle',
     text: i18n._(msg`Signing certificate provided by`) + ':',
     fontStyle: fontMedium,
-    fontFamily: 'Inter',
+    fontFamily: fontBody,
     fontSize: textSm,
     height: brandingHeight,
   });
@@ -703,7 +705,7 @@ const renderTables = (options: RenderTablesOptions) => {
       y: tableClientRect.y,
       width: tableClientRect.width,
       height: tableClientRect.height,
-      stroke: '#e5e7eb',
+      stroke: '#dedfe2',
       strokeWidth: 1.5,
       cornerRadius: 8,
     });
@@ -775,7 +777,7 @@ export async function renderCertificate({
       height: pageTopMargin,
       verticalAlign: 'middle',
       text: i18n._(msg`Signing Certificate`),
-      fontFamily: 'Inter',
+      fontFamily: fontDisplay,
       fontSize: titleFontSize,
       fontStyle: '700',
     });
@@ -807,7 +809,7 @@ export async function renderCertificate({
       x: margin,
       y: pageHeight - textXs - 10,
       text: `${i18n._(msg`Envelope ID`)}: ${envelopeId}`,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textXs,
       fill: textMutedForegroundLight,
     });
@@ -835,7 +837,7 @@ export async function renderCertificate({
       x: margin,
       y: pageHeight - textXs - 10,
       text: `${i18n._(msg`Envelope ID`)}: ${envelopeId}`,
-      fontFamily: 'Inter',
+      fontFamily: fontBody,
       fontSize: textXs,
       fill: textMutedForegroundLight,
     });

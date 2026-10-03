@@ -1,5 +1,5 @@
-import { prepareCscRecipientSigning } from '@documenso/ee/server-only/signing/csc/prepare-recipient-signing';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { hasRecipientAccess2FACookie } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { completeDocumentWithToken } from '@documenso/lib/server-only/document/complete-document-with-token';
 import { rejectDocumentWithToken } from '@documenso/lib/server-only/document/reject-document-with-token';
 import { createEnvelopeRecipients } from '@documenso/lib/server-only/recipient/create-envelope-recipients';
@@ -8,7 +8,7 @@ import { getRecipientById } from '@documenso/lib/server-only/recipient/get-recip
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { setTemplateRecipients } from '@documenso/lib/server-only/recipient/set-template-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
-import { isTspEnvelope } from '@documenso/lib/types/signature-level';
+import { SignatureLevel } from '@documenso/lib/types/signature-level';
 import { unsafeBuildEnvelopeIdQuery } from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
 import { EnvelopeType } from '@prisma/client';
@@ -599,16 +599,21 @@ export const recipientRouter = router({
           },
         });
 
-        // Branch on TSP envelopes before any SES side effects: TSP recipients
-        // can't complete via this route — they go through the CSC sync sign
-        // flow (`enterprise.csc.signEnvelope`). This route returns the redirect URL
-        // for the credential-scope OAuth round-trip.
+        // Check the signature level before any side effects. Only SES envelopes
+        // can be completed: remote signing through a trust service provider has
+        // been removed, and completing an AES or QES envelope here would leave
+        // it for a seal that refuses it.
         const envelope = await prisma.envelope.findFirst({
           where: {
             ...unsafeBuildEnvelopeIdQuery({ type: 'documentId', id: documentId }, EnvelopeType.DOCUMENT),
             recipients: { some: { token } },
           },
-          select: { signatureLevel: true, internalVersion: true },
+          select: {
+            id: true,
+            signatureLevel: true,
+            internalVersion: true,
+            recipients: { where: { token }, select: { id: true } },
+          },
         });
 
         // The most common cause is a stale signing page: the document was
@@ -621,10 +626,15 @@ export const recipientRouter = router({
           });
         }
 
-        if (isTspEnvelope(envelope)) {
-          return await prepareCscRecipientSigning({
-            recipientToken: token,
-            requestMetadata: ctx.metadata.requestMetadata,
+        if (envelope.signatureLevel !== SignatureLevel.SES) {
+          ctx.logger.error({
+            message: 'Refusing to complete an envelope that is not SES',
+            envelopeId: envelope.id,
+            signatureLevel: envelope.signatureLevel,
+          });
+
+          throw new AppError(AppErrorCode.CSC_INSTANCE_MODE_MISMATCH, {
+            message: `Envelope ${envelope.id} has signature level ${envelope.signatureLevel}, which this instance cannot complete.`,
           });
         }
 
@@ -635,6 +645,10 @@ export const recipientRouter = router({
             id: documentId,
           },
           accessAuthOptions,
+          isAccess2FAVerified: await hasRecipientAccess2FACookie({
+            headers: ctx.req.headers,
+            recipientId: envelope.recipients[0].id,
+          }),
           nextSigner,
           recipientOverride,
           userId: ctx.user?.id,
@@ -674,6 +688,8 @@ export const recipientRouter = router({
   rejectDocumentWithToken: procedure.input(ZRejectDocumentWithTokenMutationSchema).mutation(async ({ input, ctx }) => {
     const { token, documentId, reason } = input;
 
+    const recipient = await prisma.recipient.findFirst({ where: { token }, select: { id: true } });
+
     ctx.logger.info({
       input: {
         documentId,
@@ -687,6 +703,10 @@ export const recipientRouter = router({
         id: documentId,
       },
       reason,
+      userId: ctx.user?.id,
+      isAccess2FAVerified: recipient
+        ? await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id })
+        : false,
       requestMetadata: ctx.metadata.requestMetadata,
     });
   }),

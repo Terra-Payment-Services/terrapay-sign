@@ -91,6 +91,24 @@ export function useEnvelopeAutosave<T>(saveFn: (data: T) => Promise<void>, delay
     await commit();
   }, [commit]);
 
+  /**
+   * Drop the queued edit and the pending timer without saving.
+   *
+   * For when the thing being edited is about to stop existing, such as the
+   * envelope being deleted. Without this the debounce fires afterwards, the
+   * save hits a row that has gone, and the editor tells the user their changes
+   * could not be saved on top of a delete that worked perfectly well.
+   */
+  const cancel = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    pendingRef.current = null;
+    setIsPending(false);
+  }, []);
+
   // Last-ditch attempt to save if the tab closes with unsaved edits.
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -104,5 +122,5 @@ export function useEnvelopeAutosave<T>(saveFn: (data: T) => Promise<void>, delay
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [flush]);
 
-  return { triggerSave, flush, isPending, isCommiting };
+  return { triggerSave, flush, cancel, isPending, isCommiting };
 }

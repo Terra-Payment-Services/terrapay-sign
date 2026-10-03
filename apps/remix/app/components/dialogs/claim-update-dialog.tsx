@@ -1,4 +1,3 @@
-import type { TLicenseClaim } from '@documenso/lib/types/license';
 import { trpc } from '@documenso/trpc/react';
 import type { TFindSubscriptionClaimsResponse } from '@documenso/trpc/server/admin-router/find-subscription-claims.types';
 import { Button } from '@documenso/ui/primitives/button';
@@ -21,10 +20,9 @@ import { SubscriptionClaimForm } from '../forms/subscription-claim-form';
 export type ClaimUpdateDialogProps = {
   claim: TFindSubscriptionClaimsResponse['data'][number];
   trigger: React.ReactNode;
-  licenseFlags?: TLicenseClaim;
 };
 
-export const ClaimUpdateDialog = ({ claim, trigger, licenseFlags }: ClaimUpdateDialogProps) => {
+export const ClaimUpdateDialog = ({ claim, trigger }: ClaimUpdateDialogProps) => {
   const { t } = useLingui();
   const { toast } = useToast();
 
@@ -72,7 +70,6 @@ export const ClaimUpdateDialog = ({ claim, trigger, licenseFlags }: ClaimUpdateD
               backportEmailTransport,
             })
           }
-          licenseFlags={licenseFlags}
           formSubmitTrigger={
             <>
               <div className="flex items-center space-x-2">

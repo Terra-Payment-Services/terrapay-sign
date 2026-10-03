@@ -1,6 +1,10 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { applyMemberGroupRoleChange } from '@documenso/lib/server-only/organisation/apply-member-group-role-change';
 import { generateDatabaseId } from '@documenso/lib/universal/id';
-import { getHighestOrganisationRoleInGroup } from '@documenso/lib/utils/organisations';
+import {
+  assertOrganisationRoleChangeTakesEffect,
+  getHighestOrganisationRoleInGroup,
+} from '@documenso/lib/utils/organisations';
 import { prisma } from '@documenso/prisma';
 import { OrganisationGroupType, OrganisationMemberRole } from '@prisma/client';
 
@@ -72,9 +76,15 @@ export const updateOrganisationMemberRoleRoute = adminProcedure
       });
     }
 
-    const currentOrganisationRole = getHighestOrganisationRoleInGroup(
-      member.organisationGroupMembers.flatMap((member) => member.group),
-    );
+    const memberGroups = member.organisationGroupMembers.map(({ group }) => group);
+
+    const currentOrganisationRole = getHighestOrganisationRoleInGroup(memberGroups);
+
+    // Read the internal group out of the member's own memberships. Matching the
+    // organisation's internal groups against their highest role picked a group
+    // they were not in whenever that role came from a custom one, and the delete
+    // below then failed on a membership row that never existed.
+    const currentMemberGroup = memberGroups.find((group) => group.type === OrganisationGroupType.INTERNAL_ORGANISATION);
 
     if (role === 'OWNER') {
       if (organisation.ownerUserId === userId) {
@@ -82,10 +92,6 @@ export const updateOrganisationMemberRoleRoute = adminProcedure
           message: 'User is already the owner of this organisation',
         });
       }
-
-      const currentMemberGroup = organisation.groups.find(
-        (group) => group.organisationRole === currentOrganisationRole,
-      );
 
       const adminGroup = organisation.groups.find((group) => group.organisationRole === OrganisationMemberRole.ADMIN);
 
@@ -162,8 +168,6 @@ export const updateOrganisationMemberRoleRoute = adminProcedure
       });
     }
 
-    const currentMemberGroup = organisation.groups.find((group) => group.organisationRole === currentOrganisationRole);
-
     const newMemberGroup = organisation.groups.find((group) => group.organisationRole === targetRole);
 
     if (!currentMemberGroup) {
@@ -192,22 +196,25 @@ export const updateOrganisationMemberRoleRoute = adminProcedure
       });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.organisationGroupMember.delete({
-        where: {
-          organisationMemberId_groupId: {
-            organisationMemberId: member.id,
-            groupId: currentMemberGroup.id,
-          },
-        },
-      });
+    // Only the internal group is rewritten below, so a role conferred by any
+    // other group survives the write. An administrator told the demotion worked
+    // would have no reason to look further, and on this platform that is the
+    // difference between believing signing authority is withdrawn and having
+    // withdrawn it. Refuse and name the groups instead.
+    assertOrganisationRoleChangeTakesEffect({
+      requestedRole: targetRole,
+      retainedGroups: memberGroups.filter((group) => group.id !== currentMemberGroup.id),
+    });
 
-      await tx.organisationGroupMember.create({
-        data: {
-          id: generateDatabaseId('group_member'),
-          organisationMemberId: member.id,
-          groupId: newMemberGroup.id,
-        },
-      });
+    // The check above was answered from groups read before any of this, so the
+    // write carries both that group list and the role it was answered for. It
+    // refuses if the member has joined another group since, or if one of these
+    // was promoted.
+    await applyMemberGroupRoleChange({
+      organisationMemberId: member.id,
+      observedGroupIds: memberGroups.map((group) => group.id),
+      requestedRole: targetRole,
+      groupIdToRemove: currentMemberGroup.id,
+      groupIdToAdd: newMemberGroup.id,
     });
   });

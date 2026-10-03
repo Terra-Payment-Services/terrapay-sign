@@ -26,4 +26,13 @@ export abstract class BaseJobProvider {
   public startCron(): void {
     // No-op by default — providers override if needed.
   }
+
+  /**
+   * Stop taking jobs and wait for the running ones to finish, for a clean shutdown.
+   *
+   * No-op for providers that run no worker in this process.
+   */
+  public async close(): Promise<void> {
+    // No-op by default — providers override if needed.
+  }
 }

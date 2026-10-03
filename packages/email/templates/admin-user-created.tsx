@@ -13,7 +13,7 @@ export const AdminUserCreatedTemplate = ({
 }: TemplateAdminUserCreatedProps) => {
   const { _ } = useLingui();
 
-  const previewText = msg`Set your password for Documenso`;
+  const previewText = msg`Set your password for TerraPay Sign`;
 
   return (
     <Html>
@@ -24,7 +24,11 @@ export const AdminUserCreatedTemplate = ({
         <Section>
           <Container className="mx-auto mt-8 mb-2 max-w-xl rounded-lg border border-border border-solid p-4 backdrop-blur-sm">
             <Section>
-              <Img src={getEmailAssetUrl(assetBaseUrl, 'static/logo.png')} alt="Documenso Logo" className="mb-4 h-6" />
+              <Img
+                src={getEmailAssetUrl(assetBaseUrl, 'static/logo.png')}
+                alt="TerraPay Sign Logo"
+                className="mb-4 h-6"
+              />
 
               <TemplateAdminUserCreated resetPasswordLink={resetPasswordLink} assetBaseUrl={assetBaseUrl} />
             </Section>

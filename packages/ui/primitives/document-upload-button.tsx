@@ -1,19 +1,15 @@
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { getAllowedUploadMimeTypes } from '@documenso/lib/constants/document-conversion';
 import { megabytesToBytes } from '@documenso/lib/universal/unit-convertions';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
 import { EnvelopeType } from '@prisma/client';
 import { Upload } from 'lucide-react';
 import type { DropEvent, FileRejection } from 'react-dropzone';
 import { useDropzone } from 'react-dropzone';
-import { Link } from 'react-router';
 
 import { Button } from './button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 
 export type DocumentUploadButtonProps = {
   className?: string;
@@ -43,8 +39,6 @@ export const DocumentUploadButton = ({
 }: DocumentUploadButtonProps) => {
   const { _ } = useLingui();
 
-  const organisation = useCurrentOrganisation();
-
   const { getRootProps, getInputProps } = useDropzone({
     accept: getAllowedUploadMimeTypes(),
     multiple: internalVersion === '2',
@@ -63,25 +57,6 @@ export const DocumentUploadButton = ({
     [EnvelopeType.DOCUMENT]: internalVersion === '1' ? msg`Document (Legacy)` : msg`Upload Document`,
     [EnvelopeType.TEMPLATE]: internalVersion === '1' ? msg`Template (Legacy)` : msg`Upload Template`,
   };
-
-  if (disabled && IS_BILLING_ENABLED()) {
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button className="bg-warning hover:bg-warning/80" asChild>
-              <Link to={`/o/${organisation.url}/settings/billing`}>
-                <Trans>Upgrade</Trans>
-              </Link>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p className="text-sm">{_(disabledMessage)}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
 
   return (
     <Button loading={loading} aria-disabled={disabled} {...getRootProps()} {...props}>

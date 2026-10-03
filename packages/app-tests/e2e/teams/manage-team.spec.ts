@@ -8,8 +8,6 @@ import { expectTextToBeVisible } from '../fixtures/generic';
 test('[TEAMS]: create team', async ({ page }) => {
   const { user, organisation } = await seedUser();
 
-  test.skip(process.env.NEXT_PUBLIC_FEATURE_BILLING_ENABLED === 'true', 'Test skipped because billing is enabled.');
-
   await apiSignin({
     page,
     email: user.email,

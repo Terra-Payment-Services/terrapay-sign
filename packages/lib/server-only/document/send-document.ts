@@ -1,4 +1,3 @@
-import { materializeTspAnchorsForEnvelope } from '@documenso/ee/server-only/signing/csc/materialize-anchors';
 import { resolveExpiresAt } from '@documenso/lib/constants/envelope-expiration';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
@@ -18,7 +17,7 @@ import {
 } from '@prisma/client';
 
 import { validateCheckboxLength } from '../../advanced-fields-validation/validate-checkbox';
-import { DIRECT_TEMPLATE_RECIPIENT_EMAIL } from '../../constants/direct-templates';
+import { isDirectTemplateRecipientEmail } from '../../constants/direct-templates';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { jobs } from '../../jobs/client';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
@@ -30,7 +29,7 @@ import {
   ZRadioFieldMeta,
   ZTextFieldMeta,
 } from '../../types/field-meta';
-import { isTspEnvelope } from '../../types/signature-level';
+import { SignatureLevel } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { putNormalizedPdfFileServerSide } from '../../universal/upload/put-file.server';
@@ -38,7 +37,12 @@ import { isDocumentCompleted } from '../../utils/document';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { type EnvelopeIdOptions, mapSecondaryIdToDocumentId } from '../../utils/envelope';
 import { toCheckboxCustomText, toRadioCustomText } from '../../utils/fields';
-import { getRecipientsWithMissingFields, isRecipientEmailValidForSending } from '../../utils/recipients';
+import { logger } from '../../utils/logger';
+import {
+  assertNoPlaceholderRecipients,
+  getRecipientsWithMissingFields,
+  isRecipientEmailValidForSending,
+} from '../../utils/recipients';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
 import { assertUserNotDisabledById } from '../user/assert-user-not-disabled';
@@ -124,28 +128,26 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     throw new Error('Can not send completed document');
   }
 
-  const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
-
-  let signingOrder = envelope.documentMeta?.signingOrder || DocumentSigningOrder.PARALLEL;
-
-  if (isTspEnvelope(envelope) && signingOrder === DocumentSigningOrder.PARALLEL && envelope.documentMeta) {
-    console.warn(
-      `[CSC] Coercing signingOrder=PARALLEL → SEQUENTIAL for ${envelope.signatureLevel} envelope ${envelope.id} at send time. The schema-layer guard should have caught this earlier.`,
-    );
-
-    await prisma.documentMeta.update({
-      where: {
-        id: envelope.documentMeta.id,
-      },
-      data: {
-        signingOrder: DocumentSigningOrder.SEQUENTIAL,
-      },
+  // Only the simple level can be signed and sealed. Remote signing through a
+  // trust service provider has been removed, so an AES or QES envelope is
+  // refused here rather than sent to recipients who could never complete it.
+  if (envelope.signatureLevel !== SignatureLevel.SES) {
+    logger.error({
+      msg: 'Refusing to send an envelope that is not SES',
+      envelopeId: envelope.id,
+      signatureLevel: envelope.signatureLevel,
     });
 
-    signingOrder = DocumentSigningOrder.SEQUENTIAL;
-
-    envelope.documentMeta.signingOrder = DocumentSigningOrder.SEQUENTIAL;
+    throw new AppError(AppErrorCode.CSC_INSTANCE_MODE_MISMATCH, {
+      message: `Envelope ${envelope.id} has signature level ${envelope.signatureLevel}, which this instance cannot send.`,
+    });
   }
+
+  assertNoPlaceholderRecipients(envelope.recipients);
+
+  const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+  const signingOrder = envelope.documentMeta?.signingOrder || DocumentSigningOrder.PARALLEL;
 
   let recipientsToNotify = envelope.recipients;
 
@@ -244,12 +246,6 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
         fieldsToAutoInsert.push(fieldToAutoInsert);
       }
     }
-  }
-
-  if (isTspEnvelope(envelope) && envelope.status === DocumentStatus.DRAFT) {
-    await materializeTspAnchorsForEnvelope({
-      envelopeId: envelope.id,
-    });
   }
 
   const updatedEnvelope = await prisma.$transaction(async (tx) => {
@@ -371,7 +367,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
 
 const injectFormValuesIntoDocument = async (
   envelope: Envelope,
-  envelopeItem: Pick<EnvelopeItem, 'id'> & { documentData: DocumentData },
+  envelopeItem: Pick<EnvelopeItem, 'id'> & { documentData: Pick<DocumentData, 'id' | 'type' | 'data'> },
 ) => {
   const file = await getFileServerSide(envelopeItem.documentData);
 
@@ -387,11 +383,14 @@ const injectFormValuesIntoDocument = async (
     fileName = `${envelope.title}.pdf`;
   }
 
-  const newDocumentData = await putNormalizedPdfFileServerSide({
-    name: fileName,
-    type: 'application/pdf',
-    arrayBuffer: async () => Promise.resolve(prefilled),
-  });
+  const newDocumentData = await putNormalizedPdfFileServerSide(
+    {
+      name: fileName,
+      type: 'application/pdf',
+      arrayBuffer: async () => Promise.resolve(prefilled),
+    },
+    { owner: { userId: envelope.userId, teamId: envelope.teamId } },
+  );
 
   await prisma.envelopeItem.update({
     where: {
@@ -427,7 +426,7 @@ export const extractFieldAutoInsertValues = (
   if (
     field.type === FieldType.EMAIL &&
     isRecipientEmailValidForSending(recipient) &&
-    recipient.email !== DIRECT_TEMPLATE_RECIPIENT_EMAIL
+    !isDirectTemplateRecipientEmail(recipient.email)
   ) {
     return {
       fieldId,

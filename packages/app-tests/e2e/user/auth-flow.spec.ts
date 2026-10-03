@@ -27,19 +27,13 @@ test('[USER] can sign up with email and password', async ({ page }: { page: Page
 
   const { token } = await extractUserVerificationToken(email);
 
-  const team = await prisma.team.findFirstOrThrow({
-    where: {
-      organisation: {
-        members: {
-          some: {
-            user: {
-              email,
-            },
-          },
-        },
-      },
-    },
+  // The seeded instance already holds organisations, and it may hold only one,
+  // so signing up makes no personal organisation.
+  const organisationCount = await prisma.organisation.count({
+    where: { members: { some: { user: { email } } } },
   });
+
+  expect(organisationCount).toBe(0);
 
   await page.goto(`/verify-email/${token}`);
 
@@ -48,9 +42,9 @@ test('[USER] can sign up with email and password', async ({ page }: { page: Page
   // We now automatically redirect to the home page
   await page.getByRole('link', { name: 'Continue' }).click();
 
-  // Expect to be redirected to their only team.
-  await page.waitForURL(`/t/${team.url}/documents`);
-  await expect(page).toHaveURL(`/t/${team.url}/documents`);
+  // With no team to go to, they land on their inbox.
+  await page.waitForURL('/inbox');
+  await expect(page).toHaveURL('/inbox');
 });
 
 test('[USER] can sign in using email and password', async ({ page }: { page: Page }) => {

@@ -2,20 +2,10 @@ import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
 import { generatePartialSignedPdf } from '@documenso/lib/server-only/pdf/generate-partial-signed-pdf';
-import { getTeamById } from '@documenso/lib/server-only/team/get-team';
 import { sha256 } from '@documenso/lib/universal/crypto';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
 import { prisma } from '@documenso/prisma';
-import {
-  type DocumentDataType,
-  DocumentStatus,
-  type EnvelopeType,
-  EnvelopeType as EnvelopeTypeEnum,
-  type RecipientRole,
-  type SigningStatus,
-  type TemplateType,
-  TemplateType as TemplateTypeEnum,
-} from '@prisma/client';
+import { type DocumentDataType, DocumentStatus, type RecipientRole, type SigningStatus } from '@prisma/client';
 import contentDisposition from 'content-disposition';
 import type { Context } from 'hono';
 import { match } from 'ts-pattern';
@@ -28,7 +18,7 @@ type DocumentDataInput = {
   initialData: string;
 };
 
-export const resolveFileUploadUserId = async (c: Context<HonoEnv>): Promise<number | null> => {
+export const resolveFileUploadUserId = async <E extends HonoEnv>(c: Context<E>): Promise<number | null> => {
   const session = await getOptionalSession(c);
 
   if (session.user?.id) {
@@ -257,61 +247,4 @@ const handlePendingFileRequest = async ({
   c.header('Content-Disposition', contentDisposition(filename));
 
   return c.body(pdf);
-};
-
-type CheckEnvelopeFileAccessOptions = {
-  userId: number;
-  teamId: number;
-  envelopeType: EnvelopeType;
-  templateType: TemplateType;
-};
-
-/**
- * Check whether a user has access to an envelope's file.
- *
- * First checks team membership. If that fails and the envelope is an
- * ORGANISATION template (not a document), falls back to checking whether
- * the user belongs to any team in the same organisation.
- */
-export const checkEnvelopeFileAccess = async ({
-  userId,
-  teamId,
-  envelopeType,
-  templateType,
-}: CheckEnvelopeFileAccessOptions): Promise<boolean> => {
-  const team = await getTeamById({ userId, teamId }).catch(() => null);
-
-  if (team) {
-    return true;
-  }
-
-  if (envelopeType === EnvelopeTypeEnum.TEMPLATE && templateType === TemplateTypeEnum.ORGANISATION) {
-    const orgAccess = await prisma.team.findFirst({
-      where: {
-        id: teamId,
-        organisation: {
-          teams: {
-            some: {
-              teamGroups: {
-                some: {
-                  organisationGroup: {
-                    organisationGroupMembers: {
-                      some: {
-                        organisationMember: { userId },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      select: { id: true },
-    });
-
-    return orgAccess !== null;
-  }
-
-  return false;
 };

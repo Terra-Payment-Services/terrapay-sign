@@ -5,6 +5,7 @@ import type { User } from '@prisma/client';
 import { SALT_ROUNDS } from '../../constants/auth';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { createPersonalOrganisation } from '../organisation/create-organisation';
+import { isOrganisationCreationAllowed } from '../organisation/organisation-creation-allowed';
 
 export interface CreateUserOptions {
   name: string;
@@ -61,7 +62,9 @@ export type OnCreateUserHookOptions = {
  * @returns User
  */
 export const onCreateUserHook = async (user: User, options: OnCreateUserHookOptions = {}) => {
-  if (!options.skipPersonalOrganisation) {
+  // The instance holds one organisation, so a personal one is made only on a
+  // fresh install that has none.
+  if (!options.skipPersonalOrganisation && (await isOrganisationCreationAllowed())) {
     await createPersonalOrganisation({ userId: user.id });
   }
 

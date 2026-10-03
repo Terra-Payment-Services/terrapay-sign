@@ -50,7 +50,7 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
         <Section className="mt-8 mb-6 text-center">
           <Button
             href={signUpUrl}
-            className="mr-4 rounded-lg border border-border border-solid px-4 py-2 text-center font-medium text-foreground text-sm no-underline"
+            className="rounded-lg border border-border border-solid px-4 py-2 text-center font-medium text-foreground text-sm no-underline"
           >
             <Img
               src={getEmailAssetUrl(assetBaseUrl, 'static/user-plus.png')}
@@ -58,18 +58,6 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
               alt=""
             />
             <Trans>Create account</Trans>
-          </Button>
-
-          <Button
-            className="rounded-lg border border-border border-solid px-4 py-2 text-center font-medium text-foreground text-sm no-underline"
-            href="https://documenso.com/pricing"
-          >
-            <Img
-              src={getEmailAssetUrl(assetBaseUrl, 'static/review.png')}
-              className="mr-2 mb-0.5 inline h-5 w-5 align-middle"
-              alt=""
-            />
-            <Trans>View plans</Trans>
           </Button>
         </Section>
       </Section>

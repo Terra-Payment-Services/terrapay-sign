@@ -28,6 +28,8 @@ import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../ut
 import { assertRecipientNotExpired } from '../../utils/recipients';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
+import { assertAccessAuth2FAAttemptAllowed } from './assert-access-auth-2fa-attempt-allowed';
+import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
 import { isRecipientAuthorized } from './is-recipient-authorized';
 
 export type CompleteDocumentWithTokenOptions = {
@@ -35,6 +37,13 @@ export type CompleteDocumentWithTokenOptions = {
   id: EnvelopeIdOptions;
   userId?: number;
   accessAuthOptions?: TRecipientAccessAuth;
+
+  /**
+   * Whether the request carries the recipient's access code cookie, set when
+   * they entered the emailed code before viewing the document. When true the
+   * code is not asked for again.
+   */
+  isAccess2FAVerified?: boolean;
   requestMetadata?: RequestMetadata;
   nextSigner?: {
     email: string;
@@ -55,6 +64,7 @@ export const completeDocumentWithToken = async ({
   id,
   userId,
   accessAuthOptions,
+  isAccess2FAVerified = false,
   requestMetadata,
   nextSigner,
   recipientOverride,
@@ -148,13 +158,19 @@ export const completeDocumentWithToken = async ({
     }
   }
 
+  await assertRecipientAccessAuthorized({
+    documentAuthOptions: envelope.authOptions,
+    recipient,
+    userId,
+  });
+
   // Check ACCESS AUTH 2FA validation during document completion
   const { derivedRecipientAccessAuth } = extractDocumentAuthMethods({
     documentAuth: envelope.authOptions,
     recipientAuth: recipient.authOptions,
   });
 
-  if (derivedRecipientAccessAuth.includes(DocumentAuth.TWO_FACTOR_AUTH)) {
+  if (derivedRecipientAccessAuth.includes(DocumentAuth.TWO_FACTOR_AUTH) && !isAccess2FAVerified) {
     if (!accessAuthOptions) {
       throw new AppError(AppErrorCode.UNAUTHORIZED, {
         message: 'Access authentication required',
@@ -166,6 +182,8 @@ export const completeDocumentWithToken = async ({
         message: `Recipient ${recipient.id} requires an email because they have auth requirements.`,
       });
     }
+
+    await assertAccessAuth2FAAttemptAllowed({ recipientId: recipient.id });
 
     const isValid = await isRecipientAuthorized({
       type: 'ACCESS_2FA',

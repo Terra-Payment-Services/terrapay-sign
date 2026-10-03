@@ -17,13 +17,12 @@ export const ALERT_ORGANISATION_SEAT_DRIFT_JOB_DEFINITION = {
   trigger: {
     name: ALERT_ORGANISATION_SEAT_DRIFT_JOB_DEFINITION_ID,
     schema: ALERT_ORGANISATION_SEAT_DRIFT_JOB_DEFINITION_SCHEMA,
-    cron: '0 0 * * *', // Once a day at midnight.
   },
-  handler: async ({ payload, io }) => {
-    const handler = await import('./alert-organisation-seat-drift.handler');
-
-    await handler.run({ payload, io });
-  },
+  // Paid seats went with Stripe billing, so there is no drift to report. The
+  // definition stays, disabled, so jobs already queued under this id are
+  // skipped rather than failing for want of one.
+  enabled: false,
+  handler: async () => {},
 } as const satisfies JobDefinition<
   typeof ALERT_ORGANISATION_SEAT_DRIFT_JOB_DEFINITION_ID,
   TAlertOrganisationSeatDriftJobDefinition

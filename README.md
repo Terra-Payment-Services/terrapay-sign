@@ -1,3 +1,5 @@
+> **TerraPay Sign.** This repository is TerraPay's modified version of Documenso, which runs as TerraPay's internal e-signature service. It has been changed substantially from upstream: sign-in through Microsoft Entra ID only, Enterprise Edition code removed, fixes to signing, access control and archiving, and TerraPay's design system. [FORK.md](FORK.md) describes the changes. Everything below this section is upstream's README and describes the unmodified product.
+
 <img src="https://github.com/documenso/documenso/assets/13398220/a643571f-0239-46a6-a73e-6bef38d1228b" alt="Documenso Logo">
 
 <p align="center" style="margin-top: 20px">

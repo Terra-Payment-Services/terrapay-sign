@@ -5,6 +5,8 @@
   "types": "./index.ts",
   "license": "MIT",
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rimraf node_modules"
   },
   "dependencies": {
@@ -16,9 +18,13 @@
     "@simplewebauthn/server": "^13.2.2",
     "arctic": "^3.7.0",
     "hono": "^4.12.14",
+    "jose": "^6.1.2",
     "luxon": "^3.7.2",
     "nanoid": "^5.1.6",
     "ts-pattern": "^5.9.0",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }

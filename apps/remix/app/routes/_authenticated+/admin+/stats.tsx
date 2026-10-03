@@ -6,7 +6,6 @@ import {
   getUsersCount,
   getUserWithSignedDocumentMonthlyGrowth,
 } from '@documenso/lib/server-only/admin/get-users-stats';
-import { LicenseClient } from '@documenso/lib/server-only/license/license-client';
 import { getSignerConversionMonthly } from '@documenso/lib/server-only/user/get-signer-conversion';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -25,7 +24,6 @@ import {
   Users,
 } from 'lucide-react';
 
-import { AdminLicenseCard } from '~/components/general/admin-license-card';
 import { MonthlyActiveUsersChart } from '~/components/general/admin-monthly-active-user-charts';
 import { AdminStatsSignerConversionChart } from '~/components/general/admin-stats-signer-conversion-chart';
 import { AdminStatsUsersWithDocumentsChart } from '~/components/general/admin-stats-users-with-documents';
@@ -43,7 +41,6 @@ export async function loader() {
     signerConversionMonthly,
     monthlyUsersWithDocuments,
     monthlyActiveUsers,
-    licenseData,
   ] = await Promise.all([
     getUsersCount(),
     getOrganisationsWithSubscriptionsCount(),
@@ -52,7 +49,6 @@ export async function loader() {
     getSignerConversionMonthly(),
     getUserWithSignedDocumentMonthlyGrowth(),
     getMonthlyActiveUsers(),
-    LicenseClient.getInstance()?.getCachedLicense(),
   ]);
 
   return {
@@ -63,7 +59,6 @@ export async function loader() {
     signerConversionMonthly,
     monthlyUsersWithDocuments,
     monthlyActiveUsers,
-    licenseData: licenseData || null,
   };
 }
 
@@ -78,7 +73,6 @@ export default function AdminStatsPage({ loaderData }: Route.ComponentProps) {
     signerConversionMonthly,
     monthlyUsersWithDocuments,
     monthlyActiveUsers,
-    licenseData,
   } = loaderData;
 
   return (
@@ -93,10 +87,6 @@ export default function AdminStatsPage({ loaderData }: Route.ComponentProps) {
         <CardMetric icon={UserPlus} title={_(msg`Active Subscriptions`)} value={organisationsWithSubscriptionsCount} />
 
         <CardMetric icon={FileCog} title={_(msg`App Version`)} value={`v${version}`} />
-      </div>
-
-      <div className="mt-4 mb-8">
-        <AdminLicenseCard licenseData={licenseData} />
       </div>
 
       <div className="mt-16 gap-8">

@@ -1,8 +1,6 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
-import { useSession } from '@documenso/lib/client-only/providers/session';
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
+import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { getAllowedUploadMimeTypes } from '@documenso/lib/constants/document-conversion';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
@@ -19,7 +17,7 @@ import { EnvelopeType } from '@prisma/client';
 import { Loader } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { ErrorCode as DropzoneErrorCode, type FileRejection, useDropzone } from 'react-dropzone';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 
 import { useCurrentTeam } from '~/providers/team';
 import { getUploadErrorMessage } from '~/utils/toast-error-messages';
@@ -33,14 +31,12 @@ export interface EnvelopeDropZoneWrapperProps {
 export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeDropZoneWrapperProps) => {
   const { t, i18n } = useLingui();
   const { toast } = useToast();
-  const { user } = useSession();
   const { folderId } = useParams();
 
   const team = useCurrentTeam();
 
   const navigate = useNavigate();
   const analytics = useAnalytics();
-  const organisation = useCurrentOrganisation();
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -48,18 +44,11 @@ export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeD
     TIME_ZONES.find((timezone) => timezone === Intl.DateTimeFormat().resolvedOptions().timeZone) ??
     DEFAULT_DOCUMENT_TIME_ZONE;
 
-  const { quota, remaining, refreshLimits, maximumEnvelopeItemCount } = useLimits();
+  const maximumEnvelopeItemCount = useMaximumEnvelopeItemCount();
 
   const { mutateAsync: createEnvelope } = trpc.envelope.create.useMutation();
 
-  const isUploadDisabled = remaining.documents === 0 || !user.emailVerified;
-
   const onFileDrop = async (files: File[]) => {
-    if (isUploadDisabled && IS_BILLING_ENABLED()) {
-      await navigate(`/o/${organisation.url}/settings/billing`);
-      return;
-    }
-
     try {
       setIsLoading(true);
 
@@ -82,8 +71,6 @@ export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeD
 
       const { id } = await createEnvelope(formData);
 
-      void refreshLimits();
-
       toast({
         title: type === EnvelopeType.DOCUMENT ? t`Document uploaded` : t`Template uploaded`,
         description:
@@ -95,9 +82,7 @@ export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeD
 
       const pathPrefix = type === EnvelopeType.DOCUMENT ? formatDocumentsPath(team.url) : formatTemplatesPath(team.url);
 
-      const aiQueryParam = team.preferences.aiFeaturesEnabled ? '?ai=true' : '';
-
-      await navigate(`${pathPrefix}/${id}/edit${aiQueryParam}`);
+      await navigate(`${pathPrefix}/${id}/edit`);
     } catch (err) {
       const error = AppError.parseError(err);
 
@@ -174,26 +159,6 @@ export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeD
             <p className="mt-4 text-base text-muted-foreground">
               <Trans>Drag and drop your document here</Trans>
             </p>
-
-            {isUploadDisabled && IS_BILLING_ENABLED() && (
-              <Link
-                to={`/o/${organisation.url}/settings/billing`}
-                className="mt-4 text-amber-500 text-sm hover:underline dark:text-amber-400"
-              >
-                <Trans>Upgrade your plan to upload more documents</Trans>
-              </Link>
-            )}
-
-            {!isUploadDisabled &&
-              team?.id === undefined &&
-              remaining.documents > 0 &&
-              Number.isFinite(remaining.documents) && (
-                <p className="mt-4 text-muted-foreground/80 text-sm">
-                  <Trans>
-                    {remaining.documents} of {quota.documents} documents remaining this month.
-                  </Trans>
-                </p>
-              )}
           </div>
         </div>
       )}

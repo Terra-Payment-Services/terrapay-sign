@@ -88,10 +88,10 @@ describe('assertNotPrivateUrl', () => {
   });
 
   describe('DNS failure handling', () => {
-    it('should silently allow when DNS lookup throws', async () => {
+    it('should refuse when DNS lookup throws', async () => {
       const lookup = vi.fn().mockRejectedValue(new Error('ENOTFOUND'));
 
-      await expect(assertNotPrivateUrl('https://nonexistent.example.com', { lookup })).resolves.toBeUndefined();
+      await expect(assertNotPrivateUrl('https://nonexistent.example.com', { lookup })).rejects.toThrow(AppError);
     });
 
     it('should re-throw AppError even within the catch block', async () => {
@@ -100,12 +100,32 @@ describe('assertNotPrivateUrl', () => {
       await expect(assertNotPrivateUrl('https://evil.example.com', { lookup })).rejects.toThrow(AppError);
     });
 
-    it('should silently allow when DNS lookup times out (returns null)', async () => {
-      const lookup = vi.fn().mockReturnValue(new Promise(() => {}));
+    it('should refuse when DNS lookup times out', async () => {
+      vi.useFakeTimers();
 
-      // withTimeout races the lookup against a 250ms timer and returns null
-      // if the lookup doesn't settle in time, so the function returns early.
-      await expect(assertNotPrivateUrl('https://slow.example.com', { lookup })).resolves.toBeUndefined();
-    }, 10_000);
+      try {
+        const lookup = vi.fn().mockReturnValue(new Promise(() => {}));
+
+        const assertion = expect(assertNotPrivateUrl('https://slow.example.com', { lookup })).rejects.toThrow(AppError);
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should refuse when DNS returns no addresses', async () => {
+      const lookup = fakeLookup([]);
+
+      await expect(assertNotPrivateUrl('https://empty.example.com', { lookup })).rejects.toThrow(AppError);
+    });
+
+    it('should allow a public IPv6 literal without asking DNS', async () => {
+      const lookup = vi.fn();
+
+      await expect(assertNotPrivateUrl('https://[2606:4700:4700::1111]/hook', { lookup })).resolves.toBeUndefined();
+      expect(lookup).not.toHaveBeenCalled();
+    });
   });
 });

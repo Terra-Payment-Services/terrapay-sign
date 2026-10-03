@@ -84,8 +84,8 @@ test.describe('AutoSave Settings Step', () => {
   test('should autosave the document access change', async ({ page }) => {
     const { user, document, team } = await setupDocument(page);
 
-    const access = 'Require account';
-    const accessValue = 'ACCOUNT';
+    const access = 'Require 2FA';
+    const accessValue = 'TWO_FACTOR_AUTH';
 
     await page.getByRole('combobox').nth(1).click();
     await page.getByRole('option', { name: access }).click();
@@ -247,7 +247,7 @@ test.describe('AutoSave Settings Step', () => {
     await page.getByRole('option', { name: 'German' }).click();
 
     await page.getByRole('combobox').nth(1).click();
-    await page.getByRole('option', { name: 'Require account' }).click();
+    await page.getByRole('option', { name: 'Require 2FA' }).click();
 
     await page.getByRole('button', { name: 'Advanced Options' }).click();
     const newExternalId = 'MULTI-TEST-123';
@@ -271,7 +271,7 @@ test.describe('AutoSave Settings Step', () => {
 
       expect(retrieved.title).toBe(newTitle);
       expect(retrieved.documentMeta?.language).toBe('de');
-      expect(retrieved.authOptions?.globalAccessAuth).toContain('ACCOUNT');
+      expect(retrieved.authOptions?.globalAccessAuth).toContain('TWO_FACTOR_AUTH');
       expect(retrieved.externalId).toBe(newExternalId);
       expect(retrieved.documentMeta?.timezone).toBe('Europe/Berlin');
     }).toPass();

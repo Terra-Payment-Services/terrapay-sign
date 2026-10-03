@@ -34,6 +34,7 @@ export type DocumentSigningAuthContextValue = {
   setRecipient: (_value: SigningAuthRecipient) => void;
   derivedRecipientAccessAuth: TRecipientAccessAuthTypes[];
   derivedRecipientActionAuth: TRecipientActionAuthTypes[];
+  isAccess2FAVerified: boolean;
   isAuthRedirectRequired: boolean;
   isDirectTemplate?: boolean;
   isCurrentlyAuthenticating: boolean;
@@ -65,6 +66,12 @@ export interface DocumentSigningAuthProviderProps {
   documentAuthOptions: Envelope['authOptions'];
   recipient: SigningAuthRecipient;
   isDirectTemplate?: boolean;
+
+  /**
+   * Whether the recipient already entered their emailed access code before
+   * the document was shown, so completion need not ask for it again.
+   */
+  isAccess2FAVerified?: boolean;
   user?: SessionUser | null;
   children: React.ReactNode;
 }
@@ -73,6 +80,7 @@ export const DocumentSigningAuthProvider = ({
   documentAuthOptions: initialDocumentAuthOptions,
   recipient: initialRecipient,
   isDirectTemplate = false,
+  isAccess2FAVerified = false,
   user,
   children,
 }: DocumentSigningAuthProviderProps) => {
@@ -194,6 +202,7 @@ export const DocumentSigningAuthProvider = ({
         recipientAuthOption,
         derivedRecipientAccessAuth,
         derivedRecipientActionAuth,
+        isAccess2FAVerified,
         isAuthRedirectRequired,
         isDirectTemplate,
         isCurrentlyAuthenticating,

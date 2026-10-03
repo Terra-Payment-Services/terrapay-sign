@@ -1,7 +1,6 @@
-import { getServerLimits } from '@documenso/ee/server-only/limits/server';
-import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { createDocumentData } from '@documenso/lib/server-only/document-data/create-document-data';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
+import { getEnvelopeItemLimit } from '@documenso/lib/server-only/organisation/get-envelope-item-limit';
 import { getPresignPostUrl } from '@documenso/lib/universal/upload/server-actions';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
@@ -40,14 +39,8 @@ export const createDocumentTemporaryRoute = authenticatedProcedure
       formValues,
     } = input;
 
-    const { remaining } = await getServerLimits({ userId: user.id, teamId });
-
-    if (remaining.documents <= 0) {
-      throw new AppError(AppErrorCode.LIMIT_EXCEEDED, {
-        message: 'You have reached your document limit for this month. Please upgrade your plan.',
-        statusCode: 400,
-      });
-    }
+    // Refuse a non-member before issuing an upload URL.
+    await getEnvelopeItemLimit({ userId: user.id, teamId });
 
     const fileName = title.endsWith('.pdf') ? title : `${title}.pdf`;
 
@@ -56,6 +49,7 @@ export const createDocumentTemporaryRoute = authenticatedProcedure
     const documentData = await createDocumentData({
       data: key,
       type: DocumentDataType.S3_PATH,
+      owner: { userId: ctx.user.id, teamId },
     });
 
     const createdEnvelope = await createEnvelope({

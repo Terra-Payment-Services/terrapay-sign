@@ -1,14 +1,4 @@
-# Report security vulnerabilities privately via GitHub Security Advisories (preferred).
-Contact: https://github.com/documenso/documenso/security/advisories/new
-
-# Alternatively, report critical issues privately by email.
-Contact: mailto:security@documenso.com
-
-# Security policy
-Policy: https://github.com/documenso/documenso/security/policy
-
-# General (non-security) issues
-Contact: https://github.com/documenso/documenso/issues/new?assignees=&labels=bug&projects=&template=bug-report.yml
+# Report security vulnerabilities privately by email.
+Contact: mailto:security@terrapay.com
 
 Preferred-Languages: en
-Canonical: https://documenso.com/.well-known/security.txt

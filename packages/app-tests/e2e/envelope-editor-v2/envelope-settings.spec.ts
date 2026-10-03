@@ -36,7 +36,7 @@ const TEST_SETTINGS_VALUES = {
   reminderRepeatMode: 'Custom interval',
   reminderRepeatAmount: 7,
   reminderRepeatUnit: 'Days',
-  accessAuth: 'Require account',
+  accessAuth: 'Require 2FA',
   actionAuth: 'Require password',
   visibility: 'Managers and above',
 };
@@ -52,7 +52,7 @@ const DB_EXPECTED_VALUES = {
     repeatEvery: { unit: 'day', amount: 7 },
   },
   visibility: DocumentVisibility.MANAGER_AND_ABOVE,
-  globalAccessAuth: ['ACCOUNT'],
+  globalAccessAuth: ['TWO_FACTOR_AUTH'],
   globalActionAuth: ['PASSWORD'],
   emailSettings: {
     recipientSigned: false,
@@ -221,14 +221,8 @@ const runSettingsFlow = async ({ root }: TEnvelopeEditorSurface, { externalId, i
   await expect(root.locator('#documentDeleted')).toHaveCount(0);
   await expect(root.getByText(/Email distribution needs to be enabled/)).toBeVisible();
 
-  // Email Sender select only renders when the org has the emailDomains feature
-  // flag plus allowConfigureEmailSender, so the assertion is conditional.
-  const emailSenderSelect = getComboboxByLabel(root, 'Email Sender');
-  const hasEmailSenderSelect = (await emailSenderSelect.count()) > 0;
-
-  if (hasEmailSenderSelect) {
-    await expect(emailSenderSelect).toBeDisabled();
-  }
+  // Organisation sender addresses were removed, so the Email Sender select never renders.
+  await expect(getComboboxByLabel(root, 'Email Sender')).toHaveCount(0);
 
   await expect(root.locator('#ownerDocumentCompleted')).toBeEnabled();
   await root.locator('#ownerDocumentCompleted').click();

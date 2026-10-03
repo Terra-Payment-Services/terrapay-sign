@@ -1,3 +1,4 @@
+import { useIsOrganisationCreationAllowed } from '@documenso/lib/client-only/hooks/use-is-organisation-creation-allowed';
 import { trpc } from '@documenso/trpc/react';
 import type { TGetUserResponse } from '@documenso/trpc/server/admin-router/get-user.types';
 import { ZUpdateUserRequestSchema } from '@documenso/trpc/server/admin-router/update-user.types';
@@ -74,6 +75,7 @@ const AdminUserPage = ({ user }: { user: TGetUserResponse }) => {
   const { _ } = useLingui();
   const { toast } = useToast();
   const { revalidate } = useRevalidator();
+  const isOrganisationCreationAllowed = useIsOrganisationCreationAllowed();
 
   const roles = user.roles ?? [];
 
@@ -192,14 +194,16 @@ const AdminUserPage = ({ user }: { user: TGetUserResponse }) => {
             </p>
           </div>
 
-          <AdminOrganisationCreateDialog
-            ownerUserId={user.id}
-            trigger={
-              <Button variant="outline" size="sm">
-                <Trans>Create Organisation</Trans>
-              </Button>
-            }
-          />
+          {isOrganisationCreationAllowed && (
+            <AdminOrganisationCreateDialog
+              ownerUserId={user.id}
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Trans>Create Organisation</Trans>
+                </Button>
+              }
+            />
+          )}
         </div>
 
         <AdminOrganisationsTable memberUserId={user.id} showOwnerColumn={false} hidePaginationUntilOverflow />

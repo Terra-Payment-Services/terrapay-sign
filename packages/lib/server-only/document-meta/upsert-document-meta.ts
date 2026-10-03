@@ -8,6 +8,7 @@ import type { SupportedLanguageCodes } from '../../constants/i18n';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { TDocumentEmailSettings } from '../../types/document-email';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
@@ -22,6 +23,7 @@ export type CreateDocumentMetaOptions = {
   timezone?: string;
   dateFormat?: string;
   redirectUrl?: string;
+  /** Accepted and ignored; organisation sender addresses were removed. */
   emailId?: string | null;
   emailReplyTo?: string | null;
   emailSettings?: TDocumentEmailSettings;
@@ -94,21 +96,7 @@ export const updateDocumentMeta = async ({
 
   const { documentMeta: originalDocumentMeta } = envelope;
 
-  // Validate the emailId belongs to the organisation.
-  if (emailId) {
-    const email = await prisma.organisationEmail.findFirst({
-      where: {
-        id: emailId,
-        organisationId: team.organisationId,
-      },
-    });
-
-    if (!email) {
-      throw new AppError(AppErrorCode.NOT_FOUND, {
-        message: 'Email not found',
-      });
-    }
-  }
+  warnIgnoredEmailId({ emailId, teamId, organisationId: team.organisationId });
 
   return await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
@@ -125,7 +113,6 @@ export const updateDocumentMeta = async ({
         redirectUrl,
         signingOrder,
         allowDictateNextSigner,
-        emailId,
         emailReplyTo,
         emailSettings,
         distributionMethod,

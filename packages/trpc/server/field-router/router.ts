@@ -1,4 +1,5 @@
 import { AppError } from '@documenso/lib/errors/app-error';
+import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { createEnvelopeFields } from '@documenso/lib/server-only/field/create-envelope-fields';
 import { deleteDocumentField } from '@documenso/lib/server-only/field/delete-document-field';
 import { deleteTemplateField } from '@documenso/lib/server-only/field/delete-template-field';
@@ -630,6 +631,7 @@ export const fieldRouter = router({
         isBase64,
         userId: ctx.user?.id,
         authOptions,
+        isAccess2FAVerified: await isRecipientTokenAccess2FASatisfied({ headers: ctx.req.headers, token }),
         requestMetadata: ctx.metadata.requestMetadata,
       });
     } catch (err) {
@@ -665,6 +667,8 @@ export const fieldRouter = router({
         return await removeSignedFieldWithToken({
           token,
           fieldId,
+          userId: ctx.user?.id,
+          isAccess2FAVerified: await isRecipientTokenAccess2FASatisfied({ headers: ctx.req.headers, token }),
           requestMetadata: ctx.metadata.requestMetadata,
         });
       } catch (err) {

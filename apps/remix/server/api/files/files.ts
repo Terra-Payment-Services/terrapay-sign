@@ -1,15 +1,18 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { AppError } from '@documenso/lib/errors/app-error';
+import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
+import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
 import type { Prisma } from '@prisma/client';
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 
 import type { HonoEnv } from '../../router';
-import { checkEnvelopeFileAccess, handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
+import { handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
 import {
   ZGetEnvelopeItemFileDownloadRequestParamsSchema,
   ZGetEnvelopeItemFileRequestParamsSchema,
@@ -21,18 +24,31 @@ import {
 import getEnvelopeItemPdfRoute from './routes/get-envelope-item-pdf';
 import getEnvelopeItemPdfByTokenRoute from './routes/get-envelope-item-pdf-by-token';
 
+/**
+ * Works out who is uploading before the form is parsed. The validator reads
+ * the whole multipart body, and it used to run first, so an anonymous caller
+ * had the server buffer an upload it was about to refuse.
+ */
+const requireUploadUser = createMiddleware<HonoEnv & { Variables: { uploadUserId: number } }>(async (c, next) => {
+  const userId = await resolveFileUploadUserId(c);
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  c.set('uploadUserId', userId);
+
+  await next();
+});
+
 export const filesRoute = new Hono<HonoEnv>()
   /**
    * Uploads a document file to the appropriate storage location and creates
    * a document data record.
    */
-  .post('/upload-pdf', sValidator('form', ZUploadPdfRequestSchema), async (c) => {
+  .post('/upload-pdf', requireUploadUser, sValidator('form', ZUploadPdfRequestSchema), async (c) => {
     try {
-      const userId = await resolveFileUploadUserId(c);
-
-      if (!userId) {
-        return c.json({ error: 'Unauthorized' }, 401);
-      }
+      const userId = c.get('uploadUserId');
 
       const { file } = c.req.valid('form');
 
@@ -49,7 +65,12 @@ export const filesRoute = new Hono<HonoEnv>()
         return c.json({ error: 'File too large' }, 400);
       }
 
-      const result = await putNormalizedPdfFileServerSide(file);
+      // This endpoint authenticates a person and is told no team, so the
+      // uploader is the only claim recorded on the bytes. Nobody else can
+      // attach them to an envelope.
+      const result = await putNormalizedPdfFileServerSide(file, {
+        owner: { userId, teamId: null },
+      });
 
       return c.json(result);
     } catch (error) {
@@ -69,12 +90,17 @@ export const filesRoute = new Hono<HonoEnv>()
 
       let userId = session.user?.id;
 
+      // The presign token is bound to its API token's team, not to every team
+      // its user belongs to. See get-envelope-item-pdf.ts.
+      let presignTeamId: number | undefined;
+
       if (token) {
         const presignToken = await verifyEmbeddingPresignToken({
           token,
         }).catch(() => undefined);
 
         userId = presignToken?.userId;
+        presignTeamId = presignToken?.teamId;
       }
 
       if (!userId) {
@@ -101,6 +127,10 @@ export const filesRoute = new Hono<HonoEnv>()
         return c.json({ error: 'Envelope not found' }, 404);
       }
 
+      if (token && envelope.teamId !== presignTeamId) {
+        return c.json({ error: 'Envelope not found' }, 404);
+      }
+
       const [envelopeItem] = envelope.envelopeItems;
 
       if (!envelopeItem) {
@@ -109,9 +139,7 @@ export const filesRoute = new Hono<HonoEnv>()
 
       const hasAccess = await checkEnvelopeFileAccess({
         userId,
-        teamId: envelope.teamId,
-        envelopeType: envelope.type,
-        templateType: envelope.templateType,
+        envelopeId: envelope.id,
       });
 
       if (!hasAccess) {
@@ -181,9 +209,7 @@ export const filesRoute = new Hono<HonoEnv>()
 
         const hasDownloadAccess = await checkEnvelopeFileAccess({
           userId: session.user.id,
-          teamId: envelope.teamId,
-          envelopeType: envelope.type,
-          templateType: envelope.templateType,
+          envelopeId: envelope.id,
         });
 
         if (!hasDownloadAccess) {
@@ -259,6 +285,10 @@ export const filesRoute = new Hono<HonoEnv>()
         };
       }
 
+      if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+        return c.json({ error: 'Access code required' }, 401);
+      }
+
       const envelopeItem = await prisma.envelopeItem.findUnique({
         where: envelopeWhereQuery,
         include: {
@@ -309,6 +339,10 @@ export const filesRoute = new Hono<HonoEnv>()
             qrToken: token,
           },
         };
+      }
+
+      if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+        return c.json({ error: 'Access code required' }, 401);
       }
 
       const envelopeItem = await prisma.envelopeItem.findUnique({

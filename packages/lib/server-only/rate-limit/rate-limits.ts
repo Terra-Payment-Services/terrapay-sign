@@ -29,6 +29,17 @@ export const request2FAEmailRateLimit = createRateLimit({
   window: '15m',
 });
 
+/**
+ * Bounds guessing of the emailed access code a recipient enters to complete a
+ * document. Keyed by recipient rather than IP, so spreading guesses across
+ * addresses does not help.
+ */
+export const accessAuth2FAAttemptRateLimit = createRateLimit({
+  action: 'recipient.access-2fa-attempt',
+  max: 5,
+  window: '1h',
+});
+
 // ---- Auth (Tier 2 - Unauthenticated) ----
 
 export const loginRateLimit = createRateLimit({

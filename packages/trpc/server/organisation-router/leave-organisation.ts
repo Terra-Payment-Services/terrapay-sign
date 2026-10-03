@@ -1,3 +1,4 @@
+import { ORGANISATION_ACCOUNT_LINK_VERIFICATION_TOKEN_IDENTIFIER } from '@documenso/lib/constants/organisations';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { jobs } from '@documenso/lib/jobs/client';
 import { buildOrganisationWhereQuery } from '@documenso/lib/utils/organisations';
@@ -71,13 +72,22 @@ export const leaveOrganisationRoute = authenticatedProcedure
           },
         },
       });
-    });
 
-    // A member was removed — queue a seat sync to true the Stripe quantity down
-    // to the new count (no proration, no credit).
-    await jobs.triggerJob({
-      name: 'internal.sync-organisation-seats',
-      payload: { organisationId },
+      // An outstanding single sign-on link token for this organisation would
+      // otherwise survive the departure and redeem back into membership, at the
+      // portal's default role rather than the one just given up. Redemption
+      // checks the organisation's provisioning switch as well, so this is the
+      // second lock on the same door.
+      await tx.verificationToken.deleteMany({
+        where: {
+          userId,
+          identifier: ORGANISATION_ACCOUNT_LINK_VERIFICATION_TOKEN_IDENTIFIER,
+          metadata: {
+            path: ['organisationId'],
+            equals: organisationId,
+          },
+        },
+      });
     });
 
     await jobs.triggerJob({

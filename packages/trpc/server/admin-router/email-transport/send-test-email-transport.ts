@@ -40,7 +40,7 @@ export const sendTestEmailTransportRoute = adminProcedure
       await resolved.transporter.sendMail({
         to: input.to,
         from: { name: transport.fromName, address: transport.fromAddress },
-        subject: 'Documenso email transport test',
+        subject: 'TerraPay Sign email transport test',
         text: `This is a test email sent through the "${transport.name}" email transport.`,
       });
     } catch (err) {

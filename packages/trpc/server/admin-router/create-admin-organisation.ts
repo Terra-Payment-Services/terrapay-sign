@@ -1,4 +1,5 @@
 import { createOrganisation } from '@documenso/lib/server-only/organisation/create-organisation';
+import { assertOrganisationCreationAllowed } from '@documenso/lib/server-only/organisation/organisation-creation-allowed';
 import { getSubscriptionClaim } from '@documenso/lib/server-only/subscription/get-subscription-claim';
 import { INTERNAL_CLAIM_ID } from '@documenso/lib/types/subscription';
 import { OrganisationType } from '@prisma/client';
@@ -19,6 +20,8 @@ export const createAdminOrganisationRoute = adminProcedure
         ownerUserId,
       },
     });
+
+    await assertOrganisationCreationAllowed();
 
     const freeSubscriptionClaim = await getSubscriptionClaim(INTERNAL_CLAIM_ID.FREE);
 

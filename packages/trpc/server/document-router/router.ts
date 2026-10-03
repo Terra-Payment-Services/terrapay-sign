@@ -1,5 +1,6 @@
 import { router } from '../trpc';
 import { accessAuthRequest2FAEmailRoute } from './access-auth-request-2fa-email';
+import { accessAuthVerify2FARoute } from './access-auth-verify-2fa';
 import { createAttachmentRoute } from './attachment/create-attachment';
 import { deleteAttachmentRoute } from './attachment/delete-attachment';
 import { findAttachmentsRoute } from './attachment/find-attachments';
@@ -23,7 +24,6 @@ import { getDocumentsByIdsRoute } from './get-documents-by-ids';
 import { getInboxCountRoute } from './get-inbox-count';
 import { redistributeDocumentRoute } from './redistribute-document';
 import { searchDocumentRoute } from './search-document';
-import { shareDocumentRoute } from './share-document';
 import { updateDocumentRoute } from './update-document';
 
 export const documentRouter = router({
@@ -38,7 +38,6 @@ export const documentRouter = router({
   distribute: distributeDocumentRoute,
   redistribute: redistributeDocumentRoute,
   search: searchDocumentRoute,
-  share: shareDocumentRoute,
 
   download: downloadDocumentRoute,
 
@@ -52,6 +51,7 @@ export const documentRouter = router({
 
   accessAuth: router({
     request2FAEmail: accessAuthRequest2FAEmailRoute,
+    verify2FA: accessAuthVerify2FARoute,
   }),
 
   auditLog: {

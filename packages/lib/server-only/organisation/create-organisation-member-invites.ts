@@ -2,7 +2,6 @@ import { OrganisationInviteEmailTemplate } from '@documenso/email/templates/orga
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/organisations';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { isOrganisationRoleWithinUserHierarchy } from '@documenso/lib/utils/organisations';
 import { prisma } from '@documenso/prisma';
 import type { TCreateOrganisationMemberInvitesRequestSchema } from '@documenso/trpc/server/organisation-router/create-organisation-member-invites.types';
 import { msg } from '@lingui/core/macro';
@@ -16,7 +15,7 @@ import { generateDatabaseId } from '../../universal/id';
 import { buildOrganisationWhereQuery } from '../../utils/organisations';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { getEmailContext } from '../email/get-email-context';
-import { getMemberOrganisationRole } from '../team/get-member-roles';
+import { assertOrganisationRoleAssignable } from './assert-organisation-role-assignable';
 
 export type CreateOrganisationMemberInvitesOptions = {
   userId: number;
@@ -64,14 +63,6 @@ export const createOrganisationMemberInvites = async ({
     throw new AppError(AppErrorCode.NOT_FOUND);
   }
 
-  const currentOrganisationMemberRole = await getMemberOrganisationRole({
-    organisationId: organisation.id,
-    reference: {
-      type: 'User',
-      id: userId,
-    },
-  });
-
   const organisationMemberEmails = organisation.members.map((member) => member.user.email);
   const organisationMemberInviteEmails = organisation.invites.map((invite) => invite.email);
 
@@ -89,15 +80,15 @@ export const createOrganisationMemberInvites = async ({
     return true;
   });
 
-  const unauthorizedRoleAccess = usersToInvite.some(
-    ({ organisationRole }) => !isOrganisationRoleWithinUserHierarchy(currentOrganisationMemberRole, organisationRole),
-  );
-
-  if (unauthorizedRoleAccess) {
-    throw new AppError(AppErrorCode.UNAUTHORIZED, {
-      message: 'User does not have permission to set high level roles',
-    });
-  }
+  // An invitation is a role grant with a delay on it: the role is fixed here and
+  // collected when the invitee accepts, by which time nobody is checking. The
+  // shared rule decides, so this path cannot drift away from the member role
+  // update.
+  await assertOrganisationRoleAssignable({
+    organisationId: organisation.id,
+    userId,
+    roleToAssign: usersToInvite.map(({ organisationRole }) => organisationRole),
+  });
 
   const organisationMemberInvites: Prisma.OrganisationMemberInviteCreateManyInput[] = usersToInvite.map(
     ({ email, organisationRole }) => ({
@@ -193,7 +184,7 @@ export const sendOrganisationMemberInviteEmail = async ({
   await emailTransport.sendMail({
     to: email,
     from: senderEmail,
-    subject: i18n._(msg`You have been invited to join ${organisation.name} on Documenso`),
+    subject: i18n._(msg`You have been invited to join ${organisation.name} on TerraPay Sign`),
     html,
     text,
   });

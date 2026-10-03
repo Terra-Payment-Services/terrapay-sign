@@ -11,7 +11,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import handle from 'hono-react-router-adapter/node';
 
 import { getLoadContext } from './hono/server/load-context.js';
-import server from './hono/server/router.js';
+import server, { closeBackgroundJobs, createGracefulShutdown } from './hono/server/router.js';
 import * as build from './index.js';
 
 // Sub-path the app is served under (e.g. "/ESign"). Empty = root.
@@ -46,4 +46,17 @@ const handler = handle(build, server, { getLoadContext });
 
 const port = parseInt(process.env.PORT || '3000', 10);
 
-serve({ fetch: handler.fetch, port });
+const httpServer = serve({ fetch: handler.fetch, port });
+
+// ECS sends SIGTERM after the load balancer has drained the task and SIGKILL 30
+// seconds later. Finish what is open, including the job worker that runs in this
+// process, inside that window.
+const shutdown = createGracefulShutdown({
+  closeServer: () => new Promise((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve()))),
+  closeJobs: closeBackgroundJobs,
+  exit: (code) => process.exit(code),
+  timeoutMs: 25_000,
+});
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

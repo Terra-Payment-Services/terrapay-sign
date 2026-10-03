@@ -38,7 +38,6 @@ export const ZAddTemplateSettingsFormSchema = z.object({
       .union([z.string(), z.enum(SUPPORTED_LANGUAGE_CODES)])
       .optional()
       .default('en'),
-    emailId: z.string().nullable(),
     emailReplyTo: z.preprocess((val) => (val === '' ? undefined : val), zEmail().optional()),
     emailSettings: ZDocumentEmailSettingsSchema,
     signatureTypes: z.array(z.nativeEnum(DocumentSignatureType)).min(1, {

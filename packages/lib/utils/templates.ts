@@ -1,6 +1,10 @@
 import type { Envelope, Recipient } from '@prisma/client';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../constants/app';
+import {
+  formatPlaceholderRecipientEmail,
+  isPlaceholderRecipientEmailForIndex,
+} from '../constants/placeholder-recipients';
 import type { TTemplateLite } from '../types/template';
 import { mapSecondaryIdToTemplateId } from './envelope';
 
@@ -21,12 +25,13 @@ export const formatDirectTemplatePath = (token: string) => {
 export const generateRecipientPlaceholder = (index: number) => {
   return {
     name: `Recipient ${index}`,
-    email: `recipient.${index}@documenso.com`,
+    email: formatPlaceholderRecipientEmail(index),
   };
 };
 
 /**
  * Generates a placeholder that does not collide with any existing recipients.
+ * An index already taken by a legacy `@documenso.com` placeholder counts as taken.
  *
  * @param currentRecipients The current recipients that exist for a template.
  */
@@ -37,7 +42,7 @@ export const generateAvaliableRecipientPlaceholder = (currentRecipients: Recipie
   for (let i = 1; i <= currentRecipients.length + 1; i++) {
     recipientPlaceholder = generateRecipientPlaceholder(i);
 
-    if (!recipientEmails.includes(recipientPlaceholder.email)) {
+    if (!recipientEmails.some((email) => isPlaceholderRecipientEmailForIndex(email, i))) {
       return recipientPlaceholder;
     }
   }

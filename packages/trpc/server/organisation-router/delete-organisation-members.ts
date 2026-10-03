@@ -162,13 +162,6 @@ export const deleteOrganisationMembers = async ({
     });
   });
 
-  // Members were removed — queue a seat sync to true the Stripe quantity down to
-  // the new count (no proration, no credit).
-  await jobs.triggerJob({
-    name: 'internal.sync-organisation-seats',
-    payload: { organisationId },
-  });
-
   for (const member of membersToDelete) {
     await jobs.triggerJob({
       name: 'send.organisation-member-left.email',

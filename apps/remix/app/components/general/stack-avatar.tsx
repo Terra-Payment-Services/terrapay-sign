@@ -33,7 +33,7 @@ export const StackAvatar = ({ first, zIndex, fallbackText = '', type }: StackAva
       classes = 'bg-yellow-200 text-yellow-700';
       break;
     case RecipientStatusType.WAITING:
-      classes = 'bg-water text-water-700';
+      classes = 'bg-water text-water-800';
       break;
     case RecipientStatusType.COMPLETED:
       classes = 'bg-documenso-200 text-documenso-800';

@@ -4,7 +4,7 @@ import { type TRecipientActionAuthTypes, ZRecipientAuthOptionsSchema } from '@do
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { nanoid } from '@documenso/lib/universal/id';
 import { createDocumentAuditLogData, diffRecipientChanges } from '@documenso/lib/utils/document-audit-logs';
-import { createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
+import { assertAccountAccessAuthNotAdded, createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
 import { prisma } from '@documenso/prisma';
 import type { Recipient } from '@prisma/client';
 import { EnvelopeType, RecipientRole, SendStatus, SigningStatus } from '@prisma/client';
@@ -109,6 +109,23 @@ export const setDocumentRecipients = async ({
     (existingRecipient) => !normalizedRecipients.find((recipient) => recipient.id === existingRecipient.id),
   );
 
+  // Leaving a recipient out of the array deletes them further down, and both
+  // `Field.recipientId` and `Signature.recipientId` cascade, so dropping a
+  // recipient who has already signed erases the signature while the audit log
+  // still records that they signed it. The `completedAt` gate above does not
+  // catch this: an envelope with three signers and one still to go is PENDING,
+  // and passes. Changing such a recipient already throws below; removing them
+  // is the same modification and gets the same answer.
+  const protectedRemovals = removedRecipients.filter(
+    (removedRecipient) => !canRecipientBeModified(removedRecipient, envelope.fields),
+  );
+
+  if (protectedRemovals.length > 0) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'Cannot remove a recipient who has already interacted with the document',
+    });
+  }
+
   const linkedRecipients = normalizedRecipients.map((recipient) => {
     const existing = existingRecipients.find((existingRecipient) => existingRecipient.id === recipient.id);
 
@@ -123,6 +140,11 @@ export const setDocumentRecipients = async ({
         message: 'Cannot modify a recipient who has already interacted with the document',
       });
     }
+
+    assertAccountAccessAuthNotAdded({
+      requested: recipient.accessAuth,
+      existing: ZRecipientAuthOptionsSchema.parse(existing?.authOptions).accessAuth,
+    });
 
     return {
       ...recipient,

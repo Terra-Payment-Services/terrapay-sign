@@ -352,7 +352,7 @@ Only the individual delivery (`WebhookCall`) record is marked as failed. Documen
     Always use HTTPS endpoints in production.
   </Accordion>
   <Accordion title="Verify signatures">
-    Use a webhook secret and verify the `X-Documenso-Secret` header (see [Verification](/docs/developers/webhooks/verification)).
+    Use a webhook secret and verify the `X-TerraPay-Secret` header, which is also sent as `X-Documenso-Secret` for older receivers (see [Verification](/docs/developers/webhooks/verification)).
   </Accordion>
   <Accordion title="Validate payloads">
     Validate incoming data before processing.

@@ -1,14 +1,11 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { useCopyToClipboard } from '@documenso/lib/client-only/hooks/use-copy-to-clipboard';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
-import { DIRECT_TEMPLATE_RECIPIENT_EMAIL } from '@documenso/lib/constants/direct-templates';
+import { isDirectTemplateRecipientEmail } from '@documenso/lib/constants/direct-templates';
 import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
 import { DIRECT_TEMPLATE_DOCUMENTATION } from '@documenso/lib/constants/template';
 import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { formatDirectTemplatePath } from '@documenso/lib/utils/templates';
 import { trpc as trpcReact } from '@documenso/trpc/react';
 import { AnimateGenericFadeInOut } from '@documenso/ui/components/animate/animate-generic-fade-in-out';
-import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
 import { Button } from '@documenso/ui/primitives/button';
 import {
   Dialog,
@@ -31,7 +28,7 @@ import { Trans } from '@lingui/react/macro';
 import { RecipientRole, type TemplateDirectLink } from '@prisma/client';
 import { CircleDotIcon, CircleIcon, ClipboardCopyIcon, InfoIcon, LinkIcon, LoaderIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useRevalidator } from 'react-router';
+import { useRevalidator } from 'react-router';
 import { match, P } from 'ts-pattern';
 
 type TemplateDirectLinkDialogProps = {
@@ -56,7 +53,6 @@ export const TemplateDirectLinkDialog = ({
   onDeleteSuccess,
 }: TemplateDirectLinkDialogProps) => {
   const { toast } = useToast();
-  const { quota, remaining } = useLimits();
   const { _ } = useLingui();
   const { revalidate } = useRevalidator();
 
@@ -67,8 +63,6 @@ export const TemplateDirectLinkDialog = ({
   const [token, setToken] = useState(directLink?.token ?? null);
   const [selectedRecipientId, setSelectedRecipientId] = useState<number | null>(null);
   const [currentStep, setCurrentStep] = useState<TemplateDirectLinkStep>(token ? 'MANAGE' : 'ONBOARD');
-
-  const organisation = useCurrentOrganisation();
 
   const validDirectTemplateRecipients = useMemo(
     () =>
@@ -226,34 +220,11 @@ export const TemplateDirectLinkDialog = ({
                     ))}
                   </ul>
 
-                  {remaining.directTemplates === 0 && (
-                    <Alert variant="warning">
-                      <AlertTitle>
-                        <Trans>
-                          Direct template link usage exceeded ({quota.directTemplates}/{quota.directTemplates})
-                        </Trans>
-                      </AlertTitle>
-                      <AlertDescription>
-                        <Trans>
-                          You have reached the maximum limit of {quota.directTemplates} direct templates.{' '}
-                          <Link
-                            className="mt-1 block underline underline-offset-4"
-                            to={`/o/${organisation.url}/settings/billing`}
-                          >
-                            Upgrade your account to continue!
-                          </Link>
-                        </Trans>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {remaining.directTemplates !== 0 && (
-                    <DialogFooter className="mx-auto mt-4">
-                      <Button type="button" onClick={() => setCurrentStep('SELECT_RECIPIENT')}>
-                        <Trans>Enable direct link signing</Trans>
-                      </Button>
-                    </DialogFooter>
-                  )}
+                  <DialogFooter className="mx-auto mt-4">
+                    <Button type="button" onClick={() => setCurrentStep('SELECT_RECIPIENT')}>
+                      <Trans>Enable direct link signing</Trans>
+                    </Button>
+                  </DialogFooter>
                 </DialogContent>
               ))
               .with({ token: P.nullish, currentStep: 'SELECT_RECIPIENT' }, () => (
@@ -329,7 +300,7 @@ export const TemplateDirectLinkDialog = ({
                   </div>
 
                   {/* Prevent creating placeholder direct template recipient if the email already exists. */}
-                  {!recipients.some((recipient) => recipient.email === DIRECT_TEMPLATE_RECIPIENT_EMAIL) && (
+                  {!recipients.some((recipient) => isDirectTemplateRecipientEmail(recipient.email)) && (
                     <DialogFooter className="mx-auto">
                       <div className="flex flex-col items-center justify-center">
                         {validDirectTemplateRecipients.length !== 0 && (

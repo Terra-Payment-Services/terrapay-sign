@@ -1,0 +1,85 @@
+diff --git a/node_modules/@libpdf/core/dist/index.mjs b/node_modules/@libpdf/core/dist/index.mjs
+index ca55581..1a3da96 100644
+--- a/node_modules/@libpdf/core/dist/index.mjs
++++ b/node_modules/@libpdf/core/dist/index.mjs
+@@ -44967,6 +44967,14 @@ var P12Signer = class P12Signer {
+ 	keyType;
+ 	signatureAlgorithm;
+ 	privateKey;
++	/**
++	* Private keys re-imported for a specific digest, keyed by digest algorithm.
++	*
++	* RSASSA-PKCS1-v1_5 and RSA-PSS bind the digest to the key at import time, so
++	* the key imported by importPrivateKey can only ever sign with SHA-256. See
++	* getKeyForDigest.
++	*/
++	rsaKeysByDigest = /* @__PURE__ */ new Map();
+ 	constructor(privateKey, certificate, certificateChain, keyType, signatureAlgorithm) {
+ 		this.privateKey = privateKey;
+ 		this.certificate = certificate;
+@@ -45084,10 +45092,17 @@ var P12Signer = class P12Signer {
+ 	static async importPrivateKey(privateKeyInfo) {
+ 		const crypto = getCrypto();
+ 		const algorithmOid = privateKeyInfo.privateKeyAlgorithm.algorithmId;
+-		if (algorithmOid === "1.2.840.113549.1.1.1") return crypto.importKey("pkcs8", privateKeyInfo.toSchema().toBER(false), {
+-			name: "RSASSA-PKCS1-v1_5",
+-			hash: "SHA-256"
+-		}, true, ["sign"]);
++		if (algorithmOid === "1.2.840.113549.1.1.1")
++			/**
++			* SHA-256 is only the initial binding. WebCrypto ties the digest to an
++			* RSA key at import, so signing under any other digest goes through
++			* getKeyForDigest, which re-imports this key under the digest asked for.
++			* The key is imported as extractable so that re-import is possible.
++			*/
++			return crypto.importKey("pkcs8", privateKeyInfo.toSchema().toBER(false), {
++				name: "RSASSA-PKCS1-v1_5",
++				hash: "SHA-256"
++			}, true, ["sign"]);
+ 		if (algorithmOid === "1.2.840.10045.2.1") {
+ 			const params = privateKeyInfo.privateKeyAlgorithm.algorithmParams;
+ 			let namedCurve = "P-256";
+@@ -45155,11 +45170,42 @@ var P12Signer = class P12Signer {
+ 				};
+ 				break;
+ 		}
+-		const signature = await crypto.sign(signAlgorithm, this.privateKey, new Uint8Array(data));
++		const signature = await crypto.sign(signAlgorithm, await this.getKeyForDigest(algorithm), new Uint8Array(data));
+ 		if (this.signatureAlgorithm === "ECDSA") return new Uint8Array(createCMSECDSASignature(signature));
+ 		return new Uint8Array(signature);
+ 	}
+ 	/**
++	* Resolve the key to sign with for a given digest algorithm.
++	*
++	* ECDSA takes the digest per operation, so the imported key is used as is.
++	* RSA keys bind the digest at import, so a key whose bound digest differs
++	* from the requested one is re-imported under the requested digest. Without
++	* this the key signs with SHA-256 while the CMS layer writes the requested
++	* digest into SignerInfo, digestAlgorithms and the CMSAlgorithmProtection
++	* attribute, and the signature fails to verify.
++	*
++	* Re-imports are cached, since parsing the key again is not free.
++	*
++	* @param algorithm - The digest algorithm the signature will declare
++	* @returns A CryptoKey bound to that digest
++	*/
++	async getKeyForDigest(algorithm) {
++		const keyAlgorithm = this.privateKey.algorithm;
++		if (keyAlgorithm.name !== "RSASSA-PKCS1-v1_5" && keyAlgorithm.name !== "RSA-PSS") return this.privateKey;
++		if (keyAlgorithm.hash?.name === algorithm) return this.privateKey;
++		const cached = this.rsaKeysByDigest.get(algorithm);
++		if (cached) return cached;
++		if (!this.privateKey.extractable) throw new SignerError(`Private key is bound to ${keyAlgorithm.hash?.name} and cannot be re-imported for ${algorithm}`);
++		const crypto = getCrypto();
++		const pkcs8 = await crypto.exportKey("pkcs8", this.privateKey);
++		const key = await crypto.importKey("pkcs8", pkcs8, {
++			name: keyAlgorithm.name,
++			hash: algorithm
++		}, true, ["sign"]);
++		this.rsaKeysByDigest.set(algorithm, key);
++		return key;
++	}
++	/**
+ 	* Get the hash output length in bytes for a given algorithm.
+ 	*/
+ 	getHashLength(algorithm) {

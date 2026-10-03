@@ -309,11 +309,14 @@ export const createEnvelopeFields = async ({
       continue;
     }
 
-    const { documentData: newDocumentData } = await putPdfFileServerSide({
-      name: 'document.pdf',
-      type: 'application/pdf',
-      arrayBuffer: async () => Promise.resolve(Buffer.from(modifiedPdfBytes)),
-    });
+    const { documentData: newDocumentData } = await putPdfFileServerSide(
+      {
+        name: 'document.pdf',
+        type: 'application/pdf',
+        arrayBuffer: async () => Promise.resolve(Buffer.from(modifiedPdfBytes)),
+      },
+      { owner: { userId, teamId } },
+    );
 
     await prisma.envelopeItem.update({
       where: { id: envelopeItemId },

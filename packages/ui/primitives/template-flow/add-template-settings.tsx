@@ -10,7 +10,6 @@ import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import type { TTemplate } from '@documenso/lib/types/template';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 import { extractTeamSignatureSettings } from '@documenso/lib/utils/teams';
-import { trpc } from '@documenso/trpc/react';
 import {
   DocumentGlobalAuthAccessSelect,
   DocumentGlobalAuthAccessTooltip,
@@ -109,7 +108,6 @@ export const AddTemplateSettingsFormPartial = ({
         distributionMethod: template.templateMeta?.distributionMethod || DocumentDistributionMethod.EMAIL,
         redirectUrl: template.templateMeta?.redirectUrl ?? '',
         language: template.templateMeta?.language ?? 'en',
-        emailId: template.templateMeta?.emailId ?? null,
         emailReplyTo: template.templateMeta?.emailReplyTo ?? undefined,
         emailSettings: ZDocumentEmailSettingsSchema.parse(template?.templateMeta?.emailSettings),
         signatureTypes: extractTeamSignatureSettings(template?.templateMeta),
@@ -121,13 +119,6 @@ export const AddTemplateSettingsFormPartial = ({
 
   const distributionMethod = form.watch('meta.distributionMethod');
   const emailSettings = form.watch('meta.emailSettings');
-
-  const { data: emailData, isLoading: isLoadingEmails } = trpc.enterprise.organisation.email.find.useQuery({
-    organisationId: organisation.id,
-    perPage: 100,
-  });
-
-  const emails = emailData?.data || [];
 
   const canUpdateVisibility = match(currentTeamMemberRole)
     .with(TeamMemberRole.ADMIN, () => true)
@@ -460,44 +451,6 @@ export const AddTemplateSettingsFormPartial = ({
 
                   <AccordionContent className="-mx-1 px-1 pt-4 text-muted-foreground text-sm leading-relaxed [&>div]:pb-0">
                     <div className="flex flex-col space-y-6">
-                      {organisation.organisationClaim.flags.emailDomains && (
-                        <FormField
-                          control={form.control}
-                          name="meta.emailId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                <Trans>Email Sender</Trans>
-                              </FormLabel>
-
-                              <FormControl>
-                                <Select
-                                  {...field}
-                                  value={field.value === null ? '-1' : field.value}
-                                  onValueChange={(value) => field.onChange(value === '-1' ? null : value)}
-                                >
-                                  <SelectTrigger loading={isLoadingEmails} className="bg-background">
-                                    <SelectValue />
-                                  </SelectTrigger>
-
-                                  <SelectContent>
-                                    {emails.map((email) => (
-                                      <SelectItem key={email.id} value={email.id}>
-                                        {email.email}
-                                      </SelectItem>
-                                    ))}
-
-                                    <SelectItem value={'-1'}>Documenso</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </FormControl>
-
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
                       <FormField
                         control={form.control}
                         name="meta.emailReplyTo"

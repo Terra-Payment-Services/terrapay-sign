@@ -15,6 +15,7 @@ import { EmbedDocumentRejected } from '~/components/embed/embed-document-rejecte
 import { EmbedDocumentWaitingForTurn } from '~/components/embed/embed-document-waiting-for-turn';
 import { EmbedPaywall } from '~/components/embed/embed-paywall';
 import { EmbedRecipientExpired } from '~/components/embed/embed-recipient-expired';
+import { DocumentSigningAccess2FAGate } from '~/components/general/document-signing/document-signing-access-2fa-gate';
 
 import type { Route } from './+types/_layout';
 
@@ -59,6 +60,7 @@ export function ErrorBoundary({ loaderData }: Route.ErrorBoundaryProps) {
       isRouteErrorResponse(error) &&
       [
         'embed-authentication-required',
+        'embed-access-code-required',
         'embed-paywall',
         'embed-waiting-for-turn',
         'embed-recipient-expired',
@@ -83,6 +85,15 @@ export function ErrorBoundary({ loaderData }: Route.ErrorBoundaryProps) {
           oidcProviderLabel={oidcProviderLabel}
           email={error.data.email}
           returnTo={error.data.returnTo}
+        />
+      );
+    }
+
+    if (error.status === 401 && error.data.type === 'embed-access-code-required') {
+      return (
+        <DocumentSigningAccess2FAGate
+          documentAuthOptions={error.data.documentAuthOptions}
+          recipient={error.data.recipient}
         />
       );
     }

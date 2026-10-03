@@ -1,6 +1,6 @@
 import { getSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useSession } from '@documenso/lib/client-only/providers/session';
-import { isSigninEnabledForProvider } from '@documenso/lib/constants/auth';
+import { isPasskeyEnabled, isSigninEnabledForProvider } from '@documenso/lib/constants/auth';
 import { getUserAuthMethods } from '@documenso/lib/server-only/user/get-user-auth-methods';
 import { UserAuthMethod } from '@documenso/lib/types/user-auth-method';
 import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
@@ -31,16 +31,25 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     hasEmailPasswordAccount: authMethods.includes(UserAuthMethod.PASSWORD),
+    isPasskeyEnabled: isPasskeyEnabled(),
   };
 }
 
 export default function SettingsSecurity({ loaderData }: Route.ComponentProps) {
-  const { hasEmailPasswordAccount } = loaderData;
+  const { hasEmailPasswordAccount, isPasskeyEnabled } = loaderData;
 
   const { _ } = useLingui();
-  const { user } = useSession();
+  const { user, organisations } = useSession();
 
   const isEmailPasswordSigninEnabled = isSigninEnabledForProvider('email');
+
+  // An authenticator is a second factor at password sign in, and otherwise
+  // only for documents that require it as action auth, which needs cfr21. A
+  // user who already has one keeps the card so they can still turn it off.
+  const isTwoFactorOffered =
+    user.twoFactorEnabled ||
+    hasEmailPasswordAccount ||
+    organisations.some((organisation) => organisation.organisationClaim.flags.cfr21 === true);
 
   return (
     <div>
@@ -70,26 +79,28 @@ export default function SettingsSecurity({ loaderData }: Route.ComponentProps) {
         </Alert>
       )}
 
-      <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
-        <div className="mb-4 sm:mb-0">
-          <AlertTitle>
-            <Trans>Two factor authentication</Trans>
-          </AlertTitle>
+      {isTwoFactorOffered && (
+        <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
+          <div className="mb-4 sm:mb-0">
+            <AlertTitle>
+              <Trans>Two factor authentication</Trans>
+            </AlertTitle>
 
-          <AlertDescription className="mr-4">
-            {hasEmailPasswordAccount ? (
-              <Trans>
-                Add an authenticator to serve as a secondary authentication method when signing in, or when signing
-                documents.
-              </Trans>
-            ) : (
-              <Trans>Add an authenticator to serve as a secondary authentication method for signing documents.</Trans>
-            )}
-          </AlertDescription>
-        </div>
+            <AlertDescription className="mr-4">
+              {hasEmailPasswordAccount ? (
+                <Trans>
+                  Add an authenticator to serve as a secondary authentication method when signing in, or when signing
+                  documents.
+                </Trans>
+              ) : (
+                <Trans>Add an authenticator to serve as a secondary authentication method for signing documents.</Trans>
+              )}
+            </AlertDescription>
+          </div>
 
-        {user.twoFactorEnabled ? <DisableAuthenticatorAppDialog /> : <EnableAuthenticatorAppDialog />}
-      </Alert>
+          {user.twoFactorEnabled ? <DisableAuthenticatorAppDialog /> : <EnableAuthenticatorAppDialog />}
+        </Alert>
+      )}
 
       {user.twoFactorEnabled && (
         <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
@@ -110,23 +121,25 @@ export default function SettingsSecurity({ loaderData }: Route.ComponentProps) {
         </Alert>
       )}
 
-      <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
-        <div className="mb-4 sm:mb-0">
-          <AlertTitle>
-            <Trans>Passkeys</Trans>
-          </AlertTitle>
+      {isPasskeyEnabled && (
+        <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
+          <div className="mb-4 sm:mb-0">
+            <AlertTitle>
+              <Trans>Passkeys</Trans>
+            </AlertTitle>
 
-          <AlertDescription className="mr-4">
-            <Trans>Allows authenticating using biometrics, password managers, hardware keys, etc.</Trans>
-          </AlertDescription>
-        </div>
+            <AlertDescription className="mr-4">
+              <Trans>Allows authenticating using biometrics, password managers, hardware keys, etc.</Trans>
+            </AlertDescription>
+          </div>
 
-        <Button asChild variant="outline" className="bg-background">
-          <Link to="/settings/security/passkeys">
-            <Trans>Manage passkeys</Trans>
-          </Link>
-        </Button>
-      </Alert>
+          <Button asChild variant="outline" className="bg-background">
+            <Link to="/settings/security/passkeys">
+              <Trans>Manage passkeys</Trans>
+            </Link>
+          </Button>
+        </Alert>
+      )}
 
       <Alert className="mt-6 flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
         <div className="mr-4 mb-4 sm:mb-0">

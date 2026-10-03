@@ -1,22 +1,23 @@
 import { tsRestHonoApp } from '@documenso/api/hono';
 import { auth } from '@documenso/auth/server';
-import { csc } from '@documenso/ee/server-only/signing/csc/hono';
+import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { jobsClient } from '@documenso/lib/jobs/client';
-import { LicenseClient } from '@documenso/lib/server-only/license/license-client';
+import { isCsrfExemptRequest } from '@documenso/lib/server-only/http/csrf-exemptions';
+import { createSameOriginMiddleware } from '@documenso/lib/server-only/http/same-origin-middleware';
 import { createRateLimitMiddleware } from '@documenso/lib/server-only/rate-limit/rate-limit-middleware';
 import {
-  aiRateLimit,
   apiTrpcRateLimit,
   apiV1RateLimit,
   apiV2RateLimit,
   fileUploadRateLimit,
 } from '@documenso/lib/server-only/rate-limit/rate-limits';
-import { TelemetryClient } from '@documenso/lib/server-only/telemetry/telemetry-client';
 import { migrateDeletedAccountServiceAccount } from '@documenso/lib/server-only/user/service-accounts/deleted-account';
 import { migrateLegacyServiceAccount } from '@documenso/lib/server-only/user/service-accounts/legacy-service-account';
 import { env } from '@documenso/lib/utils/env';
 import { logger } from '@documenso/lib/utils/logger';
+import { redactPathTokens } from '@documenso/lib/utils/redact-path-tokens';
 import { openApiDocument } from '@documenso/trpc/server/open-api';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { contextStorage } from 'hono/context-storage';
 import { cors } from 'hono/cors';
@@ -24,19 +25,22 @@ import type { RequestIdVariables } from 'hono/request-id';
 import { requestId } from 'hono/request-id';
 import type { Logger } from 'pino';
 
-import { aiRoute } from './api/ai/route';
 import { downloadRoute } from './api/download/download';
 import { filesRoute } from './api/files/files';
+import { apiBodyLimit, fileUploadBodyLimit } from './body-limit';
 import { type AppContext, appContext } from './context';
 import { appMiddleware } from './middleware';
 import { securityHeadersMiddleware } from './security-headers';
 import { openApiTrpcServerHandler } from './trpc/hono-trpc-open-api';
 import { reactRouterTrpcServer } from './trpc/hono-trpc-remix';
 
-// Re-export so the rollup build (entry: server/router.ts) bundles
-// load-context.ts. server/main.js imports getLoadContext from the rolled-up
-// output to wire it into the React Router adapter.
+// Re-exported so the rollup build (entry: server/router.ts) bundles them.
+// server/main.js imports these from the rolled-up output: getLoadContext to wire
+// into the React Router adapter, and the shutdown pair to answer SIGTERM.
+export { createGracefulShutdown } from '@documenso/lib/utils/graceful-shutdown';
 export { getLoadContext } from './load-context';
+
+export const closeBackgroundJobs = async () => await jobsClient.close();
 
 export interface HonoEnv {
   Variables: RequestIdVariables & {
@@ -55,9 +59,21 @@ const app = new Hono<HonoEnv>().basePath(basePath || '/');
  */
 const apiV1RateLimitMiddleware = createRateLimitMiddleware(apiV1RateLimit);
 const apiV2RateLimitMiddleware = createRateLimitMiddleware(apiV2RateLimit);
-const aiRateLimitMiddleware = createRateLimitMiddleware(aiRateLimit);
 const trpcRateLimitMiddleware = createRateLimitMiddleware(apiTrpcRateLimit);
 const fileRateLimitMiddleware = createRateLimitMiddleware(fileUploadRateLimit);
+
+const isCsrfExempt = (c: Context) =>
+  isCsrfExemptRequest({
+    path: c.req.path.slice(basePath.length) || '/',
+    hasAuthorizationHeader: !!c.req.header('authorization'),
+  });
+
+/**
+ * CSRF guard for every state-changing request the browser can send with the
+ * session cookie: tRPC, the auth routes, file uploads, cookie-authenticated
+ * v2 calls and React Router actions.
+ */
+const sameOriginMiddleware = createSameOriginMiddleware(NEXT_PUBLIC_WEBAPP_URL, { isExempt: isCsrfExempt });
 
 /**
  * Attach session and context to requests.
@@ -84,7 +100,8 @@ app.use(async (c, next) => {
 
   const honoLogger = logger.child({
     requestId: c.var.requestId,
-    requestPath: c.req.path,
+    // Signing links and other token routes carry a credential in the path.
+    requestPath: redactPathTokens(c.req.path),
     ipAddress: metadata.ipAddress,
     userAgent: metadata.userAgent,
   });
@@ -94,32 +111,32 @@ app.use(async (c, next) => {
   await next();
 });
 
+app.use('*', sameOriginMiddleware);
+
 // Apply cors and rate limits to API routes.
 app.use(`/api/v1/*`, cors());
 app.use('/api/v1/*', apiV1RateLimitMiddleware);
 app.use(`/api/v2/*`, cors());
+app.use('/api/v2/*', apiBodyLimit);
 app.use('/api/v2/*', apiV2RateLimitMiddleware);
 app.use(`/api/v2-beta/*`, cors());
+app.use('/api/v2-beta/*', apiBodyLimit);
 app.use('/api/v2-beta/*', apiV2RateLimitMiddleware);
 
 // Auth server.
 app.route('/api/auth', auth);
 
-// Files route.
+// Files route. The body limit comes first so an oversized upload is refused
+// before the rate limiter, the session lookup or the form parser touch it.
+app.use('/api/files/*', fileUploadBodyLimit);
 app.use('/api/files/upload-pdf', fileRateLimitMiddleware);
 app.route('/api/files', filesRoute);
-
-// AI route.
-app.use('/api/ai/*', aiRateLimitMiddleware);
-app.route('/api/ai', aiRoute);
-
-// CSC OAuth routes (mounted from @documenso/ee).
-app.route('/api/csc', csc);
 
 // API servers.
 app.route('/api/v1', tsRestHonoApp);
 app.use('/api/jobs/*', jobsClient.getApiHandler());
 
+app.use('/api/trpc/*', apiBodyLimit);
 app.use('/api/trpc/*', trpcRateLimitMiddleware);
 app.use('/api/trpc/*', reactRouterTrpcServer);
 
@@ -143,14 +160,19 @@ app.use(`/api/v2-beta/*`, async (c) =>
   }),
 );
 
-// Start telemetry client for anonymous usage tracking.
-// Can be disabled by setting DOCUMENSO_DISABLE_TELEMETRY=true
-if (env('NODE_ENV') !== 'development') {
-  void TelemetryClient.start();
-}
-
-// Start license client to verify license on startup.
-void LicenseClient.start();
+// Upstream started two vendor clients here and both have been removed.
+//
+// The telemetry client posted a startup event and then an hourly heartbeat,
+// forever, to a PostHog project whose key and host are baked into the official
+// Docker image at build time. It carried the app version, a database-persisted
+// installation id and a per-container node id, and it set `disableGeoip: false`,
+// so PostHog also resolved this server's public IP to a location. Its only
+// opt-out was an environment variable, which is exactly the kind of thing that
+// gets forgotten, so `telemetry-client.ts` has been deleted outright.
+//
+// The licence client POSTed the licence key to https://license.documenso.com on
+// every boot. It existed only to gate the enterprise code, which has been
+// deleted, so the client has gone with it.
 
 // Start cron scheduler for background jobs (e.g. envelope expiration sweep).
 // No-op for Inngest provider which handles cron externally.

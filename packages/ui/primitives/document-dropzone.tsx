@@ -1,16 +1,13 @@
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { getAllowedUploadMimeTypes } from '@documenso/lib/constants/document-conversion';
 import { megabytesToBytes } from '@documenso/lib/universal/unit-convertions';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Plus } from 'lucide-react';
 import type { FileRejection } from 'react-dropzone';
 import { useDropzone } from 'react-dropzone';
-import { Link } from 'react-router';
 
 import {
   DocumentDropzoneCardCenterVariants,
@@ -22,7 +19,6 @@ import {
   DocumentDropzoneDisabledCardRightVariants,
 } from '../lib/document-dropzone-constants';
 import { cn } from '../lib/utils';
-import { Button } from './button';
 import { Card, CardContent } from './card';
 
 export type DocumentDropzoneProps = {
@@ -51,8 +47,6 @@ export const DocumentDropzone = ({
   ...props
 }: DocumentDropzoneProps) => {
   const { _ } = useLingui();
-
-  const organisation = useCurrentOrganisation();
 
   const { getRootProps, getInputProps } = useDropzone({
     accept: getAllowedUploadMimeTypes(),
@@ -152,14 +146,6 @@ export const DocumentDropzone = ({
           <p className="mt-1 text-center text-muted-foreground/80 text-sm">
             {_(disabled ? disabledMessage : msg`Drag & drop your document here.`)}
           </p>
-
-          {disabled && IS_BILLING_ENABLED() && (
-            <Button className="mt-4 w-32 bg-warning hover:bg-warning/80" asChild>
-              <Link to={`/o/${organisation.url}/settings/billing`}>
-                <Trans>Upgrade</Trans>
-              </Link>
-            </Button>
-          )}
         </CardContent>
       </Card>
     </motion.div>

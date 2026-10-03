@@ -1,14 +1,11 @@
 import { useAutoSave } from '@documenso/lib/client-only/hooks/use-autosave';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
 import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
 import type { TDocument } from '@documenso/lib/types/document';
 import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';
 import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { formatSigningLink } from '@documenso/lib/utils/recipients';
-import { trpc } from '@documenso/trpc/react';
 import { DocumentSendEmailMessageHelper } from '@documenso/ui/components/document/document-send-email-message-helper';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@documenso/ui/primitives/form/form';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@documenso/ui/primitives/select';
 import { Tabs, TabsList, TabsTrigger } from '@documenso/ui/primitives/tabs';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { msg } from '@lingui/core/macro';
@@ -61,12 +58,9 @@ export const AddSubjectFormPartial = ({
 }: AddSubjectFormProps) => {
   const { _ } = useLingui();
 
-  const organisation = useCurrentOrganisation();
-
   const form = useForm<TAddSubjectFormSchema>({
     defaultValues: {
       meta: {
-        emailId: document.documentMeta?.emailId ?? null,
         emailReplyTo: document.documentMeta?.emailReplyTo || undefined,
         // emailReplyName: document.documentMeta?.emailReplyName || undefined,
         subject: document.documentMeta?.subject ?? '',
@@ -86,13 +80,6 @@ export const AddSubjectFormPartial = ({
     getValues,
     formState: { isSubmitting },
   } = form;
-
-  const { data: emailData, isLoading: isLoadingEmails } = trpc.enterprise.organisation.email.find.useQuery({
-    organisationId: organisation.id,
-    perPage: 100,
-  });
-
-  const emails = emailData?.data || [];
 
   const GoNextLabel = {
     [DocumentDistributionMethod.EMAIL]: {
@@ -192,43 +179,6 @@ export const AddSubjectFormPartial = ({
                     className="flex flex-col gap-y-4 rounded-lg border p-4"
                     disabled={form.formState.isSubmitting}
                   >
-                    {organisation.organisationClaim.flags.emailDomains && (
-                      <FormField
-                        control={form.control}
-                        name="meta.emailId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Trans>Email Sender</Trans>
-                            </FormLabel>
-                            <FormControl>
-                              <Select
-                                {...field}
-                                value={field.value === null ? '-1' : field.value}
-                                onValueChange={(value) => field.onChange(value === '-1' ? null : value)}
-                              >
-                                <SelectTrigger loading={isLoadingEmails} className="bg-background">
-                                  <SelectValue />
-                                </SelectTrigger>
-
-                                <SelectContent>
-                                  {emails.map((email) => (
-                                    <SelectItem key={email.id} value={email.id}>
-                                      {email.email}
-                                    </SelectItem>
-                                  ))}
-
-                                  <SelectItem value={'-1'}>Documenso</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </FormControl>
-
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )}
-
                     <FormField
                       control={form.control}
                       name="meta.emailReplyTo"

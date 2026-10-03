@@ -3,16 +3,12 @@ import type { BrandingSettings } from '@documenso/email/providers/branding';
 import { prisma } from '@documenso/prisma';
 import type {
   DocumentMeta,
-  EmailDomain,
-  Organisation,
-  OrganisationEmail,
+  OrganisationClaim,
+  OrganisationGlobalSettings,
   OrganisationType,
 } from '@documenso/prisma/client';
-import { EmailDomainStatus, type OrganisationClaim, type OrganisationGlobalSettings } from '@documenso/prisma/client';
 import type { Transporter } from 'nodemailer';
-import { match, P } from 'ts-pattern';
 
-import { IS_BILLING_ENABLED } from '../../constants/app';
 import { DOCUMENSO_INTERNAL_EMAIL } from '../../constants/email';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { logger } from '../../utils/logger';
@@ -67,7 +63,6 @@ type RecipientGetEmailContextOptions = BaseGetEmailContextOptions & {
 type GetEmailContextOptions = InternalGetEmailContextOptions | RecipientGetEmailContextOptions;
 
 export type EmailContextResponse = {
-  allowedEmails: OrganisationEmail[];
   branding: BrandingSettings;
   settings: Omit<OrganisationGlobalSettings, 'id'>;
   claims: OrganisationClaim;
@@ -144,35 +139,7 @@ export const getEmailContext = async (options: GetEmailContextOptions): Promise<
 
   const replyToEmail = meta?.emailReplyTo || emailContext.settings.emailReplyTo || undefined;
 
-  const senderEmailId = match(meta?.emailId)
-    .with(P.string, (emailId) => emailId) // Explicit string means to use the provided email ID.
-    .with(undefined, () => emailContext.settings.emailId) // Undefined means to use the inherited email ID.
-    .with(null, () => null) // Explicit null means to use the Documenso email.
-    .exhaustive();
-
-  const foundSenderEmail = emailContext.allowedEmails.find((email) => email.id === senderEmailId);
-
-  // Reset the emailId to null if not found.
-  if (!foundSenderEmail) {
-    emailContext.settings.emailId = null;
-  }
-
-  // Custom-domain sender (emailDomains): always use the env mailer (SES) and the
-  // custom sender; the per-plan transport is ignored entirely here.
-  if (foundSenderEmail) {
-    return {
-      ...emailContext,
-      emailTransport: mailer,
-      senderEmail: {
-        name: foundSenderEmail.emailName,
-        address: foundSenderEmail.email,
-      },
-      replyToEmail,
-      emailLanguage,
-    };
-  }
-
-  // No custom-domain sender → per-plan transport (if any) supplies transport + from-address.
+  // The per-plan transport (if any) supplies transport + from-address.
   return {
     ...emailContext,
     emailTransport: resolvedTransportData.transport,
@@ -198,14 +165,6 @@ const handleOrganisationEmailContext = async (organisationId: string) => {
       },
       organisationClaim: true,
       organisationGlobalSettings: true,
-      emailDomains: {
-        omit: {
-          privateKey: true,
-        },
-        include: {
-          emails: true,
-        },
-      },
     },
   });
 
@@ -215,22 +174,13 @@ const handleOrganisationEmailContext = async (organisationId: string) => {
 
   const claims = organisation.organisationClaim;
 
-  const allowedEmails = getAllowedEmails(organisation);
-
   const branding = organisationGlobalSettingsToBranding(
     organisation.organisationGlobalSettings,
     organisation.id,
     claims.flags.hidePoweredBy ?? false,
   );
 
-  const allowBrandedEmailColors = !IS_BILLING_ENABLED() || claims.flags.embedSigningWhiteLabel === true;
-
-  if (!allowBrandedEmailColors) {
-    branding.brandingColors = undefined;
-  }
-
   return {
-    allowedEmails,
     branding,
     settings: organisation.organisationGlobalSettings,
     claims,
@@ -257,14 +207,6 @@ const handleTeamEmailContext = async (teamId: number) => {
           },
           organisationClaim: true,
           organisationGlobalSettings: true,
-          emailDomains: {
-            omit: {
-              privateKey: true,
-            },
-            include: {
-              emails: true,
-            },
-          },
         },
       },
     },
@@ -277,20 +219,11 @@ const handleTeamEmailContext = async (teamId: number) => {
   const organisation = team.organisation;
   const claims = organisation.organisationClaim;
 
-  const allowedEmails = getAllowedEmails(organisation);
-
   const teamSettings = extractDerivedTeamSettings(organisation.organisationGlobalSettings, team.teamGlobalSettings);
 
   const branding = teamGlobalSettingsToBranding(teamSettings, teamId, claims.flags.hidePoweredBy ?? false);
 
-  const allowBrandedEmailColors = !IS_BILLING_ENABLED() || claims.flags.embedSigningWhiteLabel === true;
-
-  if (!allowBrandedEmailColors) {
-    branding.brandingColors = undefined;
-  }
-
   return {
-    allowedEmails,
     branding,
     settings: teamSettings,
     claims,
@@ -298,19 +231,4 @@ const handleTeamEmailContext = async (teamId: number) => {
     organisationId: organisation.id,
     organisationType: organisation.type,
   };
-};
-
-const getAllowedEmails = (
-  organisation: Organisation & {
-    emailDomains: (Pick<EmailDomain, 'status'> & { emails: OrganisationEmail[] })[];
-    organisationClaim: OrganisationClaim;
-  },
-) => {
-  if (!organisation.organisationClaim.flags.emailDomains) {
-    return [];
-  }
-
-  return organisation.emailDomains
-    .filter((emailDomain) => emailDomain.status === EmailDomainStatus.ACTIVE)
-    .flatMap((emailDomain) => emailDomain.emails);
 };

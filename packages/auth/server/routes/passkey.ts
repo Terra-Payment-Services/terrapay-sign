@@ -1,3 +1,4 @@
+import { isPasskeyEnabled } from '@documenso/lib/constants/auth';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { rateLimitResponse } from '@documenso/lib/server-only/rate-limit/rate-limit-middleware';
 import { passkeyRateLimit } from '@documenso/lib/server-only/rate-limit/rate-limits';
@@ -23,6 +24,17 @@ export const passkeyRoute = new Hono<HonoAuthContext>()
    * Authorize endpoint.
    */
   .post('/authorize', sValidator('json', ZPasskeyAuthorizeSchema), async (c) => {
+    // Refused here and not only hidden on the sign in page. A passkey is a
+    // credential this application holds rather than one the directory holds,
+    // so on an SSO-only deployment it is a way in that survives the directory
+    // revoking someone. Hiding the button would leave the route open to anyone
+    // who kept a passkey from before the deployment was locked down.
+    if (!isPasskeyEnabled()) {
+      throw new AppError(AppErrorCode.NOT_SETUP, {
+        message: 'Passkey sign in is disabled on this deployment.',
+      });
+    }
+
     const requestMetadata = c.get('requestMetadata');
 
     const passkeyLimitResult = await passkeyRateLimit.check({

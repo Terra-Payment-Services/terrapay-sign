@@ -59,12 +59,11 @@ ENV NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY="$NEXT_PRIVATE_ENCRYPTION_SECONDARY_KE
 ARG NEXT_PUBLIC_BASE_PATH=""
 ENV NEXT_PUBLIC_BASE_PATH="$NEXT_PUBLIC_BASE_PATH"
 
-# Telemetry credentials (optional, baked into image at build time)
-ARG NEXT_PRIVATE_TELEMETRY_KEY=""
-ENV NEXT_PRIVATE_TELEMETRY_KEY="$NEXT_PRIVATE_TELEMETRY_KEY"
-
-ARG NEXT_PRIVATE_TELEMETRY_HOST=""
-ENV NEXT_PRIVATE_TELEMETRY_HOST="$NEXT_PRIVATE_TELEMETRY_HOST"
+# Telemetry build args removed. Upstream baked a PostHog key and host into the
+# published image here, which is how the official image phones home on a startup
+# event and an hourly heartbeat whether or not the operator ever sets anything at
+# run time. The telemetry client itself has been deleted, and these args are gone
+# so the credentials cannot be reintroduced through a docker build.
 
 
 # Uncomment and use build args to enable remote caching
@@ -99,13 +98,6 @@ FROM base AS runner
 
 ENV HUSKY=0
 ENV DOCKER_OUTPUT=1
-
-# Telemetry credentials (baked into image at build time, can be disabled at runtime)
-ARG NEXT_PRIVATE_TELEMETRY_KEY=""
-ENV NEXT_PRIVATE_TELEMETRY_KEY="$NEXT_PRIVATE_TELEMETRY_KEY"
-
-ARG NEXT_PRIVATE_TELEMETRY_HOST=""
-ENV NEXT_PRIVATE_TELEMETRY_HOST="$NEXT_PRIVATE_TELEMETRY_HOST"
 
 # Don't run production as root
 RUN addgroup --system --gid 1001 nodejs

@@ -229,7 +229,7 @@ export const TemplateBulkSendDialog = ({ templateId, recipients, trigger, onSucc
                         <Button
                           type="button"
                           variant="link"
-                          className="p-0 text-destructive text-xs hover:text-destructive"
+                          className="p-0 text-destructive-text text-xs hover:text-destructive-text"
                           onClick={() => {
                             setValidationError(null);
 
@@ -246,7 +246,7 @@ export const TemplateBulkSendDialog = ({ templateId, recipients, trigger, onSucc
                     )}
                   </FormControl>
 
-                  {error && <p className="text-destructive text-sm">{error.message}</p>}
+                  {error && <p className="text-destructive-text text-sm">{error.message}</p>}
 
                   <p className="text-muted-foreground text-xs">
                     <Trans>

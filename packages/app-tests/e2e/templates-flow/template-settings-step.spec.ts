@@ -22,8 +22,9 @@ test('[TEMPLATE_FLOW]: add settings', async ({ page }) => {
 
   // Set access auth.
   await page.getByTestId('documentAccessSelectValue').click();
-  await page.getByRole('option').filter({ hasText: 'Require account' }).click();
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await expect(page.getByRole('option').filter({ hasText: 'Require account' })).toHaveCount(0);
+  await page.getByRole('option').filter({ hasText: 'Require 2FA' }).click();
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 
   // Action auth should NOT be visible.
   await expect(page.getByTestId('documentActionSelectValue')).not.toBeVisible();
@@ -37,7 +38,7 @@ test('[TEMPLATE_FLOW]: add settings', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
 
   await expect(page.getByLabel('Title')).toHaveValue('New Title');
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 });
 
 test('[TEMPLATE_FLOW] add document visibility settings', async ({ page }) => {

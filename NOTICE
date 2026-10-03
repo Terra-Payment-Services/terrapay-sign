@@ -1,0 +1,13 @@
+TerraPay Sign
+
+This program is a modified version of Documenso, developed by the Documenso
+contributors at https://github.com/documenso/documenso. TerraPay modified it,
+and this version is dated 2 October 2026; FORK.md describes the modifications.
+
+The program, with TerraPay's modifications, is distributed under the GNU Affero
+General Public License, version 3, as set out in LICENSE. It contains none of
+Documenso's Enterprise Edition code.
+
+This copy leaves out TerraPay's logo, which is a trademark of TerraPay, the
+TT Firs Neue font files, which TerraPay licenses and may not redistribute, and
+the configuration that deploys TerraPay's own instance.

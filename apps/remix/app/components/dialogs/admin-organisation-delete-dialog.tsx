@@ -136,7 +136,7 @@ export const AdminOrganisationDeleteDialog = ({
                   <FormItem>
                     <FormLabel>
                       <Trans>
-                        Confirm by typing <span className="text-destructive">{deleteMessage}</span>
+                        Confirm by typing <span className="text-destructive-text">{deleteMessage}</span>
                       </Trans>
                     </FormLabel>
                     <FormControl>

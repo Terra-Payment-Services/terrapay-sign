@@ -4,6 +4,7 @@ import type { Transporter } from 'nodemailer';
 import { createTransport } from 'nodemailer';
 
 import { MailChannelsTransport } from './transports/mailchannels';
+import { MicrosoftGraphTransport } from './transports/microsoft-graph';
 
 /**
  * Creates a Nodemailer transport object for sending emails.
@@ -15,6 +16,13 @@ import { MailChannelsTransport } from './transports/mailchannels';
  * @returns {Transporter} A configured Nodemailer transporter instance.
  *
  * Supported Transports:
+ * - **graph**: Uses MicrosoftGraphTransport, requiring:
+ *   - `NEXT_PRIVATE_ENTRA_TENANT_ID`: The Entra tenant
+ *   - `NEXT_PRIVATE_ENTRA_CLIENT_ID`: The application registration
+ *   - `NEXT_PRIVATE_ENTRA_CLIENT_SECRET`: Its client secret
+ *   The registration needs the `Mail.Send` application permission, and should
+ *   be confined to the sending mailbox by an Entra application access policy.
+ *   The mailbox sent as is `NEXT_PRIVATE_SMTP_FROM_ADDRESS`.
  * - **mailchannels**: Uses MailChannelsTransport, requiring:
  *   - `NEXT_PRIVATE_MAILCHANNELS_API_KEY`: API key for MailChannels
  *   - `NEXT_PRIVATE_MAILCHANNELS_ENDPOINT`: Endpoint for MailChannels (optional)
@@ -52,6 +60,36 @@ import { MailChannelsTransport } from './transports/mailchannels';
  */
 const getTransport = (): Transporter => {
   const transport = env('NEXT_PRIVATE_SMTP_TRANSPORT') ?? 'smtp-auth';
+
+  if (transport === 'graph') {
+    const tenantId = env('NEXT_PRIVATE_ENTRA_TENANT_ID');
+    const clientId = env('NEXT_PRIVATE_ENTRA_CLIENT_ID');
+    const clientSecret = env('NEXT_PRIVATE_ENTRA_CLIENT_SECRET');
+
+    // Named individually rather than as a group. A deployment that has two of
+    // the three set is the likely mistake, and "requires the Entra
+    // credentials" sends the reader looking at all three.
+    const missing = [
+      !tenantId && 'NEXT_PRIVATE_ENTRA_TENANT_ID',
+      !clientId && 'NEXT_PRIVATE_ENTRA_CLIENT_ID',
+      !clientSecret && 'NEXT_PRIVATE_ENTRA_CLIENT_SECRET',
+    ].filter(Boolean);
+
+    if (missing.length > 0) {
+      throw new Error(`Microsoft Graph transport requires ${missing.join(', ')}`);
+    }
+
+    return createTransport(
+      MicrosoftGraphTransport.makeTransport({
+        tenantId,
+        clientId,
+        clientSecret,
+        // The one mailbox the access policy admits. Passed in so the transport
+        // can refuse a custom organisation sender before calling Microsoft.
+        sender: env('NEXT_PRIVATE_SMTP_FROM_ADDRESS'),
+      }),
+    );
+  }
 
   if (transport === 'mailchannels') {
     return createTransport(

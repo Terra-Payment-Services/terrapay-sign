@@ -9,14 +9,18 @@
     "index.ts"
   ],
   "scripts": {
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@google-cloud/kms": "^5.2.1",
     "@google-cloud/secret-manager": "^6.1.1",
+    "asn1js": "^3.0.10",
+    "pkijs": "^3.4.0",
     "ts-pattern": "^5.9.0"
   },
   "devDependencies": {
-    "@documenso/tsconfig": "*"
+    "@documenso/tsconfig": "*",
+    "vitest": "^4.0.18"
   }
 }

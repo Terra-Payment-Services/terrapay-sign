@@ -1,5 +1,6 @@
 import { PDF_SIZE_A4_72PPI } from '@documenso/lib/constants/pdf';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import { getEnvelopeById, getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { generateAuditLogPdf } from '@documenso/lib/server-only/pdf/generate-audit-log-pdf';
 import { generateCertificatePdf } from '@documenso/lib/server-only/pdf/generate-certificate-pdf';
@@ -98,6 +99,19 @@ export const downloadRoute = new Hono<HonoEnv>()
         });
 
         if (!envelopeItem) {
+          return c.json({ error: 'Envelope item not found' }, 404);
+        }
+
+        // The query above pins the envelope to the token's team but says nothing
+        // about visibility, which is the same gap the session file routes had.
+        // The audit-log, certificate and document routes below already go
+        // through visibility-aware helpers.
+        const hasAccess = await checkEnvelopeFileAccess({
+          userId: apiToken.user.id,
+          envelopeId: envelopeItem.envelopeId,
+        });
+
+        if (!hasAccess) {
           return c.json({ error: 'Envelope item not found' }, 404);
         }
 

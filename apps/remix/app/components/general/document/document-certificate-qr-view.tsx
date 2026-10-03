@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from '@documenso/ui/primitives/dialog';
 import { Trans } from '@lingui/react/macro';
-import { type DocumentData, DocumentStatus, type EnvelopeItem, EnvelopeType } from '@prisma/client';
+import { DocumentStatus, type EnvelopeItem, EnvelopeType } from '@prisma/client';
 import { DownloadIcon } from 'lucide-react';
 import { DateTime } from 'luxon';
 import { useEffect, useState } from 'react';
@@ -32,7 +32,13 @@ export type DocumentCertificateQRViewProps = {
   documentId: number;
   title: string;
   internalVersion: number;
-  envelopeItems: (EnvelopeItem & { documentData: DocumentData })[];
+  /**
+   * Only the identifiers, because that is all this page and everything under it
+   * reads. The query behind it is a public share link and selects a narrow
+   * envelope item on purpose, so asking here for a whole `DocumentData` would
+   * either fail to typecheck or push the owner columns onto an anonymous page.
+   */
+  envelopeItems: Pick<EnvelopeItem, 'id' | 'title' | 'order' | 'envelopeId' | 'documentDataId'>[];
   documentTeamUrl: string;
   recipientCount?: number;
   completedDate?: Date;
@@ -76,8 +82,8 @@ export const DocumentCertificateQRView = ({
 
               <DialogDescription>
                 <Trans>
-                  This document is available in your Documenso account. You can view more details, recipients, and audit
-                  logs there.
+                  This document is available in your TerraPay Sign account. You can view more details, recipients, and
+                  audit logs there.
                 </Trans>
               </DialogDescription>
             </DialogHeader>

@@ -67,7 +67,7 @@ export const BulkSendCompleteEmail = ({
 
                   <ul className="my-2 ml-4 list-inside list-disc">
                     {errors.map((error, index) => (
-                      <li key={index} className="mt-1 text-destructive text-sm">
+                      <li key={index} className="mt-1 text-destructive-text text-sm">
                         {error}
                       </li>
                     ))}

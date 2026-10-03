@@ -21,12 +21,11 @@ export default function TeamEmailSettingsGeneral() {
 
   const onEmailPreferencesSubmit = async (data: TEmailPreferencesFormSchema) => {
     try {
-      const { emailId, emailReplyTo, emailDocumentSettings, includeSenderDetails } = data;
+      const { emailReplyTo, emailDocumentSettings, includeSenderDetails } = data;
 
       await updateTeamSettings({
         teamId: team.id,
         data: {
-          emailId,
           emailReplyTo,
           // emailReplyToName,
           emailDocumentSettings,

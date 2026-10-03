@@ -1,14 +1,11 @@
 import { downloadFile } from '@documenso/lib/client-only/download-file';
 import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
-import { IS_BILLING_ENABLED, SUPPORT_EMAIL } from '@documenso/lib/constants/app';
 import { ORGANISATION_MEMBER_ROLE_HIERARCHY } from '@documenso/lib/constants/organisations';
 import { ORGANISATION_MEMBER_ROLE_MAP } from '@documenso/lib/constants/organisations-translations';
-import { INTERNAL_CLAIM_ID } from '@documenso/lib/types/subscription';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { trpc } from '@documenso/trpc/react';
 import { ZCreateOrganisationMemberInvitesRequestSchema } from '@documenso/trpc/server/organisation-router/create-organisation-member-invites.types';
 import { cn } from '@documenso/ui/lib/utils';
-import { Alert, AlertDescription } from '@documenso/ui/primitives/alert';
 import { Button } from '@documenso/ui/primitives/button';
 import { Card, CardContent } from '@documenso/ui/primitives/card';
 import {
@@ -159,23 +156,6 @@ export const OrganisationMemberInviteDialog = ({ trigger, ...props }: Organisati
       return 'loading';
     }
 
-    if (!IS_BILLING_ENABLED()) {
-      return 'form';
-    }
-
-    if (fullOrganisation.organisationClaim.memberCount === 0) {
-      return 'form';
-    }
-
-    if (fullOrganisation.members.length < fullOrganisation.organisationClaim.memberCount) {
-      return 'form';
-    }
-
-    // This is probably going to screw us over in the future.
-    if (fullOrganisation.organisationClaim.originalSubscriptionClaimId !== INTERNAL_CLAIM_ID.TEAM) {
-      return 'alert';
-    }
-
     return 'form';
   }, [fullOrganisation]);
 
@@ -233,9 +213,9 @@ export const OrganisationMemberInviteDialog = ({ trigger, ...props }: Organisati
 
   const downloadTemplate = () => {
     const data = [
-      { email: 'admin@documenso.com', role: 'Admin' },
-      { email: 'manager@documenso.com', role: 'Manager' },
-      { email: 'member@documenso.com', role: 'Member' },
+      { email: 'admin@terrapay.com', role: 'Admin' },
+      { email: 'manager@terrapay.com', role: 'Manager' },
+      { email: 'member@terrapay.com', role: 'Member' },
     ];
 
     const csvContent = 'Email address,Role\n' + data.map((row) => `${row.email},${row.role}`).join('\n');
@@ -272,25 +252,6 @@ export const OrganisationMemberInviteDialog = ({ trigger, ...props }: Organisati
         </DialogHeader>
 
         {dialogState === 'loading' && <SpinnerBox className="py-32" />}
-
-        {dialogState === 'alert' && (
-          <>
-            <Alert className="flex flex-col justify-between p-6 sm:flex-row sm:items-center" variant="neutral">
-              <AlertDescription>
-                <Trans>
-                  Your plan does not support inviting members. Please upgrade or your plan or contact sales at{' '}
-                  <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> if you would like to discuss your options.
-                </Trans>
-              </AlertDescription>
-            </Alert>
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                <Trans>Cancel</Trans>
-              </Button>
-            </DialogFooter>
-          </>
-        )}
 
         {dialogState === 'form' && (
           <Tabs

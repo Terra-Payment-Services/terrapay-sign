@@ -192,14 +192,8 @@ test('[BRANDING_LOGO]: validates and sanitises the logo on the server', async ({
   expect(afterInvalid.brandingLogo).toBe(afterValid.brandingLogo);
 });
 
-test('[BRANDING_LOGO]: rejects setting a logo without the custom-branding entitlement', async ({ page }) => {
-  // The entitlement is only enforced when billing is enabled; with billing off
-  // the check is intentionally skipped server-side, so this can't be exercised.
-  test.skip(
-    process.env.NEXT_PUBLIC_FEATURE_BILLING_ENABLED !== 'true',
-    'Entitlement is only enforced when billing is enabled.',
-  );
-
+test('[BRANDING_LOGO]: accepts a logo without the custom-branding claim flag', async ({ page }) => {
+  // Billing is gone, so no plan entitlement gates branding.
   // Seeded organisations have no `allowCustomBranding` claim flag.
   const { user, organisation } = await seedUser({ isPersonalOrganisation: false });
 
@@ -215,11 +209,11 @@ test('[BRANDING_LOGO]: rejects setting a logo without the custom-branding entitl
     buffer: fs.readFileSync(LOGO_PATH),
   });
 
-  expect(response.ok()).toBeFalsy();
+  expect(response.ok()).toBeTruthy();
 
   const settings = await prisma.organisationGlobalSettings.findUniqueOrThrow({
     where: { id: organisation.organisationGlobalSettingsId },
   });
 
-  expect(settings.brandingLogo).toBeFalsy();
+  expect(settings.brandingLogo).toBeTruthy();
 });

@@ -1,3 +1,4 @@
+import { SUPPORT_EMAIL } from '@documenso/lib/constants/app';
 import { Trans } from '@lingui/react/macro';
 
 import { Button, Link, Section, Text } from '../components';
@@ -15,11 +16,11 @@ export const TemplateAdminUserCreated = ({ resetPasswordLink, assetBaseUrl }: Te
 
       <Section className="flex-row items-center justify-center">
         <Text className="mx-auto mb-0 max-w-[80%] text-center font-semibold text-foreground text-lg">
-          <Trans>Welcome to Documenso!</Trans>
+          <Trans>Welcome to TerraPay Sign!</Trans>
         </Text>
 
         <Text className="my-1 text-center text-base text-muted-foreground">
-          <Trans>An administrator has created a Documenso account for you.</Trans>
+          <Trans>An administrator has created a TerraPay Sign account for you.</Trans>
         </Text>
 
         <Text className="my-1 text-center text-base text-muted-foreground">
@@ -44,7 +45,7 @@ export const TemplateAdminUserCreated = ({ resetPasswordLink, assetBaseUrl }: Te
           <Text className="text-center text-muted-foreground text-sm">
             <Trans>
               If you didn't expect this account or have any questions, please{' '}
-              <Link href="mailto:support@documenso.com" className="text-primary">
+              <Link href={`mailto:${SUPPORT_EMAIL}`} className="text-primary">
                 contact support
               </Link>
               .

@@ -2,12 +2,12 @@ import { lookup } from 'node:dns/promises';
 import { z } from 'zod';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { isPrivateUrl } from '../../universal/is-private-url';
 import { withTimeout } from '../../utils/timeout';
-import { isPrivateUrl } from './is-private-url';
 
 const ZIpSchema = z.string().ip();
 
-const WEBHOOK_DNS_LOOKUP_TIMEOUT_MS = 250;
+const WEBHOOK_DNS_LOOKUP_TIMEOUT_MS = 3_000;
 
 type TLookupAddress = {
   address: string;
@@ -56,7 +56,7 @@ const WEBHOOK_SSRF_BYPASS_HOSTS = webhookSSRFBypassHosts();
  * list. Matches against URL.hostname which covers both DNS names and raw IP
  * addresses uniformly.
  */
-const isBypassedHost = (url: string): boolean => {
+export const isBypassedHost = (url: string): boolean => {
   if (WEBHOOK_SSRF_BYPASS_HOSTS.size === 0) {
     return false;
   }
@@ -76,12 +76,15 @@ const isBypassedHost = (url: string): boolean => {
  * AppError with WEBHOOK_INVALID_REQUEST if it does. Hosts listed in
  * NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS skip all checks.
  *
- * This is best-effort, non-exhaustive SSRF defence, NOT a complete mitigation.
- * It does not cover DNS rebinding (the resolved address can change between this
- * check and the actual request), obscure IP encodings, or every IPv6 form, and
- * it fails open on lookup errors/timeouts (see the catch below). Network-level
- * SSRF protection (firewall/egress rules, blocking internal services and cloud
- * metadata endpoints) remains the responsibility of the deployment.
+ * It fails closed. A lookup that errors, times out or returns nothing used to
+ * let the URL through, which meant an attacker who could make our resolver
+ * slow for 250 ms got past the check entirely. It now refuses, and the webhook
+ * job's own retries cover a resolver that is merely having a bad moment.
+ *
+ * This check alone does not cover DNS rebinding, because the delivery resolves
+ * the name again. `executeWebhookCall` closes that by validating the addresses
+ * inside the connection's own lookup (see `createWebhookLookup`). Network-level
+ * egress rules remain the deployment's responsibility.
  */
 export const assertNotPrivateUrl = async (
   url: string,
@@ -99,39 +102,56 @@ export const assertNotPrivateUrl = async (
     });
   }
 
+  const refuse = (message: string) =>
+    new AppError(AppErrorCode.WEBHOOK_INVALID_REQUEST, {
+      message,
+    });
+
+  let hostname: string;
+
   try {
-    const hostname = normalizeHostname(new URL(url).hostname);
+    hostname = normalizeHostname(new URL(url).hostname);
+  } catch {
+    throw refuse('Webhook URL is not a valid URL');
+  }
 
-    if (hostname.length === 0 || ZIpSchema.safeParse(hostname).success) {
-      return;
-    }
+  if (hostname.length === 0) {
+    throw refuse('Webhook URL has no host');
+  }
 
-    const resolveHostname = options?.lookup ?? lookup;
+  // An IP literal was judged by `isPrivateUrl` above. URL keeps the brackets
+  // on an IPv6 host, which would otherwise be sent to DNS and now refused.
+  if (ZIpSchema.safeParse(hostname.replace(/^\[|\]$/g, '')).success) {
+    return;
+  }
 
-    const lookupResult = await withTimeout(
+  const resolveHostname = options?.lookup ?? lookup;
+
+  let lookupResult: TLookupAddress[] | TLookupAddress | null;
+
+  try {
+    lookupResult = await withTimeout(
       resolveHostname(hostname, {
         all: true,
         verbatim: true,
       }),
       WEBHOOK_DNS_LOOKUP_TIMEOUT_MS,
     );
+  } catch {
+    throw refuse('Webhook URL host could not be resolved');
+  }
 
-    if (!lookupResult) {
-      return;
-    }
+  if (!lookupResult) {
+    throw refuse('Webhook URL host could not be resolved in time');
+  }
 
-    const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
+  const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
 
-    if (addresses.some(({ address }) => isPrivateUrl(toAddressUrl(address)))) {
-      throw new AppError(AppErrorCode.WEBHOOK_INVALID_REQUEST, {
-        message: 'Webhook URL resolves to a private or loopback address',
-      });
-    }
-  } catch (err) {
-    if (err instanceof AppError) {
-      throw err;
-    }
+  if (addresses.length === 0) {
+    throw refuse('Webhook URL host did not resolve to any address');
+  }
 
-    return;
+  if (addresses.some(({ address }) => isPrivateUrl(toAddressUrl(address)))) {
+    throw refuse('Webhook URL resolves to a private or loopback address');
   }
 };

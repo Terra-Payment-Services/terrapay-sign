@@ -3,7 +3,7 @@ import type { TRecipientAccessAuthTypes, TRecipientActionAuthTypes } from '@docu
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { nanoid } from '@documenso/lib/universal/id';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
-import { createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
+import { assertAccountAccessAuthNotAdded, createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
 import { prisma } from '@documenso/prisma';
 import { EnvelopeType, RecipientRole, SendStatus, SigningStatus } from '@prisma/client';
 
@@ -89,6 +89,10 @@ export const createEnvelopeRecipients = async ({
       signatureLevel: envelope.signatureLevel,
       role: recipient.role,
     });
+  }
+
+  for (const recipient of recipientsToCreate) {
+    assertAccountAccessAuthNotAdded({ requested: recipient.accessAuth });
   }
 
   const normalizedRecipients = recipientsToCreate.map((recipient) => ({

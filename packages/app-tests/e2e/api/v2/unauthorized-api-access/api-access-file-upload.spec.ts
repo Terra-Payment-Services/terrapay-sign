@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { createEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/create-embedding-presign-token';
 import { createApiToken } from '@documenso/lib/server-only/public-api/create-api-token';
 import { seedUser } from '@documenso/prisma/seed/users';
@@ -58,5 +58,28 @@ test.describe('File upload endpoint authorization', () => {
 
     const body = await res.json();
     expect(body.id).toBeDefined();
+  });
+
+  test('refuses an upload larger than the limit before it is parsed or authenticated', async ({ request }) => {
+    // One byte past the file limit plus the 1 MiB multipart allowance.
+    const oversized = Buffer.alloc((APP_DOCUMENT_UPLOAD_SIZE_LIMIT + 1) * 1024 * 1024 + 1);
+
+    const formData = new FormData();
+    formData.append('file', new File([oversized], 'huge.pdf', { type: 'application/pdf' }));
+
+    const res = await request.post(`${WEBAPP_BASE_URL}/api/files/upload-pdf`, {
+      multipart: formData,
+    });
+
+    expect(res.status()).toBe(413);
+  });
+
+  test('refuses a tRPC JSON body over the 10 MiB limit', async ({ request }) => {
+    const res = await request.post(`${WEBAPP_BASE_URL}/api/trpc/profile.updateProfile`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify({ json: { name: 'a'.repeat(11 * 1024 * 1024) } }),
+    });
+
+    expect(res.status()).toBe(413);
   });
 });

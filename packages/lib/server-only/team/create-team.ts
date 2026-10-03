@@ -3,7 +3,6 @@ import { prisma } from '@documenso/prisma';
 import { OrganisationGroupType, OrganisationMemberRole, Prisma, TeamMemberRole } from '@prisma/client';
 import { match } from 'ts-pattern';
 
-import { IS_BILLING_ENABLED } from '../../constants/app';
 import { LOWEST_ORGANISATION_ROLE, ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '../../constants/organisations';
 import { TEAM_INTERNAL_GROUPS } from '../../constants/teams';
 import { generateDatabaseId } from '../../universal/id';
@@ -72,21 +71,6 @@ export const createTeam = async ({ userId, teamName, teamUrl, organisationId, in
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Organisation not found.',
     });
-  }
-
-  // Validate they have enough team slots. 0 means they can create unlimited teams.
-  if (organisation.organisationClaim.teamCount !== 0 && IS_BILLING_ENABLED()) {
-    const teamCount = await prisma.team.count({
-      where: {
-        organisationId,
-      },
-    });
-
-    if (teamCount >= organisation.organisationClaim.teamCount) {
-      throw new AppError(AppErrorCode.LIMIT_EXCEEDED, {
-        message: 'You have reached the maximum number of teams for your plan.',
-      });
-    }
   }
 
   // Inherit internal organisation groups to the team.

@@ -209,7 +209,7 @@ export const DocumentSigningPageViewV2 = () => {
                         }))
                     }
                     trigger={
-                      <Button variant="ghost" size="sm" className="w-full justify-start hover:text-destructive">
+                      <Button variant="ghost" size="sm" className="w-full justify-start hover:text-destructive-text">
                         <BanIcon className="mr-2 h-4 w-4" />
                         <Trans>Reject Document</Trans>
                       </Button>
@@ -282,17 +282,12 @@ export const DocumentSigningPageViewV2 = () => {
               </div>
 
               {!hidePoweredBy && (
-                <a
-                  href="https://documenso.com"
-                  target="_blank"
-                  className="fixed right-0 bottom-0 z-40 hidden cursor-pointer rounded-tl bg-primary px-2 py-1 font-medium text-primary-foreground text-xs opacity-60 hover:opacity-100 lg:block"
-                  rel="noopener"
-                >
+                <div className="fixed right-0 bottom-0 z-40 hidden rounded-tl bg-primary px-2 py-1 font-medium text-primary-foreground text-xs opacity-60 lg:block">
                   <span>
                     <Trans>Powered by</Trans>
                   </span>
                   <BrandingLogo className="ml-2 inline-block h-[14px]" />
-                </a>
+                </div>
               )}
             </div>
           </div>

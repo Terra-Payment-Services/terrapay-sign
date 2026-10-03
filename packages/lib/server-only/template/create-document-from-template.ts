@@ -48,6 +48,7 @@ import {
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToTemplateId } from '../../utils/envelope';
 import { buildTeamWhereQuery } from '../../utils/teams';
+import { assertDocumentDataAccess } from '../document-data/assert-document-data-access';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId } from '../envelope/increment-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
@@ -348,6 +349,15 @@ export const createDocumentFromTemplate = async ({
     });
   }
 
+  // Only the override IDs come from the client. The template's own item IDs are
+  // read off the template we just authorised, and an organisation template
+  // belongs to a different team by design, so they are left alone.
+  await assertDocumentDataAccess({
+    teamId,
+    userId,
+    documentDataIds: customDocumentData.map((item) => item.documentDataId),
+  });
+
   if (folderId) {
     const folder = await prisma.folder.findUnique({
       where: {
@@ -479,17 +489,22 @@ export const createDocumentFromTemplate = async ({
         });
       }
 
-      const duplicatedFile = await putNormalizedPdfFileServerSide({
-        name: titleToUse,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(buffer),
-      });
+      const duplicatedFile = await putNormalizedPdfFileServerSide(
+        {
+          name: titleToUse,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(buffer),
+        },
+        { owner: { userId, teamId } },
+      );
 
       const newDocumentData = await prisma.documentData.create({
         data: {
           type: duplicatedFile.type,
           data: duplicatedFile.data,
           initialData: documentDataToDuplicate.data,
+          userId,
+          teamId,
         },
       });
 

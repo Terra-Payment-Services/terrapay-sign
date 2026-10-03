@@ -1,7 +1,7 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { EnvelopeRenderProvider } from '@documenso/lib/client-only/providers/envelope-render-provider';
-import { IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { isRecipientAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { captureServerEvent } from '@documenso/lib/server-only/analytics/capture-server-event';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { viewedDocument } from '@documenso/lib/server-only/document/viewed-document';
@@ -19,6 +19,7 @@ import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 import { isRecipientExpired } from '@documenso/lib/utils/recipients';
 import { prisma } from '@documenso/prisma';
+import type { Envelope, Recipient } from '@prisma/client';
 import { RecipientRole } from '@prisma/client';
 import { data } from 'react-router';
 import { match } from 'ts-pattern';
@@ -32,6 +33,48 @@ import { superLoaderJson, useSuperLoaderData } from '~/utils/super-json-loader';
 
 import { getOptionalLoaderContext } from '../../../../server/utils/get-loader-session';
 import type { Route } from './+types/sign.$token';
+
+/**
+ * Withhold the document until the recipient has entered their emailed access
+ * code. The layout's error boundary renders the code form.
+ */
+const assertEmbedAccess2FASatisfied = async ({
+  request,
+  documentAuthOptions,
+  recipient,
+}: {
+  request: Request;
+  documentAuthOptions: Envelope['authOptions'];
+  recipient: Pick<Recipient, 'id' | 'token' | 'email' | 'name' | 'role' | 'authOptions'>;
+}) => {
+  const isSatisfied = await isRecipientAccess2FASatisfied({
+    headers: request.headers,
+    documentAuthOptions,
+    recipient,
+  });
+
+  if (isSatisfied) {
+    return;
+  }
+
+  throw data(
+    {
+      type: 'embed-access-code-required',
+      documentAuthOptions,
+      recipient: {
+        id: recipient.id,
+        token: recipient.token,
+        email: recipient.email,
+        name: recipient.name,
+        role: recipient.role,
+        authOptions: recipient.authOptions,
+      },
+    },
+    {
+      status: 401,
+    },
+  );
+};
 
 async function handleV1Loader({ params, request }: Route.LoaderArgs) {
   const { requestMetadata } = getOptionalLoaderContext();
@@ -65,20 +108,6 @@ async function handleV1Loader({ params, request }: Route.LoaderArgs) {
 
   const allowEmbedSigningWhitelabel = organisationClaim.flags.embedSigningWhiteLabel;
   const hidePoweredBy = organisationClaim.flags.hidePoweredBy;
-
-  // TODO: Make this more robust, we need to ensure the owner is either
-  // TODO: the member of a team that has an active subscription, is an early
-  // TODO: adopter or is an enterprise user.
-  if (IS_BILLING_ENABLED() && !organisationClaim.flags.embedSigning) {
-    throw data(
-      {
-        type: 'embed-paywall',
-      },
-      {
-        status: 403,
-      },
-    );
-  }
 
   if (isRecipientExpired(recipient)) {
     throw data(
@@ -114,6 +143,8 @@ async function handleV1Loader({ params, request }: Route.LoaderArgs) {
       },
     );
   }
+
+  await assertEmbedAccess2FASatisfied({ request, documentAuthOptions: document.authOptions, recipient });
 
   const isRecipientsTurnToSign = await getIsRecipientsTurnToSign({ token });
 
@@ -234,17 +265,6 @@ async function handleV2Loader({ params, request }: Route.LoaderArgs) {
   const allowEmbedSigningWhitelabel = organisationClaim.flags.embedSigningWhiteLabel;
   const hidePoweredBy = organisationClaim.flags.hidePoweredBy;
 
-  if (IS_BILLING_ENABLED() && !organisationClaim.flags.embedSigning) {
-    throw data(
-      {
-        type: 'embed-paywall',
-      },
-      {
-        status: 403,
-      },
-    );
-  }
-
   if (isExpired) {
     throw data(
       {
@@ -291,6 +311,8 @@ async function handleV2Loader({ params, request }: Route.LoaderArgs) {
       },
     );
   }
+
+  await assertEmbedAccess2FASatisfied({ request, documentAuthOptions: envelope.authOptions, recipient });
 
   await viewedDocument({
     token,
@@ -405,7 +427,12 @@ const EmbedSignDocumentPageV1 = ({ data }: { data: Awaited<ReturnType<typeof han
       uploadSignatureEnabled={document.documentMeta?.uploadSignatureEnabled}
       drawSignatureEnabled={document.documentMeta?.drawSignatureEnabled}
     >
-      <DocumentSigningAuthProvider documentAuthOptions={document.authOptions} recipient={recipient} user={user}>
+      <DocumentSigningAuthProvider
+        documentAuthOptions={document.authOptions}
+        recipient={recipient}
+        user={user}
+        isAccess2FAVerified
+      >
         <EmbedSignDocumentV1ClientPage
           token={token}
           documentId={document.id}
@@ -437,7 +464,12 @@ const EmbedSignDocumentPageV2 = ({ data }: { data: Awaited<ReturnType<typeof han
       fullName={user?.email === recipient.email ? user?.name : recipient.name}
       signature={user?.email === recipient.email ? user?.signature : undefined}
     >
-      <DocumentSigningAuthProvider documentAuthOptions={envelope.authOptions} recipient={recipient} user={user}>
+      <DocumentSigningAuthProvider
+        documentAuthOptions={envelope.authOptions}
+        recipient={recipient}
+        user={user}
+        isAccess2FAVerified
+      >
         <EnvelopeRenderProvider
           version="current"
           envelope={envelope}

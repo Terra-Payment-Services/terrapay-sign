@@ -25,13 +25,110 @@ ENV_FILES.forEach((file) => {
 });
 
 /**
+ * Remote mode. Set E2E_BASE_URL to the origin of an already deployed instance
+ * and the run targets that instance instead of a server booted here.
+ *
+ * The server comes from `start-server-and-test` in the test:e2e script, so
+ * the remote script leaves that wrapper out and Playwright finds an instance
+ * already listening.
+ *
+ * Only the specs under e2e/remote/ run in this mode. Every other spec in the
+ * suite seeds the database through @documenso/prisma, and a deployed instance
+ * gives the runner no route to that database, so those specs stay on the
+ * local path.
+ */
+const remoteBaseUrl = process.env.E2E_BASE_URL?.trim();
+const isRemote = Boolean(remoteBaseUrl);
+
+const baseUrl = remoteBaseUrl || process.env.NEXT_PUBLIC_WEBAPP_URL || 'http://localhost:3000';
+
+if (isRemote) {
+  const parsed = new URL(baseUrl);
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`E2E_BASE_URL must be an http or https origin, got ${baseUrl}`);
+  }
+}
+
+/**
+ * The app reads this cookie to turn off animations, which makes assertions on
+ * moving elements stable. A cookie is scoped to a host, so the domain has to
+ * follow whatever origin the run is pointed at.
+ */
+function animationCookieDomain() {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return 'localhost';
+  }
+}
+
+function baseUrlIsSecure() {
+  try {
+    return new URL(baseUrl).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A remote run shares one deployed instance, which during a canary deploy is
+ * a single task behind the load balancer. Six browsers against one task
+ * measure the task's capacity, so the remote project stays narrow.
+ */
+const REMOTE_WORKERS = 2;
+
+const remoteProject = {
+  name: 'remote',
+  testMatch: /e2e\/remote\/.*\.spec\.ts/,
+  use: {
+    ...devices['Desktop Chrome'],
+    viewport: { width: 1920, height: 1200 },
+  },
+  workers: REMOTE_WORKERS,
+};
+
+const localProjects = [
+  // API Tests e2e/api/**/*.spec.ts
+  {
+    name: 'api',
+    testMatch: /e2e\/api\/.*\.spec\.ts/,
+    workers: 10, // Limited by DB connections before it gets flakey.
+  },
+  // Run UI Tests (excluding remote tests which have their own project)
+  {
+    name: 'ui',
+    testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
+    testIgnore: [/e2e\/remote\/.*\.spec\.ts/],
+    use: {
+      ...devices['Desktop Chrome'],
+      viewport: { width: 1920, height: 1200 },
+    },
+    workers: calculateWorkers(),
+  },
+  // The remote-capable specs run on the local path too, against the server
+  // start-server-and-test boots. That keeps them exercised on every local run
+  // and every merge request, so they hold their shape between deploys.
+  remoteProject,
+];
+
+/**
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
-  workers: 10, // See Projects where 10 is utilized for API tests. We're not running 10 workers for UI tests.
-  maxFailures: process.env.CI ? 1 : undefined,
+  // Ten is what upstream chose, sized by database connections on a large
+  // machine. Our runner has four cores and seven gigabytes, and ten workers
+  // each holding a browser and a Prisma client alongside the application
+  // server exhausted it: the server died and every test after that failed on a
+  // reset socket. E2E_WORKERS lets the job size this to the machine it is on.
+  workers: isRemote ? REMOTE_WORKERS : Number(process.env.E2E_WORKERS) || 10,
+  // Stopping at the first failure is right when a human is waiting and wrong
+  // for a gate: the run reports one failure and says nothing about the other
+  // thousand tests, so you cannot tell a single broken spec from a dead
+  // server. E2E_MAX_FAILURES lets the pipeline see enough to diagnose.
+  maxFailures: process.env.E2E_MAX_FAILURES ? Number(process.env.E2E_MAX_FAILURES) : process.env.CI ? 1 : undefined,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
@@ -41,7 +138,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.NEXT_PUBLIC_WEBAPP_URL || 'http://localhost:3000',
+    baseURL: baseUrl,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'retain-on-failure',
@@ -61,11 +158,11 @@ export default defineConfig({
         {
           name: '__disable_animations',
           value: 'true',
-          domain: 'localhost',
+          domain: animationCookieDomain(),
           path: '/',
           expires: -1,
           httpOnly: false,
-          secure: false,
+          secure: baseUrlIsSecure(),
           sameSite: 'Lax' as const,
         },
       ],
@@ -76,65 +173,7 @@ export default defineConfig({
   timeout: 60_000,
 
   /* Configure projects for major browsers */
-  projects: [
-    // API Tests e2e/api/**/*.spec.ts
-    {
-      name: 'api',
-      testMatch: /e2e\/api\/.*\.spec\.ts/,
-      workers: 10, // Limited by DB connections before it gets flakey.
-    },
-    // License tests that share a single license file - must run serially
-    {
-      name: 'license',
-      testMatch: /e2e\/license\/.*\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1920, height: 1200 },
-      },
-      workers: 1, // Must run serially since they share a license file
-    },
-    // Run UI Tests (excluding license tests which have their own project)
-    {
-      name: 'ui',
-      testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
-      testIgnore: /e2e\/license\/.*\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1920, height: 1200 },
-      },
-      workers: calculateWorkers(),
-    },
-
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
-  ],
+  projects: isRemote ? [remoteProject] : localProjects,
 
   /* Run your local dev server before starting the tests */
   // webServer: {

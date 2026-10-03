@@ -36,8 +36,8 @@ test('[TEMPLATE]: should create a document from a template', async ({ page }) =>
 
   // Set template document access.
   await page.getByTestId('documentAccessSelectValue').click();
-  await page.getByRole('option').filter({ hasText: 'Require account' }).click();
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await page.getByRole('option').filter({ hasText: 'Require 2FA' }).click();
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 
   // Set email options.
   await page.getByRole('button', { name: 'Email Options' }).click();
@@ -93,7 +93,7 @@ test('[TEMPLATE]: should create a document from a template', async ({ page }) =>
   });
 
   expect(document.title).toEqual('TEMPLATE_TITLE');
-  expect(documentAuth.documentAuthOption.globalAccessAuth).toContain('ACCOUNT');
+  expect(documentAuth.documentAuthOption.globalAccessAuth).toContain('TWO_FACTOR_AUTH');
 
   expect(document.documentMeta?.dateFormat).toEqual('dd/MM/yyyy HH:mm');
   expect(document.documentMeta?.message).toEqual('MESSAGE');
@@ -114,8 +114,8 @@ test('[TEMPLATE]: should create a document from a template', async ({ page }) =>
     recipientAuth: recipientTwo.authOptions,
   });
 
-  expect(recipientOneAuth.derivedRecipientAccessAuth).toContain('ACCOUNT');
-  expect(recipientTwoAuth.derivedRecipientAccessAuth).toContain('ACCOUNT');
+  expect(recipientOneAuth.derivedRecipientAccessAuth).toContain('TWO_FACTOR_AUTH');
+  expect(recipientTwoAuth.derivedRecipientAccessAuth).toContain('TWO_FACTOR_AUTH');
 });
 
 /**
@@ -139,8 +139,8 @@ test('[TEMPLATE]: should create a team document from a team template', async ({ 
 
   // Set template document access.
   await page.getByTestId('documentAccessSelectValue').click();
-  await page.getByRole('option').filter({ hasText: 'Require account' }).click();
-  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require account');
+  await page.getByRole('option').filter({ hasText: 'Require 2FA' }).click();
+  await expect(page.getByTestId('documentAccessSelectValue')).toContainText('Require 2FA');
 
   // Set email options.
   await page.getByRole('button', { name: 'Email Options' }).click();
@@ -198,7 +198,7 @@ test('[TEMPLATE]: should create a team document from a team template', async ({ 
   });
 
   expect(document.title).toEqual('TEMPLATE_TITLE');
-  expect(documentAuth.documentAuthOption.globalAccessAuth).toContain('ACCOUNT');
+  expect(documentAuth.documentAuthOption.globalAccessAuth).toContain('TWO_FACTOR_AUTH');
   expect(document.documentMeta?.dateFormat).toEqual('dd/MM/yyyy HH:mm');
   expect(document.documentMeta?.message).toEqual('MESSAGE');
   expect(document.documentMeta?.redirectUrl).toEqual('https://documenso.com');
@@ -218,8 +218,8 @@ test('[TEMPLATE]: should create a team document from a team template', async ({ 
     recipientAuth: recipientTwo.authOptions,
   });
 
-  expect(recipientOneAuth.derivedRecipientAccessAuth).toContain('ACCOUNT');
-  expect(recipientTwoAuth.derivedRecipientAccessAuth).toContain('ACCOUNT');
+  expect(recipientOneAuth.derivedRecipientAccessAuth).toContain('TWO_FACTOR_AUTH');
+  expect(recipientTwoAuth.derivedRecipientAccessAuth).toContain('TWO_FACTOR_AUTH');
 });
 
 /**

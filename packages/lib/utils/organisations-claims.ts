@@ -1,8 +1,6 @@
-import {
-  DEFAULT_MINIMUM_ENVELOPE_ITEM_COUNT,
-  DEFAULT_RECIPIENT_COUNT,
-} from '@documenso/ee/server-only/limits/constants';
 import type { SubscriptionClaim } from '@prisma/client';
+
+import { DEFAULT_MINIMUM_ENVELOPE_ITEM_COUNT, DEFAULT_RECIPIENT_COUNT } from '../constants/organisations';
 
 export const generateDefaultSubscriptionClaim = (): Omit<
   SubscriptionClaim,

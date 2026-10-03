@@ -5,69 +5,88 @@
 @layer base {
   :root,
   .dark-mode-disabled {
-    --background: 0 0% 100%;
-    --foreground: 222.2 47.4% 11.2%;
+    /* TerraPay design system, light. Values are the TOPS 2.0 semantic layer
+     * (packages/design-system/dist/tokens.css in front-end-design-system-tops2.0)
+     * converted from hex to HSL, which is what shadcn/Tailwind expects here.
+     * Keep this in lockstep with packages/lib/constants/theme.ts, which mirrors
+     * the same values as hex for email rendering. Nothing checks that for you.
+     */
+    --background: 0 0% 100%; /* white           #ffffff */
+    --foreground: 223 54.8% 28.6%; /* blue-900        #213871 */
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 6.2% 93.7%; /* grey-100        #eeeff0 */
+    --muted-foreground: 223 9.8% 47.8%; /* grey-500        #6e7586 */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 223 54.8% 28.6%;
 
     --card: 0 0% 100%;
-    --card-border: 214.3 31.8% 91.4%;
-    --card-border-tint: 112 205 159;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card-border: 225 6.5% 87.8%; /* grey-200        #dedfe2 */
+    --card-border-tint: 33 56 113; /* blue-900 as RGB, not HSL */
+    --card-foreground: 223 54.8% 28.6%;
 
-    --field-card: 95 74% 90%;
-    --field-card-border: 95.08 71.08% 67.45%;
-    --field-card-foreground: 222.2 47.4% 11.2%;
+    /* Signature/field chrome sits on a white PDF page, so it stays in the
+     * subtle blue family rather than the brand navy, which would read as a
+     * filled control. */
+    --field-card: 221 70.4% 94.7%; /* blue-100        #E8EEFB */
+    --field-card-border: 223 54.8% 28.6%; /* blue-900        #213871 */
+    --field-card-foreground: 223 54.8% 28.6%;
 
-    --widget: 0 0% 97%;
-    --widget-foreground: 0 0% 95%;
+    --widget: 180 5.9% 96.7%; /* grey-50         #f6f7f7 */
+    --widget-foreground: 210 6.2% 93.7%; /* grey-100        #eeeff0 */
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 225 6.5% 87.8%; /* grey-200        #dedfe2 */
+    /* TOPS inputBorder = colorBorderMedium. grey-200 measured 1.33:1 on white,
+     * below the 3:1 WCAG 1.4.11 asks of a control's boundary; grey-500 is
+     * 4.61:1. Dividers keep grey-200 through --border. */
+    --input: 223 9.8% 47.8%; /* grey-500        #6e7586 */
 
-    --primary: 95.08 71.08% 67.45%;
-    --primary-foreground: 95.08 71.08% 10%;
+    --primary: 223 54.8% 28.6%; /* blue-900        #213871 */
+    --primary-foreground: 0 0% 100%; /* white — 11.6:1 on blue-900 */
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 210 6.2% 93.7%; /* grey-100        #eeeff0 */
+    --secondary-foreground: 223 54.8% 28.6%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 221 70.4% 94.7%; /* blue-100        #E8EEFB */
+    --accent-foreground: 223 54.8% 28.6%;
 
-    --destructive: 0 100% 50%;
-    --destructive-foreground: 210 40% 98%;
+    /* TOPS fills danger buttons with coral-600, but white on coral-600 is
+     * 3.35:1 and fails AA for the label. coral-700 measures 4.65:1. Text uses
+     * --destructive-text, the TOPS coralText. */
+    --destructive: 3 54.5% 52.5%; /* coral-700       #C84A44 */
+    --destructive-foreground: 0 0% 100%;
+    --destructive-text: 2 58.6% 45.5%; /* coral-text      #B83530, 5.85:1 on white */
 
-    --ring: 95.08 71.08% 67.45%;
+    --ring: 223 54.8% 28.6%; /* focus ring = brand navy */
 
-    --radius: 0.5rem;
+    --radius: 0.5rem; /* lg 8px, md 6px, sm 4px */
 
-    --warning: 54 96% 45%;
+    --warning: 21 100% 69.2%; /* orange-500      #FF9A62 */
 
-    --gold: 47.9 95.8% 53.1%;
+    --gold: 43 80.4% 46.1%; /* data-amber      #D4A017 */
 
-    --recipient-green: 100 48% 55%;
-    --recipient-blue: 212 56% 50%;
-    --recipient-purple: 266 100% 64%;
-    --recipient-orange: 36 92% 54%;
-    --recipient-yellow: 51 100% 43%;
-    --recipient-pink: 313 65% 57%;
+    /* Recipient colours must stay mutually distinguishable at small sizes, so
+     * these come from the design system's data palette rather than the brand
+     * ramp, which is all one hue. */
+    --recipient-green: 174 62% 47.5%; /* data-teal       #2EC4B6 */
+    --recipient-blue: 223 56.8% 51%; /* blue-700        #3B63C9 */
+    --recipient-purple: 288 51.9% 36.7%; /* data-plum       #7B2D8E */
+    --recipient-orange: 21 78.7% 57.6%; /* orange-600      #E87A3E */
+    --recipient-yellow: 43 80.4% 46.1%; /* data-amber      #D4A017 */
+    --recipient-pink: 350 70.9% 69%; /* data-rose       #E8788A */
 
     /* Base - Neutral */
-    --new-neutral-50: 0, 0%, 96%;
-    --new-neutral-100: 0, 0%, 91%;
-    --new-neutral-200: 0, 0%, 82%;
-    --new-neutral-300: 0, 0%, 69%;
-    --new-neutral-400: 0, 0%, 53%;
-    --new-neutral-500: 0, 0%, 43%;
-    --new-neutral-600: 0, 0%, 36%;
-    --new-neutral-700: 0, 0%, 31%;
-    --new-neutral-800: 0, 0%, 27%;
-    --new-neutral-900: 0, 0%, 24%;
-    --new-neutral-950: 0, 0%, 9%;
+    --new-neutral-50: 180, 5.9%, 96.7%;
+    --new-neutral-100: 210, 6.2%, 93.7%;
+    --new-neutral-200: 225, 6.5%, 87.8%;
+    --new-neutral-300: 220, 8%, 77.8%;
+    --new-neutral-400: 220, 10%, 58.6%;
+    --new-neutral-500: 223, 9.8%, 47.8%;
+    --new-neutral-600: 221, 12.1%, 35.7%;
+    --new-neutral-700: 221, 12.1%, 30%;
+    --new-neutral-800: 220, 12%, 22%;
+    --new-neutral-900: 220, 12%, 14.7%;
+    --new-neutral-950: 220, 12%, 8%;
 
     /* Base - White */
     --new-white-50: 0, 0%, 5%;
@@ -82,109 +101,119 @@
     --new-white-800: 0, 0%, 90%;
     --new-white-900: 0, 0%, 100%;
 
-    /* Primary - Green */
-    --new-primary-50: 98, 73%, 97%;
-    --new-primary-100: 95, 73%, 94%;
-    --new-primary-200: 94, 70%, 87%;
-    --new-primary-300: 95, 71%, 81%;
-    --new-primary-400: 95, 71%, 74%;
-    --new-primary-500: 95, 71%, 67%;
-    --new-primary-600: 95, 71%, 54%;
-    --new-primary-700: 95, 71%, 41%;
-    --new-primary-800: 95, 71%, 27%;
-    --new-primary-900: 95, 72%, 14%;
-    --new-primary-950: 95, 72%, 7%;
+    /* Primary - TerraPay blue */
+    --new-primary-50: 222, 86.7%, 97.1%; /* blue-50   #F1F5FE */
+    --new-primary-100: 221, 70.4%, 94.7%; /* blue-100  #E8EEFB */
+    --new-primary-200: 215, 100%, 80%; /* blue-400  #99C3FF */
+    --new-primary-300: 223, 100%, 69%; /* blue-500  #618FFF */
+    --new-primary-400: 223, 71.4%, 57.5%; /* blue-600  #4572E0 */
+    --new-primary-500: 223, 56.8%, 51%; /* blue-700  #3B63C9 */
+    --new-primary-600: 223, 55%, 37.5%; /* blue-800  #2B4994 */
+    --new-primary-700: 223, 54.8%, 28.6%; /* blue-900  #213871 */
+    --new-primary-800: 223, 54.8%, 22%;
+    --new-primary-900: 223, 54.8%, 14%;
+    --new-primary-950: 223, 54.8%, 8%;
 
-    /* Secondary - Info */
-    --new-info-50: 210, 54%, 95%;
-    --new-info-100: 211, 57%, 90%;
-    --new-info-200: 212, 55%, 80%;
-    --new-info-300: 212, 56%, 70%;
-    --new-info-400: 212, 56%, 60%;
-    --new-info-500: 212, 56%, 50%;
-    --new-info-600: 212, 56%, 40%;
-    --new-info-700: 212, 56%, 30%;
-    --new-info-800: 212, 55%, 20%;
-    --new-info-900: 211, 57%, 10%;
-    --new-info-950: 214, 54%, 5%;
+    /* Secondary - Info (same blue ramp; Documenso treats info separately) */
+    --new-info-50: 222, 86.7%, 97.1%;
+    --new-info-100: 221, 70.4%, 94.7%;
+    --new-info-200: 215, 100%, 80%;
+    --new-info-300: 223, 100%, 69%;
+    --new-info-400: 223, 71.4%, 57.5%;
+    --new-info-500: 223, 56.8%, 51%;
+    --new-info-600: 223, 55%, 37.5%;
+    --new-info-700: 223, 54.8%, 28.6%;
+    --new-info-800: 223, 54.8%, 22%;
+    --new-info-900: 223, 54.8%, 14%;
+    --new-info-950: 223, 54.8%, 8%;
 
-    /* Secondary - Error */
-    --new-error-50: 4, 80%, 96%;
-    --new-error-100: 3, 78%, 91%;
-    --new-error-200: 3, 79%, 83%;
-    --new-error-300: 3, 79%, 74%;
-    --new-error-400: 3, 79%, 66%;
-    --new-error-500: 4, 79%, 57%;
-    --new-error-600: 3, 79%, 46%;
-    --new-error-700: 3, 79%, 34%;
-    --new-error-800: 3, 79%, 23%;
-    --new-error-900: 3, 79%, 11%;
-    --new-error-950: 3, 80%, 6%;
+    /* Secondary - Error (coral) */
+    --new-error-50: 4, 100%, 96.7%; /* coral-50  #FFEFEE */
+    --new-error-100: 2, 100%, 92.5%; /* coral-100 #FFDAD9 */
+    --new-error-200: 2, 100%, 82.5%; /* coral-300 #FFA9A6 */
+    --new-error-300: 3, 100%, 72.5%; /* coral-500 #FF7A73 */
+    --new-error-400: 3, 78.7%, 63.1%; /* coral-600 #EB5E57 */
+    --new-error-500: 3, 54.5%, 52.5%; /* coral-700 #C84A44 */
+    --new-error-600: 2, 58.6%, 45.5%; /* coral-text #B83530 */
+    --new-error-700: 2, 58.6%, 34%;
+    --new-error-800: 2, 58.6%, 23%;
+    --new-error-900: 2, 58.6%, 12%;
+    --new-error-950: 2, 58.6%, 6%;
 
-    /* Secondary - Warning */
-    --new-warning-50: 39, 100%, 96%;
-    --new-warning-100: 40, 100%, 93%;
-    --new-warning-200: 39, 100%, 86%;
-    --new-warning-300: 39, 100%, 79%;
-    --new-warning-400: 39, 100%, 71%;
-    --new-warning-500: 39, 100%, 64%;
-    --new-warning-600: 39, 100%, 57%;
-    --new-warning-700: 39, 100%, 43%;
-    --new-warning-800: 39, 100%, 29%;
-    --new-warning-900: 39, 100%, 14%;
-    --new-warning-950: 38, 100%, 7%;
+    /* Secondary - Warning (orange) */
+    --new-warning-50: 31, 100%, 94.3%; /* cream-100  #FFF1E2 */
+    --new-warning-100: 32, 70.3%, 85.5%; /* cream-deep #F4DCC0 */
+    --new-warning-200: 23, 100%, 77.5%; /* orange-300 #FFB88C */
+    --new-warning-300: 21, 100%, 69.2%; /* orange-500 #FF9A62 */
+    --new-warning-400: 21, 78.7%, 57.6%; /* orange-600 #E87A3E */
+    --new-warning-500: 25, 75.9%, 45%;
+    --new-warning-600: 25, 75.9%, 31%; /* orange-text #8B4513 */
+    --new-warning-700: 25, 75.9%, 25%;
+    --new-warning-800: 25, 75.9%, 18%;
+    --new-warning-900: 25, 75.9%, 11%;
+    --new-warning-950: 25, 75.9%, 6%;
 
     /* Surface */
     --new-surface-black: 0, 0%, 0%;
     --new-surface-white: 0, 0%, 91%;
 
-    --envelope-editor-background: 210 40% 98.04%;
+    --envelope-editor-background: 222 86.7% 97.1%; /* blue-50 #F1F5FE */
+
+    /* TOPS modalBackdrop, blue-900 at 30%. RGB rather than HSL, like
+     * --card-border-tint, and kept apart from --primary so a tenant's primary
+     * colour does not tint the scrim. */
+    --overlay: 33 56 113;
   }
 
   .dark:not(.dark-mode-disabled) {
-    --background: 0 0% 14.9%;
+    /* TerraPay has no published dark palette, so this is derived: surfaces are
+     * desaturated blue-900 rather than neutral grey, which keeps the brand hue
+     * present, and the primary lifts to blue-500 because blue-900 on a dark
+     * surface has nowhere near enough contrast to act as a button fill. */
+    --background: 222 25% 11%;
     --foreground: 0 0% 97%;
 
-    --muted: 0 0% 23.4%;
-    --muted-foreground: 0 0% 85%;
+    --muted: 222 18% 19%;
+    --muted-foreground: 222 12% 72%;
 
-    --popover: 0 0% 14.9%;
-    --popover-foreground: 0 0% 90%;
+    --popover: 222 25% 13%;
+    --popover-foreground: 0 0% 92%;
 
-    --card: 0 0% 14.9%;
-    --card-border: 0 0% 27.9%;
-    --card-border-tint: 112 205 159;
+    --card: 222 25% 13%;
+    --card-border: 222 15% 26%;
+    --card-border-tint: 97 143 255; /* blue-500 as RGB */
     --card-foreground: 0 0% 95%;
 
-    --widget: 0 0% 14.9%;
-    --widget-foreground: 0 0% 18%;
+    --widget: 222 25% 13%;
+    --widget-foreground: 222 22% 17%;
 
-    --border: 0 0% 27.9%;
-    --input: 0 0% 27.9%;
+    --border: 222 15% 26%;
+    --input: 222 12% 50%; /* 4.03:1 on the dark ground, apart from --border */
 
-    --field-border: 214.3 31.8% 91.4%;
+    --field-border: 225 6.5% 87.8%;
 
-    --primary: 95.08 71.08% 67.45%;
-    --primary-foreground: 95.08 71.08% 10%;
+    --primary: 223 100% 69%; /* blue-500 #618FFF — 7.4:1 on the dark ground */
+    --primary-foreground: 223 54.8% 12%;
 
-    --secondary: 0 0% 23.4%;
-    --secondary-foreground: 95.08 71.08% 67.45%;
+    --secondary: 222 18% 19%;
+    --secondary-foreground: 223 100% 69%;
 
-    --accent: 0 0% 27.9%;
-    --accent-foreground: 95.08 71.08% 67.45%;
+    --accent: 222 15% 26%;
+    --accent-foreground: 223 100% 69%;
 
-    --destructive: 0 87% 62%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 3 54.5% 52.5%; /* coral-700, as light, for the white label */
+    --destructive-foreground: 0 0% 100%; /* 4.65:1; the old 98% would be 4.45:1 */
+    --destructive-text: 3 100% 72.5%; /* coral-500, 6.93:1 on the dark ground */
 
-    --ring: 95.08 71.08% 67.45%;
+    --ring: 223 100% 69%;
 
     --radius: 0.5rem;
 
-    --warning: 54 96% 45%;
+    --warning: 21 100% 69.2%;
 
-    --gold: 47.9 95.8% 53.1%;
+    --gold: 43 80.4% 46.1%;
 
-    --envelope-editor-background: 0 0% 14.9%;
+    --envelope-editor-background: 222 25% 11%;
   }
 }
 

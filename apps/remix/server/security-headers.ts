@@ -19,31 +19,24 @@ const NON_PAGE_PATH_REGEX = /^(\/api\/|\/ingest\/|\/__manifest|\/assets\/|\/appl
 const EMBED_PATH_REGEX = /^\/embed(\/|\.data|$)/;
 
 /**
- * Non-`/embed` page routes that customers iframe directly, plus the auth
- * pages reachable from inside an embed iframe during the
- * reauth-as-different-account flow.
- *
- * Signing routes (`/sign/:token`, `/d/:token`):
- * Some customer integrations embed these URLs directly (without going
- * through `EmbedSignDocument`). Without `frame-ancestors *` here, those
- * integrations break with a "refused to connect" iframe error.
- *
- * Auth routes (`/signin`, `/forgot-password`, `/check-email`,
- * `/unverified-account`):
- * `apps/remix/app/components/general/document-signing/document-signing-auth-account.tsx`
- * does `window.location.href = '/signin?...'` inside the iframe when the
- * user needs to sign out and sign back in as a different account, and
- * `<SignInForm>` links/navigates to `/forgot-password`, `/check-email`, and
- * `/unverified-account` from there. Without `frame-ancestors *` on these
- * routes, the customer's iframe gets blocked the moment the user clicks
- * "Login" in the reauth dialog.
- *
- * These routes still get the strict nonced `script-src`/`style-src-elem`
- * policy — only `frame-ancestors` is relaxed. The `(\/|\.data|$)` tail
- * keeps `/sign` from matching `/signin`/`/signup` and `/d` from matching
- * `/dashboard`.
+ * Upstream also let any origin frame `/sign/:token`, `/d/:token`, `/signin`,
+ * `/forgot-password`, `/check-email` and `/unverified-account`, for customers
+ * who iframe the signing page directly and for the embed reauth flow, which
+ * navigates the iframe to `/signin`. Nothing frames TerraPay Sign, so those
+ * pages now get `frame-ancestors 'self'` like every other page, and a signing
+ * link cannot be clickjacked from someone else's site. The cost, accepted on
+ * purpose: if `/embed` is ever framed by a third party, its "sign in as a
+ * different account" step is refused inside the frame.
  */
-const FRAMEABLE_PATH_REGEX = /^\/(signin|forgot-password|check-email|unverified-account|sign|d)(\/|\.data|$)/;
+
+/**
+ * HTTP Strict Transport Security, a year, subdomains included. Sent on every
+ * response rather than only on ones this process saw arrive over TLS, because
+ * TLS ends at the load balancer and RFC 6797 has browsers ignore the header on
+ * a plain HTTP response anyway, so there is nothing to gain from trusting
+ * `X-Forwarded-Proto` to decide.
+ */
+const STRICT_TRANSPORT_SECURITY = 'max-age=31536000; includeSubDomains';
 
 /**
  * Hono context variable name where the per-request CSP nonce is stashed.
@@ -67,7 +60,7 @@ const generateNonce = () => {
   return btoa(binary);
 };
 
-type CspPathKind = 'embed' | 'frameable' | 'default';
+type CspPathKind = 'embed' | 'default';
 
 const buildCspHeader = ({ nonce, kind }: { nonce: string; kind: CspPathKind }) => {
   // `'self'` is included alongside `'strict-dynamic'` as a fallback for
@@ -75,6 +68,26 @@ const buildCspHeader = ({ nonce, kind }: { nonce: string; kind: CspPathKind }) =
   // ignore `'self'` (and other host/scheme sources) when `'strict-dynamic'`
   // is present.
   const directives = [
+    // Egress lockdown. Upstream set no `default-src` and no `connect-src`, so
+    // the policy governed scripts, styles and framing but placed no limit at
+    // all on where the page could send or fetch data. This deployment must not
+    // contact any vendor or third party, so the fallback is closed to `'self'`
+    // and the fetch-family directives are named explicitly rather than left to
+    // inheritance. The effect is that a stray CDN font, a tracking pixel or a
+    // re-added analytics beacon is refused by the browser rather than merely
+    // absent from the source, which is the difference between "we happen not
+    // to call out" and "calling out does not work".
+    //
+    // `data:` and `blob:` on img-src are required: the PDF viewer paints page
+    // renders from blob URLs and signature pads produce data URLs. `font-src`
+    // is `'self'` only, because every face is self-hosted from
+    // apps/remix/public/fonts and none is fetched from a CDN.
+    `default-src 'self'`,
+    `connect-src 'self'`,
+    `img-src 'self' data: blob:`,
+    `font-src 'self'`,
+    `media-src 'self' blob:`,
+    `frame-src 'self'`,
     `base-uri 'self'`,
     `object-src 'none'`,
     `form-action 'self'`,
@@ -103,10 +116,9 @@ const buildCspHeader = ({ nonce, kind }: { nonce: string; kind: CspPathKind }) =
     directives.push(`style-src-elem 'self' 'nonce-${nonce}'`);
   }
 
-  // Embed, signing, and auth routes are all reachable from inside a
-  // customer's iframe and therefore need `frame-ancestors *`. Every other
-  // page gets clickjacking protection.
-  if (kind === 'embed' || kind === 'frameable') {
+  // Only the embed routes are meant to be framed by another origin. Every
+  // other page gets clickjacking protection.
+  if (kind === 'embed') {
     directives.push(`frame-ancestors *`);
   } else {
     directives.push(`frame-ancestors 'self'`);
@@ -120,10 +132,6 @@ const classifyPath = (path: string): CspPathKind => {
     return 'embed';
   }
 
-  if (FRAMEABLE_PATH_REGEX.test(path)) {
-    return 'frameable';
-  }
-
   return 'default';
 };
 
@@ -131,7 +139,8 @@ const classifyPath = (path: string): CspPathKind => {
  * Owns response security headers for page responses:
  * `Content-Security-Policy`, plus `Referrer-Policy` and
  * `X-Content-Type-Options` on embed routes (preserved from the per-route
- * `headers()` export this middleware replaces).
+ * `headers()` export this middleware replaces), and
+ * `Strict-Transport-Security` on every response, API ones included.
  *
  * Generates a per-request CSP nonce and stashes it on the Hono context so
  * `getLoadContext` (server/load-context.ts) can thread it into React
@@ -141,11 +150,6 @@ const classifyPath = (path: string): CspPathKind => {
  * - `embed`     — wildcard `frame-ancestors`, `'unsafe-inline'`
  *                 style-src-elem (white-label CSS injection), strict
  *                 nonced script-src.
- * - `frameable` — wildcard `frame-ancestors` only; needed because the
- *                 embed reauth flow redirects the iframe to `/signin` etc,
- *                 and because some customers iframe `/sign/:token` and
- *                 `/d/:token` directly without using `EmbedSignDocument`.
- *                 Strict nonced script-src and style-src-elem otherwise.
  * - default     — strict nonced script-src and style-src-elem,
  *                 `frame-ancestors 'self'` for clickjacking protection.
  */
@@ -155,6 +159,8 @@ export const securityHeadersMiddleware = createMiddleware<HonoEnv>(async (c, nex
   c.set(CSP_NONCE_KEY, nonce);
 
   await next();
+
+  c.res.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
 
   const path = c.req.path;
 

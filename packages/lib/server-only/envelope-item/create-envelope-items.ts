@@ -59,11 +59,14 @@ export const UNSAFE_createEnvelopeItems = async ({
 
       const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
 
-      const { documentData } = await putPdfFileServerSide({
-        name: file.name,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(cleanedPdf),
-      });
+      const { documentData } = await putPdfFileServerSide(
+        {
+          name: file.name,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(cleanedPdf),
+        },
+        { owner: { userId: user.id, teamId: envelope.teamId } },
+      );
 
       return {
         id: prefixedId('envelope_item'),

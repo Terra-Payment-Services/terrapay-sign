@@ -38,7 +38,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'data-[state=closed]:fade-out data-[state=open]:fade-in fixed inset-0 z-50 bg-background/80 backdrop-blur-sm transition-all duration-100 data-[state=closed]:animate-out',
+      'data-[state=closed]:fade-out data-[state=open]:fade-in fixed inset-0 z-50 bg-overlay/30 backdrop-blur-sm transition-all duration-100 data-[state=closed]:animate-out',
       className,
     )}
     {...props}
@@ -61,7 +61,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:zoom-in-90 data-[state=open]:sm:slide-in-from-bottom-0 fixed z-50 grid w-full animate-in gap-4 border bg-background p-6 shadow-lg focus:outline-none sm:max-w-lg sm:rounded-lg',
+        'data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:zoom-in-90 data-[state=open]:sm:slide-in-from-bottom-0 fixed z-50 grid w-full animate-in gap-4 border bg-background p-6 shadow-elevation-dialog focus:outline-none sm:max-w-lg sm:rounded-lg',
         {
           'rounded-b-xl': position === 'start',
           'rounded-t-xl': position === 'end',

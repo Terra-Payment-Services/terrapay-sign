@@ -19,6 +19,7 @@ type DatabaseIdPrefix =
   | 'template'
   | 'envelope'
   | 'envelope_item'
+  | 'envelope_archive'
   | 'email_domain'
   | 'email_transport'
   | 'org'

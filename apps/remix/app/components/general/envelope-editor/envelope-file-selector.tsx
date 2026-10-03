@@ -24,14 +24,14 @@ export const EnvelopeItemSelector = ({
       title={typeof primaryText === 'string' ? primaryText : undefined}
       className={`group flex h-fit max-w-72 flex-shrink-0 cursor-pointer items-center space-x-3 rounded-lg border px-4 py-3 transition-colors ${
         isSelected
-          ? 'border-green-200 bg-green-50 text-green-900 dark:border-green-400/30 dark:bg-green-400/10 dark:text-green-400'
+          ? 'border-primary/30 bg-primary/10 text-primary dark:border-primary/40 dark:bg-primary/15 dark:text-primary'
           : 'border-border bg-muted/50 hover:bg-muted/70'
       }`}
       {...buttonProps}
     >
       <div
         className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full font-medium text-xs ${
-          isSelected ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-600'
+          isSelected ? 'bg-primary/15 text-primary' : 'bg-gray-200 text-gray-600'
         }`}
       >
         {number}
@@ -43,7 +43,7 @@ export const EnvelopeItemSelector = ({
       {actionSlot ?? (
         <div
           className={cn('h-2 w-2 flex-shrink-0 rounded-full', {
-            'bg-green-500': isSelected,
+            'bg-primary': isSelected,
           })}
         />
       )}

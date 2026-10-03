@@ -1,5 +1,10 @@
 import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import {
+  hasRecipientAccess2FACookie,
+  isRecipientAccess2FARequired,
+} from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import { assertRecipientAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
@@ -129,6 +134,22 @@ export const signEnvelopeFieldRoute = procedure
     // Unreachable code based on the above query but we need to satisfy TypeScript
     if (field.recipientId === null) {
       throw new Error(`Field ${fieldId} has no recipientId`);
+    }
+
+    await assertRecipientAccessAuthorized({
+      documentAuthOptions: envelope.authOptions,
+      recipient,
+      userId: user?.id,
+    });
+
+    if (
+      isRecipientAccess2FARequired({ documentAuthOptions: envelope.authOptions, recipient }) &&
+      !(await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id }))
+    ) {
+      throw new AppError(AppErrorCode.UNAUTHORIZED, {
+        message: 'The access code must be entered before signing',
+        statusCode: 401,
+      });
     }
 
     const insertionValues = extractFieldInsertionValues({ fieldValue, field, documentMeta });

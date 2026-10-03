@@ -1,4 +1,5 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { getOrganisationTemplateWhereInput } from '@documenso/lib/server-only/template/get-organisation-template-by-id';
 import { prisma } from '@documenso/prisma';
@@ -48,6 +49,7 @@ export const getEnvelopeItemsByTokenRoute = maybeAuthenticatedProcedure
     const { envelopeItems: data } = await handleGetEnvelopeItemsByToken({
       envelopeId,
       token: access.token,
+      headers: ctx.req.headers,
     });
 
     return {
@@ -55,7 +57,15 @@ export const getEnvelopeItemsByTokenRoute = maybeAuthenticatedProcedure
     };
   });
 
-const handleGetEnvelopeItemsByToken = async ({ envelopeId, token }: { envelopeId: string; token: string }) => {
+const handleGetEnvelopeItemsByToken = async ({
+  envelopeId,
+  token,
+  headers,
+}: {
+  envelopeId: string;
+  token: string;
+  headers: Headers;
+}) => {
   const envelope = await prisma.envelope.findFirst({
     where: {
       id: envelopeId,
@@ -78,6 +88,12 @@ const handleGetEnvelopeItemsByToken = async ({ envelopeId, token }: { envelopeId
   if (!envelope) {
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Envelope could not be found',
+    });
+  }
+
+  if (!(await isRecipientTokenAccess2FASatisfied({ headers, token }))) {
+    throw new AppError(AppErrorCode.UNAUTHORIZED, {
+      message: 'The access code must be entered before viewing this document',
     });
   }
 

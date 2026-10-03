@@ -3,7 +3,7 @@ import type { TRecipientAccessAuthTypes } from '@documenso/lib/types/document-au
 import { type TRecipientActionAuthTypes, ZRecipientAuthOptionsSchema } from '@documenso/lib/types/document-auth';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData, diffRecipientChanges } from '@documenso/lib/utils/document-audit-logs';
-import { createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
+import { assertAccountAccessAuthNotAdded, createRecipientAuthOptions } from '@documenso/lib/utils/document-auth';
 import { prisma } from '@documenso/prisma';
 import { EnvelopeType, RecipientRole, SendStatus, SigningStatus } from '@prisma/client';
 
@@ -113,6 +113,11 @@ export const updateEnvelopeRecipients = async ({
         message: 'Cannot modify a recipient who has already interacted with the document',
       });
     }
+
+    assertAccountAccessAuthNotAdded({
+      requested: recipient.accessAuth,
+      existing: ZRecipientAuthOptionsSchema.parse(originalRecipient.authOptions).accessAuth,
+    });
 
     return {
       originalRecipient,

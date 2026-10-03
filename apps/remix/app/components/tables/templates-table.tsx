@@ -1,9 +1,6 @@
-import { useLimits } from '@documenso/ee/server-only/limits/provider/client';
 import { useUpdateSearchParams } from '@documenso/lib/client-only/hooks/use-update-search-params';
-import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
 import { formatTemplatesPath } from '@documenso/lib/utils/teams';
 import type { TFindTemplatesResponse } from '@documenso/trpc/server/template-router/schema';
-import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
 import { Checkbox } from '@documenso/ui/primitives/checkbox';
 import type { DataTableColumnDef, RowSelectionState } from '@documenso/ui/primitives/data-table';
 import { DataTable } from '@documenso/ui/primitives/data-table';
@@ -14,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@documenso/ui/primitive
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle, Building2Icon, Globe2Icon, InfoIcon, Link2Icon, Loader, LockIcon } from 'lucide-react';
+import { Building2Icon, Globe2Icon, InfoIcon, Link2Icon, Loader, LockIcon } from 'lucide-react';
 import { useMemo, useTransition } from 'react';
 import { Link } from 'react-router';
 
@@ -49,10 +46,8 @@ export const TemplatesTable = ({
   onRowSelectionChange,
 }: TemplatesTableProps) => {
   const { _, i18n } = useLingui();
-  const { remaining } = useLimits();
 
   const team = useCurrentTeam();
-  const organisation = useCurrentOrganisation();
 
   const [isPending, startTransition] = useTransition();
 
@@ -244,23 +239,6 @@ export const TemplatesTable = ({
 
   return (
     <div className="relative">
-      {remaining.documents === 0 && (
-        <Alert variant="warning" className="mb-4">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Document Limit Exceeded!</Trans>
-          </AlertTitle>
-          <AlertDescription className="mt-2">
-            <Trans>
-              You have reached your document limit.{' '}
-              <Link className="underline underline-offset-4" to={`/o/${organisation.url}/settings/billing`}>
-                Upgrade your account to continue!
-              </Link>
-            </Trans>
-          </AlertDescription>
-        </Alert>
-      )}
-
       <DataTable
         columns={columns}
         data={results.data}

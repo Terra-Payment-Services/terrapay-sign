@@ -302,7 +302,7 @@ test('[DIRECT_TEMPLATES]: use direct template link with 1 recipient', async ({ p
   await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
 
   await page.waitForTimeout(100);
-  await page.getByPlaceholder('recipient@documenso.com').fill(seedTestEmail());
+  await page.getByPlaceholder('name@example.com').fill(seedTestEmail());
 
   await page.getByRole('button', { name: 'Continue' }).click();
 
@@ -384,7 +384,7 @@ test('[DIRECT_TEMPLATES]: V1 use direct template link with 2 recipients with nex
   await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
 
   await page.waitForTimeout(100);
-  await page.getByPlaceholder('recipient@documenso.com').fill(seedTestEmail());
+  await page.getByPlaceholder('name@example.com').fill(seedTestEmail());
 
   await page.getByRole('button', { name: 'Continue' }).click();
 

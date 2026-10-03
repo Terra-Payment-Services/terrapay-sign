@@ -1,4 +1,4 @@
-import { DEFAULT_BRAND_COLORS } from '@documenso/lib/constants/theme';
+import { DEFAULT_BRAND_COLORS, DEFAULT_DESTRUCTIVE_TEXT_COLOR } from '@documenso/lib/constants/theme';
 import type { EmailBrandingColors } from '@documenso/lib/utils/email-branding-colors';
 import { resolveEmailBrandingColors } from '@documenso/lib/utils/email-branding-colors';
 import type { I18n } from '@lingui/core';
@@ -52,6 +52,7 @@ const buildEmailColors = (brandingColors?: EmailBrandingColors): Record<string, 
     'accent-foreground': c.accentForeground,
     destructive: c.destructive,
     'destructive-foreground': c.destructiveForeground,
+    'destructive-text': DEFAULT_DESTRUCTIVE_TEXT_COLOR,
     warning: c.warning,
     border: c.border,
   };

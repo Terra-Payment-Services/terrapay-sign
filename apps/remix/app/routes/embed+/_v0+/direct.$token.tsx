@@ -1,6 +1,5 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { EnvelopeRenderProvider } from '@documenso/lib/client-only/providers/envelope-render-provider';
-import { IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { captureServerEvent } from '@documenso/lib/server-only/analytics/capture-server-event';
 import { getEnvelopeForDirectTemplateSigning } from '@documenso/lib/server-only/envelope/get-envelope-for-direct-template-signing';
@@ -45,20 +44,6 @@ async function handleV1Loader({ params, request }: Route.LoaderArgs) {
 
   const allowEmbedSigningWhitelabel = organisationClaim.flags.embedSigningWhiteLabel;
   const hidePoweredBy = organisationClaim.flags.hidePoweredBy;
-
-  // TODO: Make this more robust, we need to ensure the owner is either
-  // TODO: the member of a team that has an active subscription, is an early
-  // TODO: adopter or is an enterprise user.
-  if (IS_BILLING_ENABLED() && !organisationClaim.flags.embedSigning) {
-    throw data(
-      {
-        type: 'embed-paywall',
-      },
-      {
-        status: 403,
-      },
-    );
-  }
 
   const { user } = await getOptionalSession(request);
 
@@ -183,17 +168,6 @@ async function handleV2Loader({ params, request }: Route.LoaderArgs) {
 
   const allowEmbedSigningWhitelabel = organisationClaim.flags.embedSigningWhiteLabel;
   const hidePoweredBy = organisationClaim.flags.hidePoweredBy;
-
-  if (IS_BILLING_ENABLED() && !organisationClaim.flags.embedSigning) {
-    throw data(
-      {
-        type: 'embed-paywall',
-      },
-      {
-        status: 403,
-      },
-    );
-  }
 
   const { derivedRecipientAccessAuth } = extractDocumentAuthMethods({
     documentAuth: envelope.authOptions,

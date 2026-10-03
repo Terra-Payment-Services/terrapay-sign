@@ -879,7 +879,7 @@ When processing webhook events:
 {/* prettier-ignore */}
 <Steps>
   <Step>
-    **Verify the signature** — Check the `X-Documenso-Secret` header matches your configured secret
+    **Verify the signature** — Check the `X-TerraPay-Secret` header matches your configured secret
   </Step>
   <Step>
     **Check event type** — Use the `event` field to determine the action
@@ -894,7 +894,7 @@ When processing webhook events:
 
 ```typescript
 app.post('/webhook', (req, res) => {
-  const secret = req.headers['x-documenso-secret'];
+  const secret = req.headers['x-terrapay-secret'];
 
   if (secret !== process.env.WEBHOOK_SECRET) {
     return res.status(401).send('Unauthorized');

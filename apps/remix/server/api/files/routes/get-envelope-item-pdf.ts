@@ -1,5 +1,6 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
+import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import type { DocumentDataVersion } from '@documenso/lib/types/document';
 import { sha256 } from '@documenso/lib/universal/crypto';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
@@ -10,7 +11,6 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import type { HonoEnv } from '../../../router';
-import { checkEnvelopeFileAccess } from '../files.helpers';
 
 const route = new Hono<HonoEnv>();
 
@@ -41,6 +41,12 @@ route.get(
 
     let userId = session.user?.id;
 
+    // A presign token is minted from an API token, and an API token belongs to
+    // one team. The token's user may well belong to other teams too, so the
+    // user alone is not the boundary: without this the token opened any
+    // envelope its user could see, in any of their teams.
+    let presignTeamId: number | undefined;
+
     // Check presignToken if provided
     if (presignToken) {
       const verifiedToken = await verifyEmbeddingPresignToken({
@@ -48,13 +54,15 @@ route.get(
       }).catch(() => undefined);
 
       userId = verifiedToken?.userId;
+      presignTeamId = verifiedToken?.teamId;
     }
 
     if (!userId) {
       return c.json({ error: 'Not found' }, 404);
     }
 
-    // Note: We authenticate whether the user can access this in the `getTeamById` below.
+    // Note: We authenticate whether the user can access this in the
+    // `checkEnvelopeFileAccess` below, which applies the envelope's visibility.
     const envelopeItem = await prisma.envelopeItem.findFirst({
       where: {
         id: envelopeItemId,
@@ -66,9 +74,7 @@ route.get(
         envelope: {
           select: {
             id: true,
-            type: true,
             teamId: true,
-            templateType: true,
           },
         },
       },
@@ -78,12 +84,14 @@ route.get(
       return c.json({ error: 'Not found' }, 404);
     }
 
+    if (presignToken && envelopeItem.envelope.teamId !== presignTeamId) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+
     // Check whether the user has access to the document.
     const hasAccess = await checkEnvelopeFileAccess({
       userId,
-      teamId: envelopeItem.envelope.teamId,
-      envelopeType: envelopeItem.envelope.type,
-      templateType: envelopeItem.envelope.templateType,
+      envelopeId: envelopeItem.envelope.id,
     });
 
     if (!hasAccess) {

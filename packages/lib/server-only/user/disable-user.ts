@@ -61,6 +61,12 @@ export const disableUser = async ({ id }: DisableUserOptions) => {
       await tx.passkey.deleteMany({
         where: { userId: id },
       });
+
+      // Signing out every session ends access already granted. Without this a
+      // browser signed in before the account was disabled keeps working.
+      await tx.session.deleteMany({
+        where: { userId: id },
+      });
     });
   } catch (error) {
     console.error('Error disabling user', error);

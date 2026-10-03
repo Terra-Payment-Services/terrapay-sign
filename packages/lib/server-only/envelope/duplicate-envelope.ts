@@ -163,6 +163,8 @@ export const duplicateEnvelope = async ({ id, userId, teamId, overrides }: Dupli
           type: envelopeItem.documentData.type,
           data: envelopeItem.documentData.initialData,
           initialData: envelopeItem.documentData.initialData,
+          userId,
+          teamId,
         },
       });
 

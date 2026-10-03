@@ -1,6 +1,5 @@
+import { useIsOrganisationCreationAllowed } from '@documenso/lib/client-only/hooks/use-is-organisation-creation-allowed';
 import { useSession } from '@documenso/lib/client-only/providers/session';
-import { IS_BILLING_ENABLED } from '@documenso/lib/constants/app';
-import { type INTERNAL_CLAIM_ID, internalClaims } from '@documenso/lib/types/subscription';
 import { formatAvatarUrl } from '@documenso/lib/utils/avatars';
 import { canExecuteOrganisationAction } from '@documenso/lib/utils/organisations';
 import { getSettingsNavGroups } from '@documenso/lib/utils/settings-nav';
@@ -25,6 +24,7 @@ export type SettingsOrgSwitcherProps = {
 export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps) => {
   const { t } = useLingui();
   const { organisations } = useSession();
+  const isOrganisationCreationAllowed = useIsOrganisationCreationAllowed();
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
@@ -43,11 +43,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
 
   const currentOrg = manageableOrgs.find((org) => org.url === currentOrgUrl);
 
-  const hasManageableBillingOrgs = useMemo(
-    () => organisations.some((org) => canExecuteOrganisationAction('MANAGE_BILLING', org.currentOrganisationRole)),
-    [organisations],
-  );
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
@@ -57,8 +52,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
 
     return manageableOrgs.filter((org) => org.name.toLowerCase().includes(q));
   }, [manageableOrgs, query]);
-
-  const isBillingEnabled = IS_BILLING_ENABLED();
 
   const handleSelect = (orgUrl: string) => {
     const destinationOrg = manageableOrgs.find((org) => org.url === orgUrl);
@@ -78,7 +71,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
         organisationClaim: destinationOrg.organisationClaim,
       },
       team: manageableTeam ? { url: manageableTeam.url, currentTeamRole: manageableTeam.currentTeamRole } : null,
-      hasManageableBillingOrgs,
     });
 
     // The list also contains organisations the user can only reach through a team they
@@ -105,17 +97,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
     return null;
   }
 
-  // Resolve an organisation's plan label. Unknown or custom claims (including
-  // self-hosted custom claim IDs) fall back to "Custom Plan".
-  const getPlanName = (organisationClaimId: string | null) => {
-    const planClaim =
-      organisationClaimId && organisationClaimId in internalClaims
-        ? internalClaims[organisationClaimId as INTERNAL_CLAIM_ID]
-        : undefined;
-
-    return planClaim ? t`${planClaim.name} Plan` : t`Custom Plan`;
-  };
-
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -130,9 +111,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
             avatarSrc={formatAvatarUrl(currentOrg.avatarImageId)}
             avatarFallback={currentOrg.name.slice(0, 1).toUpperCase()}
             primaryText={<span className="font-semibold text-muted-foreground">{currentOrg.name}</span>}
-            secondaryText={
-              isBillingEnabled ? getPlanName(currentOrg.organisationClaim.originalSubscriptionClaimId) : undefined
-            }
             rightSideComponent={<ChevronsUpDownIcon className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />}
           />
         </Button>
@@ -176,9 +154,6 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
                     avatarSrc={formatAvatarUrl(org.avatarImageId)}
                     avatarFallback={org.name.slice(0, 1).toUpperCase()}
                     primaryText={<span className={cn(isCurrent && 'font-semibold')}>{org.name}</span>}
-                    secondaryText={
-                      isBillingEnabled ? getPlanName(org.organisationClaim.originalSubscriptionClaimId) : undefined
-                    }
                   />
                 </button>
               </li>
@@ -186,14 +161,16 @@ export const SettingsOrgSwitcher = ({ currentOrgUrl }: SettingsOrgSwitcherProps)
           })}
         </ul>
 
-        <div className="border-t p-1">
-          <Button variant="ghost" asChild className="w-full justify-start" data-testid="settings-org-switcher-create">
-            <a href="/settings/organisations?action=add-organisation">
-              <PlusIcon className="mr-2 h-4 w-4" />
-              <Trans>Create organisation</Trans>
-            </a>
-          </Button>
-        </div>
+        {isOrganisationCreationAllowed && (
+          <div className="border-t p-1">
+            <Button variant="ghost" asChild className="w-full justify-start" data-testid="settings-org-switcher-create">
+              <a href="/settings/organisations?action=add-organisation">
+                <PlusIcon className="mr-2 h-4 w-4" />
+                <Trans>Create organisation</Trans>
+              </a>
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

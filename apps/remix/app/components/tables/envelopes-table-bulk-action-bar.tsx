@@ -105,7 +105,7 @@ export const EnvelopesTableBulkActionBar = ({
         variant="ghost"
         size="sm"
         onClick={onDeleteClick}
-        className="h-8 gap-x-1.5 py-1.5 pr-2.5 pl-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        className="h-8 gap-x-1.5 py-1.5 pr-2.5 pl-2 text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
       >
         <Trash2Icon className="size-4 shrink-0" />
         <Trans>Delete</Trans>

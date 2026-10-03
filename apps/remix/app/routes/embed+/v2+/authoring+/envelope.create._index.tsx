@@ -54,30 +54,6 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
     teamId: result.teamId,
   });
 
-  const organisationEmails = await prisma.organisationEmail.findMany({
-    where: {
-      organisation: {
-        members: {
-          some: {
-            userId: result.userId,
-          },
-        },
-        teams: {
-          some: {
-            id: result.teamId,
-          },
-        },
-      },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    select: {
-      id: true,
-      email: true,
-    },
-  });
-
   fireAndForget(async () => {
     const team = result.teamId
       ? await prisma.team.findFirst({
@@ -107,7 +83,6 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
     tokenUserId: result.userId,
     tokenTeamId: result.teamId,
     teamSettings,
-    organisationEmails,
   });
 };
 
@@ -160,7 +135,7 @@ type EnvelopeCreatePageProps = {
 };
 
 const EnvelopeCreatePage = ({ embedAuthoringOptions }: EnvelopeCreatePageProps) => {
-  const { token, tokenUserId, tokenTeamId, teamSettings, organisationEmails } = useSuperLoaderData<typeof loader>();
+  const { token, tokenUserId, tokenTeamId, teamSettings } = useSuperLoaderData<typeof loader>();
 
   const { t } = useLingui();
   const { toast } = useToast();
@@ -434,11 +409,7 @@ const EnvelopeCreatePage = ({ embedAuthoringOptions }: EnvelopeCreatePageProps) 
         </div>
       )}
 
-      <EnvelopeEditorProvider
-        initialEnvelope={initialEnvelope}
-        editorConfig={editorConfig}
-        organisationEmails={organisationEmails}
-      >
+      <EnvelopeEditorProvider initialEnvelope={initialEnvelope} editorConfig={editorConfig}>
         <EnvelopeEditorRenderProviderWrapper presignedToken={token}>
           <EnvelopeEditor />
         </EnvelopeEditorRenderProviderWrapper>

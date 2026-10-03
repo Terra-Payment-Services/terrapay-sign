@@ -1,0 +1,9 @@
+# Local overrides for the TerraPay evaluation.
+#
+# MinIO withdrew the `minio/minio` repository from Docker Hub, so the upstream
+# compose file cannot pull it and the whole stack stops before anything starts.
+# quay.io still serves the same image, so point at that instead. Nothing else
+# about the service changes.
+services:
+  minio:
+    image: quay.io/minio/minio:latest

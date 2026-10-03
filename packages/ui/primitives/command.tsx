@@ -38,7 +38,10 @@ const CommandDialog = ({
   return (
     <Dialog {...props}>
       <DialogContent
-        className={cn('w-11/12 items-center overflow-hidden rounded-lg p-0 shadow-2xl lg:mt-0', dialogContentClassName)}
+        className={cn(
+          'w-11/12 items-center overflow-hidden rounded-lg p-0 shadow-elevation-dialog lg:mt-0',
+          dialogContentClassName,
+        )}
         position={position}
         overlayClassName="bg-background/60"
       >
@@ -80,7 +83,7 @@ const CommandTextInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:font-medium file:text-sm placeholder:text-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full rounded-sm border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:font-medium file:text-sm placeholder:text-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         className,
         {
           '!ring-destructive ring-2 transition-all': props['aria-invalid'],

@@ -14,6 +14,6 @@ import { trpcServer } from '@hono/trpc-server';
 export const reactRouterTrpcServer = trpcServer({
   router: appRouter,
   endpoint: formatPath('/api/trpc'),
-  createContext: async (_, c) => createTrpcContext({ c, requestSource: 'app' }),
+  createContext: async (opts, c) => createTrpcContext({ c, requestSource: 'app', resHeaders: opts.resHeaders }),
   onError: (opts) => handleTrpcRouterError(opts, 'trpc'),
 });

@@ -144,8 +144,8 @@ export const RateLimitArrayInput = ({ value, onChange, disabled }: RateLimitArra
               </Button>
             </div>
 
-            {windowError ? <p className="text-destructive text-xs">{windowError}</p> : null}
-            {maxError ? <p className="text-destructive text-xs">{maxError}</p> : null}
+            {windowError ? <p className="text-destructive-text text-xs">{windowError}</p> : null}
+            {maxError ? <p className="text-destructive-text text-xs">{maxError}</p> : null}
           </div>
         );
       })}

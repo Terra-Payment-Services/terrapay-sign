@@ -81,6 +81,10 @@ export const getSigningCompletionErrorMessage = (code: string): ToastMessageDesc
       title: msg`Document not ready`,
       description: msg`This document has not been sent for signing yet. Please wait for the sender to send it before signing.`,
     }))
+    .with(AppErrorCode.TOO_MANY_REQUESTS, () => ({
+      title: msg`Too many attempts`,
+      description: msg`Too many attempts have been made to complete this document, which can happen after several incorrect verification codes. Please wait up to an hour, request a new code and try again.`,
+    }))
     .otherwise(() => ({
       title: msg`Something went wrong`,
       description: msg`We were unable to submit this document at this time. Please try again later.`,
@@ -92,7 +96,10 @@ export const getUploadErrorMessage = (code: string): ToastMessageDescriptor => {
     .with(AppErrorCode.TOO_MANY_REQUESTS, () => FAIR_USE_LIMIT_EXCEEDED_ERROR_MESSAGE)
     .with('INVALID_DOCUMENT_FILE', () => ({
       title: msg`Error`,
-      description: msg`You cannot upload encrypted PDFs.`,
+      // Covers an encrypted PDF, an unreadable one, and one already signed by
+      // somebody else that this upload would invalidate. The last is the
+      // reason the wording is no longer only about encryption.
+      description: msg`This PDF cannot be uploaded. It may be encrypted, unreadable, or carry a signature that uploading would invalidate.`,
     }))
     .with(AppErrorCode.LIMIT_EXCEEDED, () => ({
       title: msg`Error`,
