@@ -1,3 +1,5 @@
+import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
+import { embedEmailImages, readStaticEmailImage } from '@documenso/lib/server-only/email/embed-email-images';
 import type {
   GraphAddress,
   GraphAttachment,
@@ -81,6 +83,11 @@ export class MicrosoftGraphTransport implements Transport<SentMessageInfo> {
     const cc = toGraphAddresses(mail.data.cc);
     const bcc = toGraphAddresses(mail.data.bcc);
 
+    const html = mail.data.html?.toString();
+    const images = html
+      ? embedEmailImages(html, NEXT_PUBLIC_WEBAPP_URL(), readStaticEmailImage)
+      : { html, attachments: [] };
+
     sendGraphMail(
       {
         from,
@@ -89,10 +96,10 @@ export class MicrosoftGraphTransport implements Transport<SentMessageInfo> {
         bcc,
         replyTo: toGraphAddresses(mail.data.replyTo),
         subject: mail.data.subject ?? '',
-        html: mail.data.html?.toString(),
+        html: images.html,
         text: mail.data.text?.toString(),
         headers: normalizeMailHeaders(mail.data.headers),
-        attachments: toGraphAttachments(mail.data.attachments),
+        attachments: [...toGraphAttachments(mail.data.attachments), ...images.attachments],
       },
       { credentials: this._credentials },
     )

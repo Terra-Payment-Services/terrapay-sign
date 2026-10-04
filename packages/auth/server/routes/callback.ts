@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 
-import { GoogleAuthOptions, MicrosoftAuthOptions, OidcAuthOptions } from '../config';
+import { MicrosoftAuthOptions } from '../config';
 import { handleOAuthCallbackUrl } from '../lib/utils/handle-oauth-callback-url';
 import type { HonoAuthContext } from '../types/context';
 
@@ -9,16 +9,6 @@ import type { HonoAuthContext } from '../types/context';
  * backwards compatibility for self-hosters (since we used to use NextAuth).
  */
 export const callbackRoute = new Hono<HonoAuthContext>()
-  /**
-   * OIDC callback verification.
-   */
-  .get('/oidc', async (c) => handleOAuthCallbackUrl({ c, clientOptions: OidcAuthOptions }))
-
-  /**
-   * Google callback verification.
-   */
-  .get('/google', async (c) => handleOAuthCallbackUrl({ c, clientOptions: GoogleAuthOptions }))
-
   /**
    * Microsoft callback verification.
    */

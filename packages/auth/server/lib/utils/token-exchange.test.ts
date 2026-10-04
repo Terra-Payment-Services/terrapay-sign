@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exchangeAuthorizationCode } from './token-exchange';
 
@@ -55,6 +58,28 @@ describe('exchangeAuthorizationCode', () => {
     expect(tokens.accessToken).toBe('an-access-token');
     expect(tokens.idToken).toBe('header.payload.signature');
     expect(tokens.accessTokenExpiresAt.getTime()).toBeGreaterThanOrEqual(before + 3600 * 1000);
+  });
+
+  it('posts the code only to the address the guard checked', async () => {
+    // A second lookup is where a rebinding resolver would answer loopback, so
+    // the request has to go to the address checked rather than resolve again.
+    let lookups = 0;
+    const fetchFn = vi.fn(async () => succeeds());
+
+    await exchangeAuthorizationCode({
+      tokenEndpoint: TOKEN_ENDPOINT,
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      redirectUri: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+      code: 'the-code',
+      codeVerifier: 'the-verifier',
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      fetchFn: fetchFn as unknown as typeof fetch,
+      lookup: async () => [lookups++ === 0 ? '198.51.101.10' : '127.0.0.1'],
+    });
+
+    expect(lookups).toBe(1);
+    expect(fetchFn.mock.calls[0]).toEqual([TOKEN_ENDPOINT, expect.any(Object), ['198.51.101.10']]);
   });
 
   it('sends the code and the verifier, and the secret only as HTTP Basic', async () => {
@@ -158,5 +183,72 @@ describe('exchangeAuthorizationCode', () => {
     const fetchFn = vi.fn(async () => new Response('', { status: 500 }));
 
     await expect(exchange(fetchFn)).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe('exchangeAuthorizationCode without an injected fetch', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('posts through the pinned transport to the address the lookup returned', async () => {
+    // `.invalid` never resolves, so the code reaches this server only if the
+    // request went to the checked address rather than through a fresh lookup.
+    // The local authority setting lets the check accept loopback and http.
+    vi.stubEnv('NEXT_PRIVATE_OIDC_ALLOW_LOCAL_AUTHORITY', 'true');
+
+    const received: string[] = [];
+    const server = createServer((request, response) => {
+      request.on('data', (chunk: Buffer) => received.push(chunk.toString()));
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ access_token: 'a', id_token: 'b.c.d', expires_in: 60, token_type: 'Bearer' }));
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    try {
+      const { port } = server.address() as AddressInfo;
+
+      const tokens = await exchangeAuthorizationCode({
+        tokenEndpoint: `http://token.invalid:${port}/token`,
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        redirectUri: 'http://localhost:3000/api/auth/callback/microsoft',
+        code: 'the-code',
+        codeVerifier: 'the-verifier',
+        lookup: async () => ['127.0.0.1'],
+      });
+
+      expect(tokens.idToken).toBe('b.c.d');
+      expect(new URLSearchParams(received.join('')).get('code')).toBe('the-code');
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('times out while the lookup is still pending instead of waiting on DNS', async () => {
+    const fetchFn = vi.fn(async () => succeeds());
+    const started = Date.now();
+
+    await expect(
+      exchangeAuthorizationCode({
+        tokenEndpoint: TOKEN_ENDPOINT,
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        redirectUri: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+        code: 'the-code',
+        codeVerifier: 'the-verifier',
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        fetchFn: fetchFn as unknown as typeof fetch,
+        lookup: () => new Promise<string[]>(() => undefined),
+        timeoutMs: 50,
+      }),
+    ).rejects.toThrow(/timed out after 50ms/);
+
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });

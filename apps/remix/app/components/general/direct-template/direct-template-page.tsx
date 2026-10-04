@@ -157,7 +157,6 @@ export const DirectTemplatePageView = ({
               documentDataId: template.templateDocumentDataId,
               version: 'current',
               token: directTemplateRecipient.token,
-              presignToken: undefined,
             })}
             scrollParentRef="window"
             onDocumentLoad={() => setIsDocumentPdfLoaded(true)}

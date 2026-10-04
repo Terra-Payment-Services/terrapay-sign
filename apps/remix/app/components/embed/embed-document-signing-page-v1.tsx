@@ -318,7 +318,6 @@ export const EmbedSignDocumentV1ClientPage = ({
                 documentDataId: envelopeItems[0]?.documentData.id,
                 version: 'current',
                 token: token,
-                presignToken: undefined,
               })}
               scrollParentRef="window"
               onDocumentLoad={() => setHasDocumentLoaded(true)}

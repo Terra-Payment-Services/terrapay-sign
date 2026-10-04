@@ -92,7 +92,6 @@ export const ConfigureFieldsView = ({
         documentDataId: envelopeItem.documentDataId,
         version: 'current',
         token: undefined,
-        presignToken,
       });
     }
 
@@ -101,7 +100,7 @@ export const ConfigureFieldsView = ({
     }
 
     return configData.documentData.data;
-  }, [configData.documentData, envelopeItem, presignToken]);
+  }, [configData.documentData, envelopeItem]);
 
   const recipients = useMemo(() => {
     return configData.signers.map<TRecipientLite>((signer, index) => ({
@@ -524,7 +523,9 @@ export const ConfigureFieldsView = ({
 
             <Form {...form}>
               <div>
-                {normalizedDocumentData && <PDFViewerLazy data={normalizedDocumentData} scrollParentRef="window" />}
+                {normalizedDocumentData && (
+                  <PDFViewerLazy data={normalizedDocumentData} presignToken={presignToken} scrollParentRef="window" />
+                )}
 
                 <ElementVisible target={PDF_VIEWER_PAGE_SELECTOR}>
                   {localFields.map((field, index) => {

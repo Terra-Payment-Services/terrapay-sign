@@ -13,17 +13,15 @@ export type EnvelopeItemPdfUrlOptions =
       envelopeItem: Pick<EnvelopeItem, 'id' | 'envelopeId'>;
       token: string | undefined;
       version: 'original' | 'signed' | 'pending';
-      presignToken?: undefined;
     }
   | {
       type: 'view';
       envelopeItem: Pick<EnvelopeItem, 'id' | 'envelopeId'>;
       token: string | undefined;
-      presignToken?: string | undefined;
     };
 
 export const getEnvelopeItemPdfUrl = (options: EnvelopeItemPdfUrlOptions) => {
-  const { envelopeItem, token, type, presignToken } = options;
+  const { envelopeItem, token, type } = options;
 
   const { id, envelopeId } = envelopeItem;
 
@@ -31,13 +29,13 @@ export const getEnvelopeItemPdfUrl = (options: EnvelopeItemPdfUrlOptions) => {
     const version = options.version;
 
     return token
-      ? `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/envelopeItem/${id}/download/${version}${presignToken ? `?presignToken=${presignToken}` : ''}`
+      ? `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/envelopeItem/${id}/download/${version}`
       : `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/envelope/${envelopeId}/envelopeItem/${id}/download/${version}`;
   }
 
   return token
-    ? `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/envelopeItem/${id}${presignToken ? `?presignToken=${presignToken}` : ''}`
-    : `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/envelope/${envelopeId}/envelopeItem/${id}${presignToken ? `?token=${presignToken}` : ''}`;
+    ? `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/envelopeItem/${id}`
+    : `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/envelope/${envelopeId}/envelopeItem/${id}`;
 };
 
 export type DocumentDataUrlOptions = {
@@ -45,7 +43,6 @@ export type DocumentDataUrlOptions = {
   envelopeItemId: string;
   documentDataId: string;
   token: string | undefined;
-  presignToken?: string | undefined;
   version: DocumentDataVersion;
 };
 
@@ -57,7 +54,7 @@ export type DocumentDataUrlOptions = {
  * good way to cache an envelope item by.
  */
 export const getDocumentDataUrl = (options: DocumentDataUrlOptions) => {
-  const { envelopeId, envelopeItemId, documentDataId, token, presignToken, version } = options;
+  const { envelopeId, envelopeItemId, documentDataId, token, version } = options;
 
   const partialUrl = `envelope/${envelopeId}/envelopeItem/${envelopeItemId}/dataId/${documentDataId}/${version}/item.pdf`;
 
@@ -66,14 +63,22 @@ export const getDocumentDataUrl = (options: DocumentDataUrlOptions) => {
     return `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/${partialUrl}`;
   }
 
-  // Endpoint authenticated by session or presigned token.
-  const baseUrl = `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/${partialUrl}`;
+  // Endpoint authenticated by session, or by a presign token sent with
+  // `getPresignRequestHeaders`.
+  return `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/${partialUrl}`;
+};
 
-  if (presignToken) {
-    return `${baseUrl}?presignToken=${presignToken}`;
+/**
+ * Headers that carry a presign token to the file routes. The token is a bearer
+ * credential, so it travels in `Authorization` and never in the URL, where it
+ * would be written to access logs and browser history.
+ */
+export const getPresignRequestHeaders = (presignToken: string | undefined): Record<string, string> => {
+  if (!presignToken) {
+    return {};
   }
 
-  return baseUrl;
+  return { Authorization: `Bearer ${presignToken}` };
 };
 
 /**

@@ -6,6 +6,7 @@ import { setCookie } from 'hono/cookie';
 import type { OAuthClientOptions } from '../../config';
 import { sessionCookieOptions } from '../session/session-cookies';
 import { getOpenIdConfiguration } from './open-id';
+import { assertSupportedOAuthProvider } from './supported-oauth-provider';
 
 type HandleOAuthAuthorizeUrlOptions = {
   /**
@@ -39,6 +40,8 @@ export const handleOAuthAuthorizeUrl = async (options: HandleOAuthAuthorizeUrlOp
   const { c, clientOptions, redirectPath } = options;
 
   let prompt = options.prompt ?? 'login';
+
+  assertSupportedOAuthProvider(clientOptions);
 
   if (!clientOptions.clientId || !clientOptions.clientSecret) {
     throw new AppError(AppErrorCode.NOT_SETUP);

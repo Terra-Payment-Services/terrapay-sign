@@ -437,7 +437,6 @@ export const DocumentEditForm = ({ className, initialDocument, documentRootPath 
               documentDataId: initialDocument.documentDataId,
               version: 'current',
               token: undefined,
-              presignToken: undefined,
             })}
             scrollParentRef="window"
             onDocumentLoad={() => setIsDocumentPdfLoaded(true)}

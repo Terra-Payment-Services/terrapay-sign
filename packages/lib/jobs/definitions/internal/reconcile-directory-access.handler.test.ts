@@ -37,7 +37,17 @@ vi.mock('../../../server-only/directory/reconcile-directory-access', () => ({
 
 vi.mock('../../../server-only/user/disable-user', () => ({ disableUser: vi.fn() }));
 
-vi.mock('@documenso/prisma', () => ({ prisma: {} }));
+vi.mock('../../../server-only/user/service-accounts/deleted-account', () => ({
+  deletedServiceAccountEmail: () => 'deleted-account@sign.example.com',
+}));
+
+vi.mock('../../../server-only/user/service-accounts/legacy-service-account', () => ({
+  legacyServiceAccountEmail: () => 'serviceaccount@sign.example.com',
+}));
+
+const findMany = vi.fn();
+
+vi.mock('@documenso/prisma', () => ({ prisma: { user: { findMany: async (args: unknown) => await findMany(args) } } }));
 
 const { run } = await import('./reconcile-directory-access.handler');
 
@@ -75,6 +85,19 @@ describe('reconcile-directory-access handler', () => {
 
     expect(fetchEntraGroupMembers).toHaveBeenCalledWith({ groupId: 'group-id', credentials });
     expect(fetchEntraTenantUsers).not.toHaveBeenCalled();
+  });
+
+  it('leaves the system accounts that hold orphaned documents out of the accounts it considers', async () => {
+    findMany.mockResolvedValue([]);
+
+    await run({ payload: {}, io });
+
+    const [{ getReconcilableUsers }] = reconcileDirectoryAccess.mock.calls[0];
+    await getReconcilableUsers();
+
+    expect(findMany.mock.calls[0][0].where.email).toEqual({
+      notIn: ['deleted-account@sign.example.com', 'serviceaccount@sign.example.com'],
+    });
   });
 
   it('skips the run when a credential is missing', async () => {

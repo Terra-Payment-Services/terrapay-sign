@@ -10,11 +10,9 @@ import {
   Building2Icon,
   FileStack,
   LineChartIcon,
-  MailIcon,
   Settings,
   Trophy,
   Users,
-  Wallet2,
 } from 'lucide-react';
 import { Link, Outlet, redirect, useLocation } from 'react-router';
 
@@ -77,17 +75,6 @@ export default function AdminLayout() {
 
           <Button
             variant="ghost"
-            className={cn('justify-start md:w-full', pathname?.startsWith('/admin/claims') && 'bg-secondary')}
-            asChild
-          >
-            <Link to="/admin/claims">
-              <Wallet2 className="mr-2 h-5 w-5" />
-              <Trans>Claims</Trans>
-            </Link>
-          </Button>
-
-          <Button
-            variant="ghost"
             className={cn('justify-start md:w-full', pathname?.startsWith('/admin/users') && 'bg-secondary')}
             asChild
           >
@@ -119,17 +106,6 @@ export default function AdminLayout() {
             <Link to="/admin/unsealed-documents">
               <AlertTriangleIcon className="mr-2 h-5 w-5" />
               <Trans>Unsealed Documents</Trans>
-            </Link>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className={cn('justify-start md:w-full', pathname?.startsWith('/admin/email-transports') && 'bg-secondary')}
-            asChild
-          >
-            <Link to="/admin/email-transports">
-              <MailIcon className="mr-2 h-5 w-5" />
-              <Trans>Email Transports</Trans>
             </Link>
           </Button>
 

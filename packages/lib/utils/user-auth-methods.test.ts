@@ -25,9 +25,9 @@ describe('deriveUserAuthMethods', () => {
       deriveUserAuthMethods({
         hasPassword: false,
         passkeyCount: 0,
-        accountProviders: ['google', 'microsoft', 'oidc'],
+        accountProviders: ['microsoft'],
       }),
-    ).toEqual([UserAuthMethod.GOOGLE, UserAuthMethod.MICROSOFT, UserAuthMethod.OIDC]);
+    ).toEqual([UserAuthMethod.MICROSOFT]);
   });
 
   it('treats unknown providers as organisation SSO', () => {
@@ -45,8 +45,8 @@ describe('deriveUserAuthMethods', () => {
       deriveUserAuthMethods({
         hasPassword: true,
         passkeyCount: 0,
-        accountProviders: ['google', 'google', 'org_a', 'org_b'],
+        accountProviders: ['microsoft', 'microsoft', 'org_a', 'org_b'],
       }),
-    ).toEqual([UserAuthMethod.PASSWORD, UserAuthMethod.GOOGLE, UserAuthMethod.ORGANISATION_SSO]);
+    ).toEqual([UserAuthMethod.PASSWORD, UserAuthMethod.MICROSOFT, UserAuthMethod.ORGANISATION_SSO]);
   });
 });

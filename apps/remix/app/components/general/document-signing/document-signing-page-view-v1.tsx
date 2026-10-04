@@ -277,7 +277,6 @@ export const DocumentSigningPageViewV1 = ({
                     documentDataId: document.envelopeItems[0]?.documentData.id,
                     version: 'current',
                     token: recipient.token,
-                    presignToken: undefined,
                   })}
                   scrollParentRef="window"
                 />

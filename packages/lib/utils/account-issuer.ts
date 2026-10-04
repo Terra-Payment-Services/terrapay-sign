@@ -1,12 +1,12 @@
 /**
  * Binding a stored account to the authority that created it.
  *
- * `Account.provider` is our own label. It is 'google', 'microsoft' or 'oidc' for
- * the built-in clients, and the organisation's cuid for an enterprise SSO
- * portal. None of those names say anything about which authority issued the
- * token, and the URL behind the label is editable: an organisation manager sets
- * `wellKnownUrl` on the portal, and a deployment sets
- * `NEXT_PRIVATE_OIDC_WELL_KNOWN` on the built-in provider.
+ * `Account.provider` is our own label. It is 'microsoft' for the built-in
+ * client, and the organisation's cuid for an enterprise SSO portal. Neither
+ * name says anything about which authority issued the token, and the URL
+ * behind the label is editable: an organisation manager sets `wellKnownUrl` on
+ * the portal, and a deployment sets `NEXT_PRIVATE_MICROSOFT_TENANT` on the
+ * built-in provider.
  *
  * Verifying `iss` against the discovery document at sign in closes the case
  * where two authorities are live under two labels at once. It cannot see the

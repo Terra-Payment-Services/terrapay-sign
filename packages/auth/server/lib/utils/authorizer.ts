@@ -13,9 +13,8 @@ type AuthorizeUser = {
  * Handles creating a session.
  *
  * Refuses to issue a session for a disabled account. This is the single
- * chokepoint shared by every sign-in path (email/password, passkey, OAuth,
- * OIDC, organisation OIDC), so the guard belongs here rather than in each
- * caller.
+ * chokepoint shared by every sign-in path (email/password, passkey and
+ * Microsoft OAuth), so the guard belongs here rather than in each caller.
  */
 export const onAuthorize = async (user: AuthorizeUser, c: Context<HonoAuthContext>) => {
   await assertUserNotDisabledById({ userId: user.userId });

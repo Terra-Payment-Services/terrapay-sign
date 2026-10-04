@@ -71,6 +71,9 @@ export const API_V2_URL = '/api/v2';
 
 export const SUPPORT_EMAIL = env('NEXT_PUBLIC_SUPPORT_EMAIL') ?? 'it.support@terrapay.com';
 
+/** Where the running version's source is published, as AGPL section 13 requires. */
+export const SOURCE_CODE_URL = 'https://github.com/Terra-Payment-Services/terrapay-sign';
+
 export const USE_INTERNAL_URL_BROWSERLESS = () => env('NEXT_PUBLIC_USE_INTERNAL_URL_BROWSERLESS') === 'true';
 
 /**
@@ -286,33 +289,15 @@ export const NEXT_PRIVATE_SHAREPOINT_TENANT_ID = () =>
 /**
  * Application (client) id used to reach SharePoint.
  *
- * Falls back to the Entra directory client id, which shares one app
- * registration between the two features. Sharing means that single registration
- * holds `GroupMember.Read.All`, `User.Read.All` and `Sites.Selected` together,
- * so one leaked secret reads the directory and writes the contract library.
- * Separate registrations are the better posture and are what these variables
- * exist for; the fallback is a convenience for a small deployment that has
- * decided otherwise.
+ * There is no fallback to the Entra directory registration. Sharing one would
+ * put `GroupMember.Read.All`, `User.Read.All` and `Sites.Selected` behind a
+ * single secret, so one leak would read the directory and write the contract
+ * library. Without its own registration the archive stays off.
  */
-export const NEXT_PRIVATE_SHAREPOINT_CLIENT_ID = () =>
-  env('NEXT_PRIVATE_SHAREPOINT_CLIENT_ID') || NEXT_PRIVATE_ENTRA_CLIENT_ID();
+export const NEXT_PRIVATE_SHAREPOINT_CLIENT_ID = () => env('NEXT_PRIVATE_SHAREPOINT_CLIENT_ID');
 
-/**
- * Client secret for the SharePoint app registration. Never logged.
- *
- * Falls back to the Entra directory secret only when the client id also falls
- * back, so a deployment that names its own client id can never accidentally
- * authenticate it with the directory job's secret.
- */
-export const NEXT_PRIVATE_SHAREPOINT_CLIENT_SECRET = () => {
-  const secret = env('NEXT_PRIVATE_SHAREPOINT_CLIENT_SECRET');
-
-  if (secret) {
-    return secret;
-  }
-
-  return env('NEXT_PRIVATE_SHAREPOINT_CLIENT_ID') ? undefined : NEXT_PRIVATE_ENTRA_CLIENT_SECRET();
-};
+/** Client secret for the SharePoint app registration. Never logged. */
+export const NEXT_PRIVATE_SHAREPOINT_CLIENT_SECRET = () => env('NEXT_PRIVATE_SHAREPOINT_CLIENT_SECRET');
 
 /**
  * Graph site id of the target site, in the `hostname,siteCollectionId,siteId`

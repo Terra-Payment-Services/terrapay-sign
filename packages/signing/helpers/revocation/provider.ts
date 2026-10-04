@@ -119,7 +119,7 @@ type CertificateOutcome = {
 export type ValidatingRevocationProviderOptions = {
   /** @default the value of NEXT_PRIVATE_SIGNING_REVOCATION_MODE, else 'strict' */
   mode?: RevocationMode;
-  /** @default globalThis.fetch */
+  /** @default the transport that connects only to the vetted addresses */
   fetchFn?: typeof fetch;
   /** @default a DNS lookup of both address families */
   lookup?: AddressLookup;
@@ -191,7 +191,7 @@ export const createValidatingRevocationProvider = (
   options: ValidatingRevocationProviderOptions = {},
 ): ValidatingRevocationProvider => {
   const mode = options.mode ?? resolveMode();
-  const fetchFn = options.fetchFn ?? globalThis.fetch;
+  const fetchFn = options.fetchFn;
   const lookup = options.lookup ?? systemLookup;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxOcspResponseBytes = options.maxOcspResponseBytes ?? DEFAULT_MAX_OCSP_BYTES;

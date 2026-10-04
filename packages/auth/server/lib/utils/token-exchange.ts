@@ -5,6 +5,7 @@ import {
   readCappedBody,
   systemLookup,
 } from '@documenso/lib/server-only/http/guarded-fetch';
+import { type PinnedTransport, pinnedFetch } from '@documenso/lib/server-only/http/pinned-fetch';
 
 import { AuthenticationErrorCode } from '../errors/error-codes';
 import { authorityAddressPolicy } from './open-id';
@@ -75,6 +76,8 @@ export type ExchangeAuthorizationCodeOptions = {
   fetchFn?: typeof fetch;
   /** Replaces DNS resolution for the address check. Overridden in tests. */
   lookup?: AddressLookup;
+  /** @default 10000, covering the lookup, the request and the body read. Overridden in tests. */
+  timeoutMs?: number;
 };
 
 const refuse = (message: string) => new AppError(AuthenticationErrorCode.InvalidRequest, { message });
@@ -142,8 +145,9 @@ export const exchangeAuthorizationCode = async (
 ): Promise<ExchangedTokens> => {
   const { tokenEndpoint, clientId, clientSecret, redirectUri, code, codeVerifier } = options;
 
-  const fetchFn = options.fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
+  const fetchFn: PinnedTransport = options.fetchFn ?? pinnedFetch;
   const lookup = options.lookup ?? systemLookup;
+  const timeoutMs = options.timeoutMs ?? TOKEN_EXCHANGE_TIMEOUT_MS;
 
   let endpoint: URL;
 
@@ -155,8 +159,23 @@ export const exchangeAuthorizationCode = async (
 
   // Checked again here rather than trusting the check discovery did. Discovery
   // may have run against a document fetched some time ago, and a name can be
-  // repointed between the two.
-  await assertUrlIsPubliclyFetchable(endpoint, lookup, exchangeContext());
+  // repointed between the two. The request below connects only to the
+  // addresses checked here, so the name cannot be repointed after it either.
+  //
+  // The deadline starts before the lookup, so a resolver that never answers
+  // cannot hold the sign in open past it.
+  const signal = AbortSignal.timeout(timeoutMs);
+  let addresses: string[];
+
+  try {
+    addresses = await assertUrlIsPubliclyFetchable(endpoint, lookup, exchangeContext(), signal);
+  } catch (error) {
+    if (signal.aborted) {
+      throw refuse(`The token request to ${endpoint.host} timed out after ${timeoutMs}ms resolving the host`);
+    }
+
+    throw error;
+  }
 
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -168,20 +187,24 @@ export const exchangeAuthorizationCode = async (
   let response: Response;
 
   try {
-    response = await fetchFn(endpoint.toString(), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-        authorization: `Basic ${basicCredentials(clientId, clientSecret)}`,
+    response = await fetchFn(
+      endpoint.toString(),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+          authorization: `Basic ${basicCredentials(clientId, clientSecret)}`,
+        },
+        body: body.toString(),
+        // Nothing is followed. A token endpoint answers with the tokens, so a 3xx
+        // means something took the request on the way out, and the request is a
+        // live authorization code.
+        redirect: 'manual',
+        signal,
       },
-      body: body.toString(),
-      // Nothing is followed. A token endpoint answers with the tokens, so a 3xx
-      // means something took the request on the way out, and the request is a
-      // live authorization code.
-      redirect: 'manual',
-      signal: AbortSignal.timeout(TOKEN_EXCHANGE_TIMEOUT_MS),
-    });
+      addresses,
+    );
   } catch (error) {
     throw refuse(
       `The token request to ${endpoint.host} failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -189,6 +212,8 @@ export const exchangeAuthorizationCode = async (
   }
 
   if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel().catch(() => undefined);
+
     throw refuse(
       `Refusing a redirect from the token endpoint at ${endpoint.host} to ` +
         `${response.headers.get('location') ?? 'an unnamed location'}`,
@@ -207,6 +232,8 @@ export const exchangeAuthorizationCode = async (
   }
 
   if (response.status !== 200) {
+    await response.body?.cancel().catch(() => undefined);
+
     throw refuse(`The token endpoint at ${endpoint.host} answered HTTP ${response.status}`);
   }
 

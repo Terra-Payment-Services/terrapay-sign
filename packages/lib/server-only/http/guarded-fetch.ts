@@ -1,6 +1,7 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 
 import { ipFamily, isPubliclyRoutableAddress } from '../../universal/ip-address';
+import { type PinnedTransport, pinnedFetch } from './pinned-fetch';
 
 /**
  * Outbound HTTP for URLs somebody else chose, kept on a short lead.
@@ -24,16 +25,16 @@ import { ipFamily, isPubliclyRoutableAddress } from '../../universal/ip-address'
  *   all refused, in IPv4, IPv6 and IPv4 mapped IPv6 form. The ranges themselves
  *   live in `universal/ip-address`, which the webhook URL check also asks and
  *   which therefore may not import a node builtin.
+ * - the connection goes only to an address that passed the check. The request
+ *   is made by `pinned-fetch`, whose `lookup` answers from the checked list, so
+ *   a name that resolves differently on a second lookup (DNS rebinding) cannot
+ *   steer the socket somewhere else. TLS still verifies against the hostname.
  * - redirects are followed only to the same host, at most twice, and never from
- *   https down to http. Each hop is re-resolved and re-checked.
- * - a wall clock timeout covers the whole exchange, including the body read.
+ *   https down to http. Each hop is re-resolved, re-checked and pinned afresh.
+ * - a wall clock timeout covers the whole exchange, from the first DNS lookup
+ *   to the end of the body read.
  * - the body is read through a reader and abandoned the moment it exceeds the
  *   cap, so a server cannot stream us out of memory.
- *
- * Residual risk, stated rather than hidden: the address check happens before
- * the connection, so a name that resolves differently on the second lookup
- * (DNS rebinding) is not covered. Closing that needs connection level pinning,
- * which Node's fetch does not expose.
  */
 
 /** Resolves a hostname to the addresses a connection might really use. */
@@ -89,7 +90,12 @@ export type GuardedFetchOptions = GuardedFetchContext & {
   timeoutMs: number;
   /** Hard cap on the response body. */
   maxResponseBytes: number;
-  fetchFn: typeof fetch;
+  /**
+   * Sends each hop to the addresses that passed the check. Leave it unset
+   * outside tests: the default is the pinned transport, and a replacement that
+   * ignores the addresses reopens the rebinding gap.
+   */
+  fetchFn?: PinnedTransport;
   lookup: AddressLookup;
 };
 
@@ -105,12 +111,56 @@ export const systemLookup: AddressLookup = async (hostname) => {
 const readableProtocols = (allowedProtocols: readonly string[]): string =>
   allowedProtocols.map((protocol) => protocol.replace(':', '')).join(' and ');
 
-const resolve = async (hostname: string, lookup: AddressLookup, context: AddressCheckContext): Promise<string[]> => {
+const abortError = (): Error => {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+
+  return error;
+};
+
+/**
+ * Settle with `promise`, or reject with an `AbortError` as soon as `signal`
+ * fires. A DNS lookup cannot be cancelled, so this is how a resolver that never
+ * answers is kept inside the caller's deadline.
+ */
+const untilAborted = async <T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+  if (!signal) {
+    return await promise;
+  }
+
+  if (signal.aborted) {
+    throw abortError();
+  }
+
+  return await new Promise<T>((resolvePromise, reject) => {
+    const onAbort = () => reject(abortError());
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    promise.then(resolvePromise, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+};
+
+const resolve = async (
+  hostname: string,
+  lookup: AddressLookup,
+  context: AddressCheckContext,
+  signal: AbortSignal | undefined,
+): Promise<string[]> => {
   try {
-    return await lookup(hostname);
-  } catch {
+    return await untilAborted(lookup(hostname), signal);
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+
     throw context.createError(`Could not resolve ${context.subject} host ${hostname}`);
   }
+};
+
+/** Stop reading a body we will not use, which also releases its socket. */
+const discardBody = async (response: Response): Promise<void> => {
+  await response.body?.cancel().catch(() => undefined);
 };
 
 /**
@@ -123,6 +173,11 @@ const resolve = async (hostname: string, lookup: AddressLookup, context: Address
  * @param url - The destination, already parsed.
  * @param lookup - How to resolve a hostname. Injected by the tests.
  * @param context - Naming and error construction for the calling module.
+ * @param signal - The caller's deadline. When it fires during the lookup this
+ *   rejects with an error named `AbortError` rather than waiting on DNS.
+ * @returns The addresses that were checked. A caller that issues its own
+ *   request passes them to `pinnedFetch`, so the connection cannot go anywhere
+ *   else. With `allowLocalAddresses` they are resolved but not checked.
  * @throws The caller's error type when the protocol is not allowed, the host is
  *   missing, the host does not resolve, or any resolved address is not public.
  */
@@ -130,7 +185,8 @@ export const assertUrlIsPubliclyFetchable = async (
   url: URL,
   lookup: AddressLookup,
   context: AddressCheckContext,
-): Promise<void> => {
+  signal?: AbortSignal,
+): Promise<string[]> => {
   const { subject, createError, allowedProtocols } = context;
 
   if (!allowedProtocols.includes(url.protocol)) {
@@ -145,14 +201,14 @@ export const assertUrlIsPubliclyFetchable = async (
     throw createError(`Refusing a ${subject} URL with no host`);
   }
 
-  if (context.allowLocalAddresses) {
-    return;
-  }
-
-  const addresses = ipFamily(hostname) !== 0 ? [hostname] : await resolve(hostname, lookup, context);
+  const addresses = ipFamily(hostname) !== 0 ? [hostname] : await resolve(hostname, lookup, context, signal);
 
   if (addresses.length === 0) {
     throw createError(`Refusing a ${subject} URL whose host ${hostname} did not resolve to any address`);
+  }
+
+  if (context.allowLocalAddresses) {
+    return addresses;
   }
 
   for (const address of addresses) {
@@ -162,6 +218,8 @@ export const assertUrlIsPubliclyFetchable = async (
       );
     }
   }
+
+  return addresses;
 };
 
 /**
@@ -185,6 +243,8 @@ export const readCappedBody = async (
   const declaredLength = Number(response.headers.get('content-length') ?? Number.NaN);
 
   if (Number.isFinite(declaredLength) && declaredLength > maxResponseBytes) {
+    await discardBody(response);
+
     throw createError(
       `Refusing a ${subject} response that declares ${declaredLength} bytes, over the ${maxResponseBytes} byte cap`,
     );
@@ -279,7 +339,7 @@ export const guardedFetch = async ({
   body,
   timeoutMs,
   maxResponseBytes,
-  fetchFn,
+  fetchFn = pinnedFetch,
   lookup,
   subject,
   createError,
@@ -308,22 +368,29 @@ export const guardedFetch = async ({
 
   try {
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      await assertUrlIsPubliclyFetchable(target, lookup, context);
+      const addresses = await assertUrlIsPubliclyFetchable(target, lookup, context, controller.signal);
 
-      const response = await fetchFn(target.toString(), {
-        method,
-        headers,
-        body: body ? (body.slice() as unknown as BodyInit) : undefined,
-        redirect: 'manual',
-        signal: controller.signal,
-      });
+      const response = await fetchFn(
+        target.toString(),
+        {
+          method,
+          headers,
+          body: body ? (body.slice() as unknown as BodyInit) : undefined,
+          redirect: 'manual',
+          signal: controller.signal,
+        },
+        addresses,
+      );
 
       if (response.status >= 300 && response.status < 400) {
+        await discardBody(response);
         target = nextHop(target, response, context);
         continue;
       }
 
       if (!response.ok) {
+        await discardBody(response);
+
         throw createError(`The ${subject} request to ${target.host} failed: HTTP ${response.status}`);
       }
 
@@ -345,5 +412,8 @@ export const guardedFetch = async ({
     );
   } finally {
     clearTimeout(timeout);
+    // Anything still attached to the signal, a socket from any hop included,
+    // is released here rather than left to outlive the call.
+    controller.abort();
   }
 };

@@ -256,7 +256,7 @@ describe('handleOAuthCallbackUrl', () => {
     expect(mocks.onAuthorize).toHaveBeenCalledWith({ userId: 7 }, c);
   });
 
-  // `NEXT_PRIVATE_OIDC_WELL_KNOWN` is configuration, and configuration changes.
+  // `NEXT_PRIVATE_MICROSOFT_TENANT` is configuration, and configuration changes.
   // Point the label at an authority you control, mint a token carrying somebody
   // else's subject, and the old lookup handed over their session.
   it('refuses a token from an authority the account was not linked through', async () => {
@@ -347,13 +347,17 @@ describe('handleOAuthCallbackUrl', () => {
       expect(mocks.onAuthorize).toHaveBeenCalledWith({ userId: 9 }, c);
     });
 
-    it('joins nothing when they come through another provider, which no tenant check vouches for', async () => {
+    it('refuses them outright when they come through another provider, before any account exists', async () => {
       const { c } = createContext();
 
-      await handleOAuthCallbackUrl({ c, clientOptions: { ...clientOptions, id: 'oidc' } });
+      await expect(handleOAuthCallbackUrl({ c, clientOptions: { ...clientOptions, id: 'oidc' } })).rejects.toThrow(
+        /Microsoft Entra only/,
+      );
 
+      expect(mocks.verifyIdToken).not.toHaveBeenCalled();
+      expect(mocks.userCreate).not.toHaveBeenCalled();
       expect(mocks.addUserToSoleOrganisation).not.toHaveBeenCalled();
-      expect(mocks.onAuthorize).toHaveBeenCalledWith({ userId: 9 }, c);
+      expect(mocks.onAuthorize).not.toHaveBeenCalled();
     });
 
     it('still signs them in when joining the organisation fails', async () => {

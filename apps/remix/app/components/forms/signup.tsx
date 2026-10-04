@@ -19,8 +19,6 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { FaIdCardClip } from 'react-icons/fa6';
-import { FcGoogle } from 'react-icons/fc';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { z } from 'zod';
 
@@ -57,9 +55,7 @@ export type SignUpFormProps = {
   className?: string;
   initialEmail?: string;
   isEmailPasswordSignupEnabled?: boolean;
-  isGoogleSignupEnabled?: boolean;
   isMicrosoftSignupEnabled?: boolean;
-  isOidcSignupEnabled?: boolean;
   returnTo?: string;
 };
 
@@ -67,9 +63,7 @@ export const SignUpForm = ({
   className,
   initialEmail,
   isEmailPasswordSignupEnabled = true,
-  isGoogleSignupEnabled,
   isMicrosoftSignupEnabled,
-  isOidcSignupEnabled,
   returnTo,
 }: SignUpFormProps) => {
   const { _ } = useLingui();
@@ -87,7 +81,7 @@ export const SignUpForm = ({
   // challenges.cloudflare.com, which told a third party who was signing in and
   // when. NEXT_PUBLIC_TURNSTILE_SITE_KEY and NEXT_PRIVATE_TURNSTILE_SECRET_KEY
   // are both inert now; see packages/lib/server-only/captcha/verify-captcha.ts.
-  const hasSocialAuthEnabled = isGoogleSignupEnabled || isMicrosoftSignupEnabled || isOidcSignupEnabled;
+  const hasSocialAuthEnabled = isMicrosoftSignupEnabled;
 
   const form = useForm<TSignUpFormSchema>({
     values: {
@@ -142,33 +136,9 @@ export const SignUpForm = ({
     }
   };
 
-  const onSignUpWithGoogleClick = async () => {
-    try {
-      await authClient.google.signIn();
-    } catch {
-      toast({
-        title: _(msg`An unknown error occurred`),
-        description: _(msg`We encountered an unknown error while attempting to sign you Up. Please try again later.`),
-        variant: 'destructive',
-      });
-    }
-  };
-
   const onSignUpWithMicrosoftClick = async () => {
     try {
       await authClient.microsoft.signIn();
-    } catch {
-      toast({
-        title: _(msg`An unknown error occurred`),
-        description: _(msg`We encountered an unknown error while attempting to sign you Up. Please try again later.`),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const onSignUpWithOIDCClick = async () => {
-    try {
-      await authClient.oidc.signIn();
     } catch {
       toast({
         title: _(msg`An unknown error occurred`),
@@ -320,20 +290,6 @@ export const SignUpForm = ({
                 </div>
               )}
 
-              {isGoogleSignupEnabled && (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant={'outline'}
-                  className="border bg-background text-muted-foreground"
-                  disabled={isSubmitting}
-                  onClick={onSignUpWithGoogleClick}
-                >
-                  <FcGoogle className="mr-2 h-5 w-5" />
-                  <Trans>Sign Up with Google</Trans>
-                </Button>
-              )}
-
               {isMicrosoftSignupEnabled && (
                 <Button
                   type="button"
@@ -345,20 +301,6 @@ export const SignUpForm = ({
                 >
                   <img className="mr-2 h-4 w-4" alt="Microsoft Logo" src={'/static/microsoft.svg'} />
                   <Trans>Sign Up with Microsoft</Trans>
-                </Button>
-              )}
-
-              {isOidcSignupEnabled && (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant={'outline'}
-                  className="border bg-background text-muted-foreground"
-                  disabled={isSubmitting}
-                  onClick={onSignUpWithOIDCClick}
-                >
-                  <FaIdCardClip className="mr-2 h-5 w-5" />
-                  <Trans>Sign Up with OIDC</Trans>
                 </Button>
               )}
 

@@ -77,7 +77,6 @@ route.get(
       c,
       envelopeItem,
       version,
-      cacheStrategy: 'private',
     });
   },
 );

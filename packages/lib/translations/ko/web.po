@@ -8289,11 +8289,6 @@ msgstr "리디렉션 URL"
 msgid "Redirecting"
 msgstr "리디렉션 중"
 
-#. placeholder {0}: oidcProviderLabel || 'OIDC'
-#: apps/remix/app/routes/_unauthenticated+/signin.tsx
-msgid "Redirecting to {0}..."
-msgstr "{0}(으)로 이동하는 중..."
-
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Registration Successful"
@@ -9385,16 +9380,8 @@ msgid "Sign Up"
 msgstr "가입하기"
 
 #: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with Google"
-msgstr "Google로 가입"
-
-#: apps/remix/app/components/forms/signup.tsx
 msgid "Sign Up with Microsoft"
 msgstr "Microsoft로 가입"
-
-#: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with OIDC"
-msgstr "OIDC로 가입"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-document-signing-page-v1.tsx
@@ -10208,6 +10195,10 @@ msgstr "템플릿이 삭제되었습니다"
 #: apps/remix/app/components/dialogs/envelopes-bulk-delete-dialog.tsx
 msgid "Templates partially deleted"
 msgstr "템플릿이 일부만 삭제되었습니다"
+
+#: apps/remix/app/components/general/source-code-footer.tsx
+msgid "TerraPay Sign is a modified version of Documenso, licensed under the AGPL. <0>Source code</0>"
+msgstr "TerraPay Sign은 Documenso의 수정 버전이며 AGPL에 따라 라이선스가 부여됩니다. <0>소스 코드</0>"
 
 #: apps/remix/app/components/dialogs/account-delete-dialog.tsx
 msgid "TerraPay Sign will delete <0>all of your documents</0>, along with all of your completed documents, signatures, and all other resources belonging to your Account."

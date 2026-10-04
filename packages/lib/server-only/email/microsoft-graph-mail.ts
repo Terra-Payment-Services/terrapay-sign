@@ -151,6 +151,8 @@ export type GraphAttachment = {
   filename: string;
   content: Buffer;
   contentType?: string;
+  /** Set on an image the HTML shows through `cid:`, which Graph then sends inline. */
+  contentId?: string;
 };
 
 export type GraphMailInput = {
@@ -324,11 +326,15 @@ export const buildGraphMessage = (
             name: attachment.filename,
             contentType: attachment.contentType ?? 'application/octet-stream',
             contentBytes: attachment.content.toString('base64'),
+            ...inline(attachment),
           })),
         }
       : {}),
   };
 };
+
+const inline = (attachment: GraphAttachment) =>
+  attachment.contentId ? { isInline: true, contentId: attachment.contentId } : {};
 
 /**
  * Whether the message is small enough to send in a single request.
@@ -586,6 +592,7 @@ const addSmallAttachment = async ({
       name: attachment.filename,
       contentType: attachment.contentType ?? 'application/octet-stream',
       contentBytes: attachment.content.toString('base64'),
+      ...inline(attachment),
     }),
     redirect: REFUSE_REDIRECT,
     signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),

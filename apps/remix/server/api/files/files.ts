@@ -2,6 +2,7 @@ import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { AppError } from '@documenso/lib/errors/app-error';
 import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import { presignScopeCoversEnvelope } from '@documenso/lib/server-only/embedding-presign/presign-scope-covers-envelope';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
@@ -12,11 +13,10 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 
 import type { HonoEnv } from '../../router';
-import { handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
+import { getPresignBearerToken, handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
 import {
   ZGetEnvelopeItemFileDownloadRequestParamsSchema,
   ZGetEnvelopeItemFileRequestParamsSchema,
-  ZGetEnvelopeItemFileRequestQuerySchema,
   ZGetEnvelopeItemFileTokenDownloadRequestParamsSchema,
   ZGetEnvelopeItemFileTokenRequestParamsSchema,
   ZUploadPdfRequestSchema,
@@ -81,10 +81,9 @@ export const filesRoute = new Hono<HonoEnv>()
   .get(
     '/envelope/:envelopeId/envelopeItem/:envelopeItemId',
     sValidator('param', ZGetEnvelopeItemFileRequestParamsSchema),
-    sValidator('query', ZGetEnvelopeItemFileRequestQuerySchema),
     async (c) => {
       const { envelopeId, envelopeItemId } = c.req.valid('param');
-      const { token } = c.req.query();
+      const token = getPresignBearerToken(c);
 
       const session = await getOptionalSession(c);
 
@@ -94,6 +93,9 @@ export const filesRoute = new Hono<HonoEnv>()
       // its user belongs to. See get-envelope-item-pdf.ts.
       let presignTeamId: number | undefined;
 
+      // A token scoped to one envelope opens that envelope and no other in the team.
+      let presignScope: string | undefined;
+
       if (token) {
         const presignToken = await verifyEmbeddingPresignToken({
           token,
@@ -101,6 +103,7 @@ export const filesRoute = new Hono<HonoEnv>()
 
         userId = presignToken?.userId;
         presignTeamId = presignToken?.teamId;
+        presignScope = presignToken?.scope;
       }
 
       if (!userId) {
@@ -128,6 +131,10 @@ export const filesRoute = new Hono<HonoEnv>()
       }
 
       if (token && envelope.teamId !== presignTeamId) {
+        return c.json({ error: 'Envelope not found' }, 404);
+      }
+
+      if (token && !presignScopeCoversEnvelope(presignScope, envelope)) {
         return c.json({ error: 'Envelope not found' }, 404);
       }
 

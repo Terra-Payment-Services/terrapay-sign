@@ -22,8 +22,6 @@ import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/br
 import { KeyRoundIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { FaIdCardClip } from 'react-icons/fa6';
-import { FcGoogle } from 'react-icons/fc';
 import { Link, useNavigate } from 'react-router';
 import { match } from 'ts-pattern';
 import { z } from 'zod';
@@ -57,11 +55,8 @@ export type SignInFormProps = {
   className?: string;
   initialEmail?: string;
   isEmailPasswordSigninEnabled?: boolean;
-  isGoogleSSOEnabled?: boolean;
   isMicrosoftSSOEnabled?: boolean;
-  isOIDCSSOEnabled?: boolean;
   isPasskeySigninEnabled?: boolean;
-  oidcProviderLabel?: string;
   returnTo?: string;
 };
 
@@ -69,11 +64,8 @@ export const SignInForm = ({
   className,
   initialEmail,
   isEmailPasswordSigninEnabled = true,
-  isGoogleSSOEnabled,
   isMicrosoftSSOEnabled,
-  isOIDCSSOEnabled,
   isPasskeySigninEnabled = true,
-  oidcProviderLabel,
   returnTo,
 }: SignInFormProps) => {
   const { _ } = useLingui();
@@ -86,7 +78,7 @@ export const SignInForm = ({
 
   const [twoFactorAuthenticationMethod, setTwoFactorAuthenticationMethod] = useState<'totp' | 'backup'>('totp');
 
-  const hasSocialAuthEnabled = isGoogleSSOEnabled || isMicrosoftSSOEnabled || isOIDCSSOEnabled;
+  const hasSocialAuthEnabled = isMicrosoftSSOEnabled;
 
   // Cloudflare Turnstile has been removed from this deployment. The widget loaded
   // Cloudflare's api.js in the visitor's browser and the server posted the
@@ -250,37 +242,9 @@ export const SignInForm = ({
     }
   };
 
-  const onSignInWithGoogleClick = async () => {
-    try {
-      await authClient.google.signIn({
-        redirectPath,
-      });
-    } catch (err) {
-      toast({
-        title: _(msg`An unknown error occurred`),
-        description: _(msg`We encountered an unknown error while attempting to sign you In. Please try again later.`),
-        variant: 'destructive',
-      });
-    }
-  };
-
   const onSignInWithMicrosoftClick = async () => {
     try {
       await authClient.microsoft.signIn({
-        redirectPath,
-      });
-    } catch (err) {
-      toast({
-        title: _(msg`An unknown error occurred`),
-        description: _(msg`We encountered an unknown error while attempting to sign you In. Please try again later.`),
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const onSignInWithOIDCClick = async () => {
-    try {
-      await authClient.oidc.signIn({
         redirectPath,
       });
     } catch (err) {
@@ -380,20 +344,6 @@ export const SignInForm = ({
                 </div>
               )}
 
-              {isGoogleSSOEnabled && (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="border bg-background text-muted-foreground"
-                  disabled={isSubmitting}
-                  onClick={onSignInWithGoogleClick}
-                >
-                  <FcGoogle className="mr-2 h-5 w-5" />
-                  Google
-                </Button>
-              )}
-
               {isMicrosoftSSOEnabled && (
                 <Button
                   type="button"
@@ -405,20 +355,6 @@ export const SignInForm = ({
                 >
                   <img className="mr-2 h-4 w-4" alt="" src={'/static/microsoft.svg'} />
                   <Trans>Sign in with Microsoft</Trans>
-                </Button>
-              )}
-
-              {isOIDCSSOEnabled && (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="border bg-background text-muted-foreground"
-                  disabled={isSubmitting}
-                  onClick={onSignInWithOIDCClick}
-                >
-                  <FaIdCardClip className="mr-2 h-5 w-5" />
-                  {oidcProviderLabel || 'OIDC'}
                 </Button>
               )}
             </>

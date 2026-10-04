@@ -1,4 +1,5 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
+import { presignScopeCoversEnvelope } from '@documenso/lib/server-only/embedding-presign/presign-scope-covers-envelope';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import type { DocumentDataVersion } from '@documenso/lib/types/document';
@@ -11,6 +12,7 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import type { HonoEnv } from '../../../router';
+import { getPresignBearerToken } from '../files.helpers';
 
 const route = new Hono<HonoEnv>();
 
@@ -21,21 +23,16 @@ const ZGetEnvelopeItemPdfRequestParamsSchema = z.object({
   version: z.enum(['initial', 'current']),
 });
 
-const ZGetEnvelopeItemPdfRequestQuerySchema = z.object({
-  presignToken: z.string().optional(),
-});
-
 /**
  * Returns a PDF file for an envelope item.
  */
 route.get(
   '/envelope/:envelopeId/envelopeItem/:envelopeItemId/dataId/:documentDataId/:version/item.pdf',
   sValidator('param', ZGetEnvelopeItemPdfRequestParamsSchema),
-  sValidator('query', ZGetEnvelopeItemPdfRequestQuerySchema),
   async (c) => {
     const { envelopeId, envelopeItemId, documentDataId, version } = c.req.valid('param');
 
-    const { presignToken } = c.req.valid('query');
+    const presignToken = getPresignBearerToken(c);
 
     const session = await getOptionalSession(c);
 
@@ -47,7 +44,10 @@ route.get(
     // envelope its user could see, in any of their teams.
     let presignTeamId: number | undefined;
 
-    // Check presignToken if provided
+    // A token scoped to one envelope opens that envelope and no other in the team.
+    let presignScope: string | undefined;
+
+    // Check the presign token if one was sent
     if (presignToken) {
       const verifiedToken = await verifyEmbeddingPresignToken({
         token: presignToken,
@@ -55,6 +55,7 @@ route.get(
 
       userId = verifiedToken?.userId;
       presignTeamId = verifiedToken?.teamId;
+      presignScope = verifiedToken?.scope;
     }
 
     if (!userId) {
@@ -74,6 +75,7 @@ route.get(
         envelope: {
           select: {
             id: true,
+            secondaryId: true,
             teamId: true,
           },
         },
@@ -85,6 +87,10 @@ route.get(
     }
 
     if (presignToken && envelopeItem.envelope.teamId !== presignTeamId) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+
+    if (presignToken && !presignScopeCoversEnvelope(presignScope, envelopeItem.envelope)) {
       return c.json({ error: 'Not found' }, 404);
     }
 
@@ -102,7 +108,6 @@ route.get(
       c,
       envelopeItem,
       version,
-      cacheStrategy: 'private',
     });
   },
 );
@@ -113,22 +118,12 @@ type HandleEnvelopeItemPdfRequestOptions = {
     documentData: DocumentData;
   };
   version: DocumentDataVersion;
-
-  /**
-   * The type of cache strategy to use.
-   *
-   * For access via tokens, we can use a public cache to allow the CDN to cache it.
-   *
-   * For access via session, we must use a private cache.
-   */
-  cacheStrategy: 'private' | 'public';
 };
 
 export const handleEnvelopeItemPdfRequest = async ({
   c,
   envelopeItem,
   version,
-  cacheStrategy,
 }: HandleEnvelopeItemPdfRequestOptions) => {
   // Determine which PDF data to use based on version requested.
   const documentDataToUse =
@@ -156,7 +151,8 @@ export const handleEnvelopeItemPdfRequest = async ({
   // Note: Only set these headers on success.
   c.header('Content-Type', 'application/pdf');
   c.header('ETag', etag);
-  c.header('Cache-Control', `${cacheStrategy}, max-age=31536000, immutable`);
+  // Kept out of every cache, as in files.helpers.ts.
+  c.header('Cache-Control', 'private, no-store');
 
   return c.body(file);
 };

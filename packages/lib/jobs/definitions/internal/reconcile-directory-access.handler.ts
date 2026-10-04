@@ -14,6 +14,8 @@ import { AppError, AppErrorCode } from '../../../errors/app-error';
 import { fetchEntraGroupMembers, fetchEntraTenantUsers } from '../../../server-only/directory/entra-graph';
 import { reconcileDirectoryAccess } from '../../../server-only/directory/reconcile-directory-access';
 import { disableUser } from '../../../server-only/user/disable-user';
+import { deletedServiceAccountEmail } from '../../../server-only/user/service-accounts/deleted-account';
+import { legacyServiceAccountEmail } from '../../../server-only/user/service-accounts/legacy-service-account';
 import type { JobRunIO } from '../../client/_internal/job';
 import type { TReconcileDirectoryAccessJobDefinition } from './reconcile-directory-access';
 
@@ -56,6 +58,11 @@ export const run = async ({ io }: { payload: TReconcileDirectoryAccessJobDefinit
       await prisma.user.findMany({
         where: {
           disabled: false,
+          // The two system accounts that hold orphaned documents are in no
+          // directory, so counting them made every run abort on its own guard.
+          email: {
+            notIn: [deletedServiceAccountEmail(), legacyServiceAccountEmail()],
+          },
           NOT: {
             roles: {
               has: Role.ADMIN,

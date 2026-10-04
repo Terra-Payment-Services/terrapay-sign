@@ -259,6 +259,30 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () =>
     expect(signature).toBeNull();
   });
 
+  test('envelope.field.sign (V2) refuses to sign a co-recipient SIGNATURE field', async ({ request }) => {
+    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request);
+
+    const res = await trpcMutation(request, 'envelope.field.sign', {
+      token: assistantToken,
+      fieldId: signerSignatureFieldId,
+      fieldValue: { type: FieldType.SIGNATURE, value: 'Forged By Assistant' },
+    });
+
+    expect(res.ok()).toBeFalsy();
+
+    const fieldAfter = await prisma.field.findUniqueOrThrow({
+      where: { id: signerSignatureFieldId },
+    });
+
+    expect(fieldAfter.inserted).toBe(false);
+
+    const signature = await prisma.signature.findUnique({
+      where: { fieldId: signerSignatureFieldId },
+    });
+
+    expect(signature).toBeNull();
+  });
+
   test('field.signFieldWithToken (V1) still lets an assistant prefill a co-recipient TEXT field', async ({
     request,
   }) => {
@@ -300,6 +324,44 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () =>
     const res = await trpcMutation(request, 'field.removeSignedFieldWithToken', {
       token: assistantToken,
       fieldId: signerSignatureFieldId,
+    });
+
+    expect(res.ok()).toBeFalsy();
+
+    const fieldAfter = await prisma.field.findUniqueOrThrow({
+      where: { id: signerSignatureFieldId },
+    });
+
+    expect(fieldAfter.inserted).toBe(true);
+
+    const signature = await prisma.signature.findUnique({
+      where: { fieldId: signerSignatureFieldId },
+    });
+
+    expect(signature?.typedSignature).toBe('Signer');
+  });
+
+  // A null value is how V2 clears a field.
+  test('envelope.field.sign (V2) refuses to clear a co-recipient signature', async ({ request }) => {
+    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request);
+
+    const signerField = await prisma.field.update({
+      where: { id: signerSignatureFieldId },
+      data: { inserted: true },
+    });
+
+    await prisma.signature.create({
+      data: {
+        fieldId: signerField.id,
+        recipientId: signerField.recipientId,
+        typedSignature: 'Signer',
+      },
+    });
+
+    const res = await trpcMutation(request, 'envelope.field.sign', {
+      token: assistantToken,
+      fieldId: signerSignatureFieldId,
+      fieldValue: { type: FieldType.SIGNATURE, value: null },
     });
 
     expect(res.ok()).toBeFalsy();

@@ -7,6 +7,8 @@ import {
   NEXT_PRIVATE_SIGNING_REMOTE_CSC_CREDENTIAL_ID,
   NEXT_PRIVATE_SIGNING_REMOTE_CSC_PIN,
 } from '@documenso/lib/constants/app';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { env } from '@documenso/lib/utils/env';
 import type { DigestAlgorithm, KeyType, SignatureAlgorithm, Signer } from '@libpdf/core';
 
 import {
@@ -54,8 +56,8 @@ import {
  * or digest does not match what we are about to declare fails with a message
  * saying so. That check compares the provider's answer against the provider's
  * own certificate, so it carries weight only when the credential is pinned with
- * `NEXT_PRIVATE_SIGNING_REMOTE_CSC_CERTIFICATE_SHA256`. See
- * `assertSignatureCoversData`.
+ * `NEXT_PRIVATE_SIGNING_REMOTE_CSC_CERTIFICATE_SHA256`. Production refuses to
+ * build a signer without that pin. See `assertSignatureCoversData`.
  *
  * ## What this does and does not give you
  *
@@ -312,8 +314,9 @@ export type CreateCscSignerOptions = {
    * SHA-256 fingerprint of the leaf certificate this credential must present,
    * as hex, colons optional.
    *
-   * Optional, and worth setting. Everything else this transport checks is
-   * checked against material the provider itself returned. See
+   * Required when `NODE_ENV` is `production`; elsewhere an unpinned signer is
+   * built with a warning. Everything else this transport checks is checked
+   * against material the provider itself returned. See
    * {@link assertCertificateIsPinned}.
    */
   expectedCertificateSha256?: string;
@@ -364,14 +367,27 @@ export class CscSigner implements Signer {
    *
    * Three things have to line up before this returns. The advertised algorithm
    * must be one libpdf can label correctly, the leaf certificate must match the
-   * configured pin when there is one, and the key inside that certificate must
-   * be the key the advertisement describes.
+   * configured pin, and the key inside that certificate must be the key the
+   * advertisement describes. Outside production the pin may be left unset, in
+   * which case the leaf is taken on trust and a warning is logged.
    *
-   * @param options - provider endpoint, service account, credential id and optional certificate pin
+   * @param options - provider endpoint, service account, credential id and certificate pin
    * @returns a ready signer
+   * @throws {AppError} with `MISSING_ENV_VAR` in production when no pin is configured
    * @throws {CscError} if the credential is unusable or the provider call fails
    */
   static async create(options: CreateCscSignerOptions): Promise<CscSigner> {
+    // Checked before any provider call, so a production deployment without a pin
+    // fails on configuration alone rather than after talking to the provider.
+    if (!options.expectedCertificateSha256 && env('NODE_ENV') === 'production') {
+      throw new AppError(AppErrorCode.MISSING_ENV_VAR, {
+        message:
+          `The remote-csc credential "${options.credentialId}" is not pinned, and production refuses to sign ` +
+          'with an unpinned credential. Set NEXT_PRIVATE_SIGNING_REMOTE_CSC_CERTIFICATE_SHA256 to the SHA-256 ' +
+          'fingerprint of the leaf certificate you expect, from `openssl x509 -noout -fingerprint -sha256`.',
+      });
+    }
+
     const client = createCscClient({
       baseUrl: options.baseUrl,
       clientId: options.clientId,
@@ -541,8 +557,8 @@ export class CscSigner implements Signer {
    * `credentials/info`, so whoever controls those responses controls both sides
    * of the comparison and can satisfy it with a key of their own. Pinning the
    * leaf certificate is what closes that, and `create` refuses a leaf that does
-   * not match the pin. Unpinned, read this as an internal consistency check on
-   * one provider response.
+   * not match the pin. Unpinned, which only a non-production build allows, read
+   * this as an internal consistency check on one provider response.
    *
    * This costs no round trip and no money. It is a local public key operation
    * on a signature we have already paid for.

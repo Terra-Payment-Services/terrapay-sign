@@ -85,3 +85,61 @@ test('[DOCUMENT_AUTH]: refuses a wrong access code and keeps the document back',
 
   await expect(page.getByRole('heading', { name: 'Verification required' })).toBeVisible();
 });
+
+/**
+ * The first test covers the token view route. The token download route and the
+ * token item.pdf route serve the same bytes, so each must refuse them until the
+ * code has been entered. Both are then fetched again with the code's cookie to
+ * show that the refusal came from the gate and not from a malformed URL.
+ */
+test('[DOCUMENT_AUTH]: withholds the download and item.pdf bytes until the emailed access code is entered', async ({
+  page,
+}) => {
+  const { user, team } = await seedUser();
+
+  const document = await seedPendingDocument(user, team.id, [`access-2fa-bytes-${Date.now()}@documenso.com`], {
+    createDocumentOptions: {
+      authOptions: createDocumentAuthOptions({
+        globalAccessAuth: ['TWO_FACTOR_AUTH'],
+        globalActionAuth: [],
+      }),
+    },
+  });
+
+  const recipient = await prisma.recipient.findFirstOrThrow({ where: { envelopeId: document.id } });
+  const envelopeItem = await prisma.envelopeItem.findFirstOrThrow({ where: { envelopeId: document.id } });
+
+  const tokenBase = `${WEBAPP_BASE_URL}/api/files/token/${recipient.token}`;
+
+  const byteUrls = [
+    `${tokenBase}/envelopeItem/${envelopeItem.id}/download/original`,
+    `${tokenBase}/envelope/${document.id}/envelopeItem/${envelopeItem.id}/dataId/${envelopeItem.documentDataId}/initial/item.pdf`,
+  ];
+
+  const { request } = page.context();
+
+  for (const url of byteUrls) {
+    const res = await request.get(url);
+
+    expect(res.status(), url).toBe(401);
+    expect((await res.body()).subarray(0, 4).toString('latin1'), url).not.toBe('%PDF');
+  }
+
+  const code = await generateTwoFactorTokenFromEmail({ email: recipient.email, envelopeId: document.id });
+
+  const verifyRes = await request.post(`${WEBAPP_BASE_URL}/api/trpc/document.accessAuth.verify2FA`, {
+    headers: { 'content-type': 'application/json', origin: new URL(WEBAPP_BASE_URL).origin },
+    data: JSON.stringify({
+      json: { token: recipient.token, authOptions: { type: 'TWO_FACTOR_AUTH', method: 'email', token: code } },
+    }),
+  });
+
+  expect(verifyRes.ok()).toBeTruthy();
+
+  for (const url of byteUrls) {
+    const res = await request.get(url);
+
+    expect(res.status(), url).toBe(200);
+    expect((await res.body()).subarray(0, 4).toString('latin1'), url).toBe('%PDF');
+  }
+});

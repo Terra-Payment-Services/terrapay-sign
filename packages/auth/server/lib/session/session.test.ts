@@ -24,13 +24,15 @@ vi.mock('@documenso/prisma', () => ({
 
 const { validateSessionToken } = await import('./session');
 
-const sessionRow = (disabled: boolean) => ({
+const HOUR = 1000 * 60 * 60;
+
+const sessionRow = (disabled: boolean, { createdAt = new Date(), expiresAt = new Date(Date.now() + HOUR) } = {}) => ({
   id: 'hashed',
   sessionToken: 'hashed',
   userId: 7,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 25),
+  createdAt,
+  updatedAt: createdAt,
+  expiresAt,
   ipAddress: null,
   userAgent: null,
   user: {
@@ -68,5 +70,38 @@ describe('validateSessionToken', () => {
     expect(result.isAuthenticated).toBe(true);
     expect(result.user?.id).toBe(7);
     expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('ends a session eight hours after sign-in', async () => {
+    findUnique.mockResolvedValue(sessionRow(false, { createdAt: new Date(Date.now() - HOUR * 8 - 1000) }));
+
+    const result = await validateSessionToken('token');
+
+    expect(result.isAuthenticated).toBe(false);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends a session issued under the old 30-day lifetime once it is eight hours old', async () => {
+    findUnique.mockResolvedValue(
+      sessionRow(false, {
+        createdAt: new Date(Date.now() - HOUR * 9),
+        expiresAt: new Date(Date.now() + HOUR * 24 * 20),
+      }),
+    );
+
+    const result = await validateSessionToken('token');
+
+    expect(result.isAuthenticated).toBe(false);
+  });
+
+  it('does not extend a session when it is used', async () => {
+    const expiresAt = new Date(Date.now() + HOUR);
+    findUnique.mockResolvedValue(sessionRow(false, { createdAt: new Date(Date.now() - HOUR * 7), expiresAt }));
+
+    const result = await validateSessionToken('token');
+
+    expect(result.isAuthenticated).toBe(true);
+    expect(result.session?.expiresAt).toEqual(expiresAt);
+    expect(update).not.toHaveBeenCalled();
   });
 });

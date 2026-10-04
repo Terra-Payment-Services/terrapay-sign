@@ -143,4 +143,11 @@ COPY --chown=nodejs:nodejs ./docker/start.sh /app/apps/remix/start.sh
 
 WORKDIR /app/apps/remix
 
+# The release this image is, shown on the admin Stats page. Declared last so a
+# new stamp on every build does not invalidate the layers above.
+ARG APP_VERSION=""
+ARG GIT_SHA=""
+ARG BUILD_TIMESTAMP=""
+ENV APP_VERSION="$APP_VERSION" GIT_SHA="$GIT_SHA" BUILD_TIMESTAMP="$BUILD_TIMESTAMP"
+
 CMD ["sh", "start.sh"]

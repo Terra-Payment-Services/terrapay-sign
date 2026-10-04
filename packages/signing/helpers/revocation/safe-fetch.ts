@@ -3,6 +3,7 @@ import {
   guardedFetch as guardedFetchWithContext,
   systemLookup,
 } from '@documenso/lib/server-only/http/guarded-fetch';
+import type { PinnedTransport } from '@documenso/lib/server-only/http/pinned-fetch';
 import { isPubliclyRoutableAddress } from '@documenso/lib/universal/ip-address';
 
 import { RevocationFetchError } from './errors';
@@ -28,10 +29,9 @@ import { RevocationFetchError } from './errors';
  * objects they serve are signed, so https cannot be required the way it is for
  * the CSC transport or for OpenID discovery.
  *
- * Residual risk, stated rather than hidden: the address check happens before
- * the connection, so a name that resolves differently on the second lookup
- * (DNS rebinding) is not covered. The blast radius is a GET or an OCSP POST
- * whose body we then refuse to parse unless it verifies.
+ * The connection is pinned to the addresses the guard checked, so a responder
+ * name that resolves differently when the socket opens (DNS rebinding) cannot
+ * reach our network.
  */
 
 const REVOCATION_FETCH_CONTEXT = {
@@ -52,7 +52,8 @@ export type GuardedFetchOptions = {
   timeoutMs: number;
   /** Hard cap on the response body. */
   maxResponseBytes: number;
-  fetchFn: typeof fetch;
+  /** Replaces the pinned transport. Tests only; see `guarded-fetch`. */
+  fetchFn?: PinnedTransport;
   lookup: AddressLookup;
 };
 

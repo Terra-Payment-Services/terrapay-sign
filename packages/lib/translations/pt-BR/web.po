@@ -8284,11 +8284,6 @@ msgstr "URL de Redirecionamento"
 msgid "Redirecting"
 msgstr "Redirecionando"
 
-#. placeholder {0}: oidcProviderLabel || 'OIDC'
-#: apps/remix/app/routes/_unauthenticated+/signin.tsx
-msgid "Redirecting to {0}..."
-msgstr "Redirecionando para {0}..."
-
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Registration Successful"
@@ -9380,16 +9375,8 @@ msgid "Sign Up"
 msgstr "Cadastrar-se"
 
 #: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with Google"
-msgstr "Inscrever-se com Google"
-
-#: apps/remix/app/components/forms/signup.tsx
 msgid "Sign Up with Microsoft"
 msgstr "Inscrever-se com Microsoft"
-
-#: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with OIDC"
-msgstr "Inscrever-se com OIDC"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-document-signing-page-v1.tsx
@@ -10203,6 +10190,10 @@ msgstr "Modelos excluídos"
 #: apps/remix/app/components/dialogs/envelopes-bulk-delete-dialog.tsx
 msgid "Templates partially deleted"
 msgstr "Modelos parcialmente excluídos"
+
+#: apps/remix/app/components/general/source-code-footer.tsx
+msgid "TerraPay Sign is a modified version of Documenso, licensed under the AGPL. <0>Source code</0>"
+msgstr "O TerraPay Sign é uma versão modificada do Documenso, licenciada sob a AGPL. <0>Código-fonte</0>"
 
 #: apps/remix/app/components/dialogs/account-delete-dialog.tsx
 msgid "TerraPay Sign will delete <0>all of your documents</0>, along with all of your completed documents, signatures, and all other resources belonging to your Account."

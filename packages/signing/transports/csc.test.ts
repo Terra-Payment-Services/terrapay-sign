@@ -115,6 +115,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -685,6 +686,46 @@ describe('CscSigner', () => {
       await CscSigner.create({ ...SIGNER_OPTIONS, expectedCertificateSha256: fingerprint(LEAF_DER) });
 
       expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    describe('in production', () => {
+      beforeEach(() => {
+        vi.stubEnv('NODE_ENV', 'production');
+      });
+
+      it('refuses to build an unpinned signer, naming the variable to set', async () => {
+        installCscMockProvider(happyPathRoutes);
+
+        await expect(CscSigner.create(SIGNER_OPTIONS)).rejects.toThrow(
+          /NEXT_PRIVATE_SIGNING_REMOTE_CSC_CERTIFICATE_SHA256/,
+        );
+      });
+
+      it('signs with the leaf that matches the pin', async () => {
+        installCscMockProvider(happyPathRoutes);
+
+        const signer = await CscSigner.create({ ...SIGNER_OPTIONS, expectedCertificateSha256: fingerprint(LEAF_DER) });
+
+        await expect(signer.sign(DOCUMENT_BYTES, 'SHA-256')).resolves.toBeInstanceOf(Uint8Array);
+      });
+
+      it('still refuses a substituted certificate once pinned', async () => {
+        installCscMockProvider(substitutedProviderRoutes);
+
+        await expect(
+          CscSigner.create({ ...SIGNER_OPTIONS, expectedCertificateSha256: fingerprint(LEAF_DER) }),
+        ).rejects.toThrow(/Refusing to sign/);
+      });
+    });
+
+    it('builds an unpinned signer outside production, as before', async () => {
+      vi.stubEnv('NODE_ENV', 'development');
+      installCscMockProvider(happyPathRoutes);
+
+      const signer = await CscSigner.create(SIGNER_OPTIONS);
+
+      await expect(signer.sign(DOCUMENT_BYTES, 'SHA-256')).resolves.toBeInstanceOf(Uint8Array);
+      expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/is not pinned/));
     });
   });
 

@@ -61,11 +61,14 @@ const seedTwoTeamsOneUser = async () => {
   };
 };
 
-const pdfUrl = (envelopeId: string, item: { id: string; documentDataId: string }, presignToken: string) =>
-  `${WEBAPP_BASE_URL}/api/files/envelope/${envelopeId}/envelopeItem/${item.id}/dataId/${item.documentDataId}/current/item.pdf?presignToken=${presignToken}`;
+const pdfUrl = (envelopeId: string, item: { id: string; documentDataId: string }) =>
+  `${WEBAPP_BASE_URL}/api/files/envelope/${envelopeId}/envelopeItem/${item.id}/dataId/${item.documentDataId}/current/item.pdf`;
 
-const fileUrl = (envelopeId: string, itemId: string, presignToken: string) =>
-  `${WEBAPP_BASE_URL}/api/files/envelope/${envelopeId}/envelopeItem/${itemId}?token=${presignToken}`;
+const fileUrl = (envelopeId: string, itemId: string) =>
+  `${WEBAPP_BASE_URL}/api/files/envelope/${envelopeId}/envelopeItem/${itemId}`;
+
+// The file routes take a presign token from the Authorization header only.
+const bearer = (presignToken: string) => ({ headers: { Authorization: `Bearer ${presignToken}` } });
 
 test.describe('Presign tokens are bound to the API token team', () => {
   test('the user behind the token can open the other team envelope with a session', async ({ page }) => {
@@ -85,7 +88,7 @@ test.describe('Presign tokens are bound to the API token team', () => {
   test('item.pdf serves the token team envelope', async ({ request }) => {
     const { presignToken, ownDraft, ownItem } = await seedTwoTeamsOneUser();
 
-    const res = await request.get(pdfUrl(ownDraft.id, ownItem, presignToken));
+    const res = await request.get(pdfUrl(ownDraft.id, ownItem), bearer(presignToken));
 
     expect(res.status()).toBe(200);
   });
@@ -93,7 +96,7 @@ test.describe('Presign tokens are bound to the API token team', () => {
   test('item.pdf refuses an envelope in another team of the same user', async ({ request }) => {
     const { presignToken, otherDraft, otherItem } = await seedTwoTeamsOneUser();
 
-    const res = await request.get(pdfUrl(otherDraft.id, otherItem, presignToken));
+    const res = await request.get(pdfUrl(otherDraft.id, otherItem), bearer(presignToken));
 
     expect(res.status()).toBe(404);
   });
@@ -101,7 +104,7 @@ test.describe('Presign tokens are bound to the API token team', () => {
   test('the envelope item file route serves the token team envelope', async ({ request }) => {
     const { presignToken, ownDraft, ownItem } = await seedTwoTeamsOneUser();
 
-    const res = await request.get(fileUrl(ownDraft.id, ownItem.id, presignToken));
+    const res = await request.get(fileUrl(ownDraft.id, ownItem.id), bearer(presignToken));
 
     expect(res.status()).toBe(200);
   });
@@ -109,8 +112,107 @@ test.describe('Presign tokens are bound to the API token team', () => {
   test('the envelope item file route refuses an envelope in another team of the same user', async ({ request }) => {
     const { presignToken, otherDraft, otherItem } = await seedTwoTeamsOneUser();
 
-    const res = await request.get(fileUrl(otherDraft.id, otherItem.id, presignToken));
+    const res = await request.get(fileUrl(otherDraft.id, otherItem.id), bearer(presignToken));
 
     expect(res.status()).toBe(404);
+  });
+});
+
+/**
+ * Two drafts in one team and a presign token scoped to the first. The update
+ * routes held a scoped token to its envelope, but the file routes did not, so
+ * it read every envelope in the team.
+ */
+const seedScopedToken = async () => {
+  const { owner, team } = await seedTeam();
+
+  const { token: apiToken } = await createApiToken({
+    userId: owner.id,
+    teamId: team.id,
+    tokenName: 'presign-scope',
+    expiresIn: null,
+  });
+
+  const scopedDraft = await seedBlankDocument(owner, team.id);
+  const siblingDraft = await seedBlankDocument(owner, team.id);
+
+  const { token: presignToken } = await createEmbeddingPresignToken({
+    apiToken,
+    scope: `envelopeId:${scopedDraft.id}`,
+  });
+
+  const itemOf = async (envelopeId: string) => await prisma.envelopeItem.findFirstOrThrow({ where: { envelopeId } });
+
+  return {
+    presignToken,
+    scopedDraft,
+    scopedItem: await itemOf(scopedDraft.id),
+    siblingDraft,
+    siblingItem: await itemOf(siblingDraft.id),
+  };
+};
+
+test.describe('Scoped presign tokens are bound to their envelope', () => {
+  test('item.pdf serves the scoped envelope', async ({ request }) => {
+    const { presignToken, scopedDraft, scopedItem } = await seedScopedToken();
+
+    const res = await request.get(pdfUrl(scopedDraft.id, scopedItem), bearer(presignToken));
+
+    expect(res.status()).toBe(200);
+  });
+
+  test('item.pdf refuses another envelope in the same team', async ({ request }) => {
+    const { presignToken, siblingDraft, siblingItem } = await seedScopedToken();
+
+    const res = await request.get(pdfUrl(siblingDraft.id, siblingItem), bearer(presignToken));
+
+    expect(res.status()).toBe(404);
+  });
+
+  test('the envelope item file route serves the scoped envelope', async ({ request }) => {
+    const { presignToken, scopedDraft, scopedItem } = await seedScopedToken();
+
+    const res = await request.get(fileUrl(scopedDraft.id, scopedItem.id), bearer(presignToken));
+
+    expect(res.status()).toBe(200);
+  });
+
+  test('the envelope item file route refuses another envelope in the same team', async ({ request }) => {
+    const { presignToken, siblingDraft, siblingItem } = await seedScopedToken();
+
+    const res = await request.get(fileUrl(siblingDraft.id, siblingItem.id), bearer(presignToken));
+
+    expect(res.status()).toBe(404);
+  });
+});
+
+/**
+ * A presign token is a bearer credential. In a query string it is written to
+ * access logs and browser history, so the file routes no longer read it there.
+ * Each request below carries a token that the header form accepts.
+ */
+test.describe('Presign tokens in the query string are refused', () => {
+  test('item.pdf refuses a token in the query string', async ({ request }) => {
+    const { presignToken, ownDraft, ownItem } = await seedTwoTeamsOneUser();
+
+    const res = await request.get(`${pdfUrl(ownDraft.id, ownItem)}?presignToken=${presignToken}`);
+
+    expect(res.status()).toBe(404);
+  });
+
+  test('the envelope item file route refuses a token in the query string', async ({ request }) => {
+    const { presignToken, ownDraft, ownItem } = await seedTwoTeamsOneUser();
+
+    const res = await request.get(`${fileUrl(ownDraft.id, ownItem.id)}?token=${presignToken}`);
+
+    expect(res.status()).toBe(401);
+  });
+
+  test('upload refuses a token in the query string', async ({ request }) => {
+    const { presignToken } = await seedTwoTeamsOneUser();
+
+    const res = await request.post(`${WEBAPP_BASE_URL}/api/files/upload-pdf?token=${presignToken}`);
+
+    expect(res.status()).toBe(401);
   });
 });

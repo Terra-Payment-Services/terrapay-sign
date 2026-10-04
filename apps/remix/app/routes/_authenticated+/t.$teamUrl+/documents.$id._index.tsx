@@ -200,7 +200,6 @@ export default function DocumentPage({ params }: Route.ComponentProps) {
                   documentDataId: envelope.envelopeItems[0]?.documentDataId,
                   version: 'current',
                   token: undefined,
-                  presignToken: undefined,
                 })}
                 key={envelope.envelopeItems[0]?.id}
                 scrollParentRef="window"

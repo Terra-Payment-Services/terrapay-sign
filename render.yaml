@@ -92,12 +92,6 @@ services:
       - key: NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY
         generateValue: true
 
-      # Auth Optional
-      - key: NEXT_PRIVATE_GOOGLE_CLIENT_ID
-        sync: false
-      - key: NEXT_PRIVATE_GOOGLE_CLIENT_SECRET
-        sync: false
-
       # Signing
       - key: NEXT_PRIVATE_SIGNING_TRANSPORT
         sync: false
@@ -155,23 +149,13 @@ services:
         sync: false
       - key: NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNUP
         sync: false
-      - key: NEXT_PUBLIC_DISABLE_GOOGLE_SIGNUP
-        sync: false
       - key: NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNUP
-        sync: false
-      - key: NEXT_PUBLIC_DISABLE_OIDC_SIGNUP
         sync: false
       - key: NEXT_PUBLIC_DISABLE_SIGNIN
         sync: false
       - key: NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN
         sync: false
-      - key: NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN
-        sync: false
       - key: NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNIN
-        sync: false
-      - key: NEXT_PUBLIC_DISABLE_OIDC_SIGNIN
-        sync: false
-      - key: NEXT_PUBLIC_DISABLE_OIDC_AUTO_REDIRECT
         sync: false
       - key: NEXT_PUBLIC_USE_INTERNAL_URL_BROWSERLESS
         sync: false

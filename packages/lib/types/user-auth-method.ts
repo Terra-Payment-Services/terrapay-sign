@@ -6,9 +6,7 @@ import { z } from 'zod';
 export const UserAuthMethod = {
   PASSWORD: 'PASSWORD',
   PASSKEY: 'PASSKEY',
-  GOOGLE: 'GOOGLE',
   MICROSOFT: 'MICROSOFT',
-  OIDC: 'OIDC',
   ORGANISATION_SSO: 'ORGANISATION_SSO',
 } as const;
 

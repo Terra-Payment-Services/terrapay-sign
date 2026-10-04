@@ -8289,11 +8289,6 @@ msgstr "重定向 URL"
 msgid "Redirecting"
 msgstr "正在重定向"
 
-#. placeholder {0}: oidcProviderLabel || 'OIDC'
-#: apps/remix/app/routes/_unauthenticated+/signin.tsx
-msgid "Redirecting to {0}..."
-msgstr "正在重定向到 {0}..."
-
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Registration Successful"
@@ -9385,16 +9380,8 @@ msgid "Sign Up"
 msgstr "注册"
 
 #: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with Google"
-msgstr "使用 Google 注册"
-
-#: apps/remix/app/components/forms/signup.tsx
 msgid "Sign Up with Microsoft"
 msgstr "使用 Microsoft 注册"
-
-#: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with OIDC"
-msgstr "使用 OIDC 注册"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-document-signing-page-v1.tsx
@@ -10208,6 +10195,10 @@ msgstr "模板已删除"
 #: apps/remix/app/components/dialogs/envelopes-bulk-delete-dialog.tsx
 msgid "Templates partially deleted"
 msgstr "模板已部分删除"
+
+#: apps/remix/app/components/general/source-code-footer.tsx
+msgid "TerraPay Sign is a modified version of Documenso, licensed under the AGPL. <0>Source code</0>"
+msgstr "TerraPay Sign 是 Documenso 的修改版本，依据 AGPL 许可证授权。<0>源代码</0>"
 
 #: apps/remix/app/components/dialogs/account-delete-dialog.tsx
 msgid "TerraPay Sign will delete <0>all of your documents</0>, along with all of your completed documents, signatures, and all other resources belonging to your Account."

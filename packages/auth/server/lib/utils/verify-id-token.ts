@@ -71,7 +71,8 @@ const jwksFetchContext = () => ({
  * again whenever a token names a key we have not seen, so a name that resolved
  * to a public address at discovery time and resolves to 169.254.169.254 an hour
  * later is fetched with nobody looking. Going through `guardedFetch` re-resolves
- * the host on every one of those requests and re-checks each redirect hop.
+ * the host on every one of those requests, re-checks each redirect hop, and
+ * connects only to the address it checked.
  *
  * jose does refuse a redirect on its own: it passes `redirect: 'manual'` and
  * insists on a 200. That is a choice inside a library which older majors made
@@ -81,10 +82,14 @@ const jwksFetchContext = () => ({
  * jose's own abort signal is dropped, because `guardedFetch` runs the same
  * five-second budget over the request and the body read together.
  *
- * @param fetchFn - Replaces the outbound fetch. Injected by the tests.
+ * @param fetchFn - Replaces the pinned transport. Injected by the tests; leave
+ *   it undefined otherwise.
  * @param lookup - Replaces DNS resolution. Injected by the tests.
  */
-export const createGuardedJwksFetch = (fetchFn: typeof fetch, lookup: AddressLookup): FetchImplementation => {
+export const createGuardedJwksFetch = (
+  fetchFn: typeof fetch | undefined,
+  lookup: AddressLookup,
+): FetchImplementation => {
   return async (url, options) => {
     const headers: Record<string, string> = {};
 
@@ -262,7 +267,7 @@ export type VerifyIdTokenOptions = {
 export const verifyIdToken = async (options: VerifyIdTokenOptions): Promise<Record<string, unknown>> => {
   const { idToken, issuer, audience, jwksUri, advertisedSigningAlgorithms, now, fetchImplementation } = options;
 
-  const fetchFn = options.fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
+  const fetchFn = options.fetchFn;
   const lookup = options.lookup ?? systemLookup;
 
   const algorithms = pinSigningAlgorithms(advertisedSigningAlgorithms);

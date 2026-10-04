@@ -1,10 +1,5 @@
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
-import {
-  IS_GOOGLE_SSO_ENABLED,
-  IS_MICROSOFT_SSO_ENABLED,
-  IS_OIDC_SSO_ENABLED,
-  OIDC_PROVIDER_LABEL,
-} from '@documenso/lib/constants/auth';
+import { IS_MICROSOFT_SSO_ENABLED } from '@documenso/lib/constants/auth';
 import { Trans } from '@lingui/react/macro';
 import { useEffect } from 'react';
 import { isRouteErrorResponse, Outlet, useRouteError } from 'react-router';
@@ -30,16 +25,10 @@ import type { Route } from './+types/_layout';
 
 export function loader() {
   // SSR env variables.
-  const isGoogleSSOEnabled = IS_GOOGLE_SSO_ENABLED;
   const isMicrosoftSSOEnabled = IS_MICROSOFT_SSO_ENABLED;
-  const isOIDCSSOEnabled = IS_OIDC_SSO_ENABLED;
-  const oidcProviderLabel = OIDC_PROVIDER_LABEL;
 
   return {
-    isGoogleSSOEnabled,
     isMicrosoftSSOEnabled,
-    isOIDCSSOEnabled,
-    oidcProviderLabel,
   };
 }
 
@@ -48,7 +37,7 @@ export default function Layout() {
 }
 
 export function ErrorBoundary({ loaderData }: Route.ErrorBoundaryProps) {
-  const { isGoogleSSOEnabled, isMicrosoftSSOEnabled, isOIDCSSOEnabled, oidcProviderLabel } = loaderData || {};
+  const { isMicrosoftSSOEnabled } = loaderData || {};
 
   const analytics = useAnalytics();
   const error = useRouteError();
@@ -79,10 +68,7 @@ export function ErrorBoundary({ loaderData }: Route.ErrorBoundaryProps) {
     if (error.status === 401 && error.data.type === 'embed-authentication-required') {
       return (
         <EmbedAuthenticationRequired
-          isGoogleSSOEnabled={isGoogleSSOEnabled}
           isMicrosoftSSOEnabled={isMicrosoftSSOEnabled}
-          isOIDCSSOEnabled={isOIDCSSOEnabled}
-          oidcProviderLabel={oidcProviderLabel}
           email={error.data.email}
           returnTo={error.data.returnTo}
         />

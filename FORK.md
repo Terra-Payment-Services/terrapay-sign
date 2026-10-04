@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 3 October 2026. This file is the notice that section
+program, and this version is dated 4 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -20,7 +20,9 @@ Sign-in goes through a single Microsoft Entra ID tenant, and Entra is the only w
 Upstream's Microsoft provider was fixed to the multi-tenant authority and required an
 email claim that Entra does not emit, so the tenant is configurable, and the one
 combination of settings that would let any Microsoft tenant assert any address is refused
-at startup. Fallback claims added for Entra apply to that provider alone.
+at startup. Fallback claims added for Entra apply to that provider alone. Upstream's
+Google and generic OpenID Connect sign-in code is removed, and the server refuses every
+provider other than Microsoft before it creates or links an account.
 
 The signature on every ID token is verified against the authority's published keys, and
 the HMAC algorithms are refused outright. The token's issuer is bound to the address its
@@ -33,12 +35,13 @@ the passkey route itself refuses, so a person removed from the directory keeps n
 credential the application holds on its own. Public signup is closed. An account is
 created only by signing in through Entra with an address on the configured domain, and a
 new user joins the deployment's single organisation rather than receiving a personal one.
-Only an administrator can create that organisation, and no one can create a second.
+Only an administrator can create that organisation, and no one can create a second. A
+session ends eight hours after sign-in and is never extended by use.
 
 A scheduled job reconciles access against the directory, either a configured group or the
 whole tenant, so a person who leaves loses access without a manual step. Disabled,
 deleted and guest accounts count as gone, and disabling a user ends the sessions they
-already hold.
+already hold. The deployment's own system accounts are left out of the count.
 
 ## Roles and authorisation
 
@@ -69,7 +72,8 @@ signing service is checked against the credential's own certificate before it is
 embedded, and an RSA-PSS key is refused because the PDF library cannot declare one
 correctly. A signing transport for a remote service implementing the Cloud Signature
 Consortium API is included, selected by configuration and written from that published
-specification.
+specification, and in production it refuses to start unless the signing service's
+certificate is pinned by its SHA-256 fingerprint.
 
 ## The certificate of completion
 
@@ -113,8 +117,13 @@ Each webhook delivery that has a secret is signed with HMAC-SHA256 over a timest
 the body, in `X-TerraPay-Timestamp` and `X-TerraPay-Signature`, so a receiver can check
 that the body is the one sent and refuse a replayed one. Webhook delivery connects only to
 the address it has just validated, fails closed when the address cannot be resolved, and
-caps the response it stores. Request bodies are capped before anything reads them, and a
-presign token cannot reach another team's documents. Signing tokens are kept out of logs,
+caps the response it stores. Every outbound request, to a webhook or to an identity
+provider, connects only to the addresses checked when it was validated, so a second DNS
+answer cannot redirect it, and the lookup counts against the request's deadline. Request
+bodies are capped before anything reads them. A presign token is accepted only in the
+`Authorization` header, never in a URL, cannot reach another team's documents, and when it
+names one document opens no other. Document files are sent as private and uncacheable, so
+no shared cache keeps a copy of a contract. Signing tokens are kept out of logs,
 only embedded pages may be framed, and the health endpoint does not publish error detail.
 
 ## Signing pages and staff screens
@@ -126,7 +135,13 @@ recipient is refused at send. Placeholder addresses use the reserved `.invalid` 
 and webhooks carry their secret in an `X-TerraPay-Secret` header as well as upstream's
 header. Staff who need help are sent to the deployment's own support address, billing code
 that could never run here is deleted, and the security settings offer only the options the
-deployment supports. All ten offered languages are fully translated.
+deployment supports. Security reports go to TerraPay, as `SECURITY.md` sets out. The
+administrators' screens for billing plans, per-plan email transports and the signup
+blocklist are removed, since none of them can act on a deployment with no billing, one
+sending mailbox and sign-in through Entra alone, and the statistics page names the running
+release rather than upstream's version. Every page except an embedded one links to this
+repository, which is the offer of source that section 13 of the licence requires. All ten
+offered languages are fully translated.
 
 ## Archiving to SharePoint
 
@@ -134,14 +149,17 @@ Every completed document is filed to a SharePoint document library, so that exec
 contracts are kept where the organisation's retention rules apply. Each file name carries
 the document's own identifier, uploads never replace an existing file, an existing file is
 accepted as the contract only when its bytes match exactly, and only one run can file a
-given document. The health endpoint reports whether filing is working.
+given document. Filing uses its own application registration and never borrows the
+directory's. The health endpoint reports whether filing is working.
 
 ## Email through Microsoft Graph
 
 The application sends email through Microsoft Graph as a single mailbox, in place of SMTP
 with a username and password. A message too large for one Graph request, such as a
 completion email carrying the signed contract, is sent as a draft with its attachments
-uploaded separately. A send is recorded only when Graph returns the response it documents
+uploaded separately. The templates' own images travel inside the message as inline
+attachments, because mail clients block images fetched from a server until the reader
+allows them. A send is recorded only when Graph returns the response it documents
 for a successful send, and no Graph request follows a redirect.
 
 ## Removal of features that sent data outside

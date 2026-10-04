@@ -484,7 +484,7 @@ describe('getSharePointArchiveConfig', () => {
     });
   });
 
-  it('falls back to the Entra app registration when no SharePoint one is named', () => {
+  it('never borrows the directory registration when no SharePoint one is named', () => {
     configure({
       NEXT_PRIVATE_ENTRA_TENANT_ID: 'entra-tenant',
       NEXT_PRIVATE_ENTRA_CLIENT_ID: 'entra-client',
@@ -493,11 +493,7 @@ describe('getSharePointArchiveConfig', () => {
       NEXT_PRIVATE_SHAREPOINT_DRIVE_ID: 'drive',
     });
 
-    expect(getSharePointArchiveConfig()?.credentials).toEqual({
-      tenantId: 'entra-tenant',
-      clientId: 'entra-client',
-      clientSecret: 'entra-secret',
-    });
+    expect(getSharePointArchiveConfig()).toBeNull();
   });
 
   it('never pairs its own client id with the directory job secret', () => {

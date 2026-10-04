@@ -7,6 +7,8 @@ import {
   getUserWithSignedDocumentMonthlyGrowth,
 } from '@documenso/lib/server-only/admin/get-users-stats';
 import { getSignerConversionMonthly } from '@documenso/lib/server-only/user/get-signer-conversion';
+import { describeBuild } from '@documenso/lib/utils/build-info';
+import { env } from '@documenso/lib/utils/env';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -59,6 +61,10 @@ export async function loader() {
     signerConversionMonthly,
     monthlyUsersWithDocuments,
     monthlyActiveUsers,
+    build: describeBuild(
+      { appVersion: env('APP_VERSION'), gitSha: env('GIT_SHA'), buildTimestamp: env('BUILD_TIMESTAMP') },
+      version,
+    ),
   };
 }
 
@@ -73,6 +79,7 @@ export default function AdminStatsPage({ loaderData }: Route.ComponentProps) {
     signerConversionMonthly,
     monthlyUsersWithDocuments,
     monthlyActiveUsers,
+    build,
   } = loaderData;
 
   return (
@@ -86,7 +93,16 @@ export default function AdminStatsPage({ loaderData }: Route.ComponentProps) {
         <CardMetric icon={File} title={_(msg`Total Documents`)} value={docStats.ALL} />
         <CardMetric icon={UserPlus} title={_(msg`Active Subscriptions`)} value={organisationsWithSubscriptionsCount} />
 
-        <CardMetric icon={FileCog} title={_(msg`App Version`)} value={`v${version}`} />
+        <CardMetric icon={FileCog} title={_(msg`App Version`)}>
+          <div className="mt-auto">
+            <p className="font-semibold text-4xl text-foreground leading-8" data-testid="admin-app-version">
+              {build.release}
+            </p>
+            <p className="mt-1 truncate text-muted-foreground text-xs" data-testid="admin-app-build">
+              {build.detail}
+            </p>
+          </div>
+        </CardMetric>
       </div>
 
       <div className="mt-16 gap-8">

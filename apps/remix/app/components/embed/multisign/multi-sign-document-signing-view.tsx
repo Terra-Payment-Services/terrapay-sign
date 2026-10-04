@@ -247,7 +247,6 @@ export const MultiSignDocumentSigningView = ({
                       documentDataId: document.documentData.id,
                       version: 'current',
                       token,
-                      presignToken: undefined,
                     })}
                     scrollParentRef="window"
                     onDocumentLoad={() => {

@@ -304,7 +304,6 @@ export const TemplateEditForm = ({ initialTemplate, className, templateRootPath 
               documentDataId: initialTemplate.templateDocumentDataId,
               version: 'current',
               token: undefined,
-              presignToken: undefined,
             })}
             scrollParentRef="window"
             onDocumentLoad={() => setIsDocumentPdfLoaded(true)}

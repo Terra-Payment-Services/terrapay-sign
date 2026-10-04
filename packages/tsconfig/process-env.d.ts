@@ -3,14 +3,6 @@ declare namespace NodeJS {
     PORT?: string;
     NEXT_PUBLIC_WEBAPP_URL?: string;
 
-    NEXT_PRIVATE_GOOGLE_CLIENT_ID?: string;
-    NEXT_PRIVATE_GOOGLE_CLIENT_SECRET?: string;
-
-    NEXT_PRIVATE_OIDC_WELL_KNOWN?: string;
-    NEXT_PRIVATE_OIDC_CLIENT_ID?: string;
-    NEXT_PRIVATE_OIDC_CLIENT_SECRET?: string;
-    NEXT_PRIVATE_OIDC_PROVIDER_LABEL?: string;
-    NEXT_PRIVATE_OIDC_SKIP_VERIFY?: string;
     /**
      * Lets OpenID discovery reach an authority on a local or private address,
      * for a developer running an identity provider on their own machine. Needs
@@ -76,6 +68,9 @@ declare namespace NodeJS {
     NEXT_PRIVATE_SIGNING_REMOTE_CSC_CREDENTIAL_ID?: string;
     NEXT_PRIVATE_SIGNING_REMOTE_CSC_PIN?: string;
     NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY?: string;
+    APP_VERSION?: string;
+    GIT_SHA?: string;
+    BUILD_TIMESTAMP?: string;
     NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY_KEY_SHA256?: string;
     /**
      * How to treat a certificate whose revocation status cannot be
@@ -112,17 +107,12 @@ declare namespace NodeJS {
 
     NEXT_PUBLIC_DISABLE_SIGNUP?: string;
     NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNUP?: string;
-    NEXT_PUBLIC_DISABLE_GOOGLE_SIGNUP?: string;
     NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNUP?: string;
-    NEXT_PUBLIC_DISABLE_OIDC_SIGNUP?: string;
     NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS?: string;
 
     NEXT_PUBLIC_DISABLE_SIGNIN?: string;
     NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN?: string;
-    NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN?: string;
     NEXT_PUBLIC_DISABLE_MICROSOFT_SIGNIN?: string;
-    NEXT_PUBLIC_DISABLE_OIDC_SIGNIN?: string;
-    NEXT_PUBLIC_DISABLE_OIDC_AUTO_REDIRECT?: string;
     NEXT_PUBLIC_DISABLE_PASSKEY?: string;
 
     NEXT_PRIVATE_BROWSERLESS_URL?: string;

@@ -1,3 +1,6 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { assertIssuerMatchesRetrievalUrl, getOpenIdConfiguration } from './open-id';
@@ -410,5 +413,45 @@ describe('the local development escape hatch', () => {
         addresses: { localhost: '127.0.0.1' },
       }),
     ).rejects.toThrow(/only https are allowed/);
+  });
+});
+
+describe('discovery without an injected fetch', () => {
+  it('fetches through the pinned transport, connecting to the address the lookup returned', async () => {
+    // `.invalid` never resolves, so the document arrives only if the request
+    // went to the checked address. A fallback to the global fetch would fail
+    // to resolve the name. The local authority setting lets the check accept
+    // loopback and http.
+    vi.stubEnv('NEXT_PRIVATE_OIDC_ALLOW_LOCAL_AUTHORITY', 'true');
+
+    let base = '';
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify(
+          configuration({
+            issuer: `${base}/realms/documenso`,
+            authorization_endpoint: `${base}/realms/documenso/protocol/openid-connect/auth`,
+            token_endpoint: `${base}/realms/documenso/protocol/openid-connect/token`,
+            jwks_uri: `${base}/realms/documenso/protocol/openid-connect/certs`,
+          }),
+        ),
+      );
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    try {
+      base = `http://idp.invalid:${(server.address() as AddressInfo).port}`;
+
+      const config = await getOpenIdConfiguration(`${base}/realms/documenso/.well-known/openid-configuration`, {
+        lookup: async () => ['127.0.0.1'],
+      });
+
+      expect(config.jwks_uri).toBe(`${base}/realms/documenso/protocol/openid-connect/certs`);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

@@ -58,6 +58,11 @@ type EnvelopeRenderProviderValue = {
   envelopeStatus: TEnvelope['status'];
   envelopeType: TEnvelope['type'];
   currentEnvelopeItem: EnvelopeRenderItem | null;
+
+  /**
+   * Sent as a bearer header when the PDF viewer fetches an item's URL.
+   */
+  presignToken: string | undefined;
   setCurrentEnvelopeItem: (envelopeItemId: string) => void;
   fields: Field[];
   signatures: EnvelopeRenderFieldSignature[];
@@ -177,7 +182,6 @@ export const EnvelopeRenderProvider = ({
             documentDataId: item.documentDataId,
             version,
             token,
-            presignToken,
           });
 
           const data = item.data || pdfUrl;
@@ -187,7 +191,7 @@ export const EnvelopeRenderProvider = ({
             data,
           };
         }),
-    [envelopeItemsFromProps, envelope.id, token, version, presignToken],
+    [envelopeItemsFromProps, envelope.id, token, version],
   );
 
   const [currentItemId, setCurrentItemId] = useState<string | null>(envelopeItems[0]?.id ?? null);
@@ -228,6 +232,7 @@ export const EnvelopeRenderProvider = ({
         envelopeStatus: envelope.status,
         envelopeType: envelope.type,
         currentEnvelopeItem: currentItem,
+        presignToken,
         setCurrentEnvelopeItem,
         fields: fields ?? [],
         signatures: signatures ?? [],

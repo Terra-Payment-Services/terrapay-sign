@@ -5903,14 +5903,6 @@ msgstr "Nënshkruani dokumentin për të përfunduar procesin."
 msgid "Sign up"
 msgstr "Regjistrohuni"
 
-#: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with Google"
-msgstr "Regjistrohuni me Google"
-
-#: apps/remix/app/components/forms/signup.tsx
-msgid "Sign Up with OIDC"
-msgstr "Regjistrohuni me OIDC"
-
 #: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
 #: apps/remix/app/components/tables/admin-document-recipient-item-table.tsx
 #: apps/remix/app/components/general/document-signing/document-signing-signature-field.tsx

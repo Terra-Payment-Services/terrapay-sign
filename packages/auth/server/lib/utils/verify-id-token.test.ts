@@ -1,5 +1,8 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { FetchImplementation, JWK } from 'jose';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { pinSigningAlgorithms, verifyIdToken } from './verify-id-token';
@@ -450,5 +453,46 @@ describe('the guarded fetch behind the key set', () => {
     await expect(verify(await unknown.sign())).rejects.toThrow(/signing key/);
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the key set without an injected fetch', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('fetches through the pinned transport, connecting to the address the lookup returned', async () => {
+    // `.invalid` never resolves, so the key set arrives only if the request
+    // went to the checked address. A fallback to the global fetch would fail
+    // to resolve the name and the token would not verify. The local authority
+    // setting lets the check accept loopback and http.
+    vi.stubEnv('NEXT_PRIVATE_OIDC_ALLOW_LOCAL_AUTHORITY', 'true');
+
+    const signer = await createSigner('key-pinned');
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ keys: [signer.publicJwk] }));
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    try {
+      const { port } = server.address() as AddressInfo;
+
+      const claims = await verifyIdToken({
+        idToken: await signer.sign(),
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        jwksUri: `http://keys.invalid:${port}/jwks.json`,
+        advertisedSigningAlgorithms: ALGORITHMS,
+        now,
+        lookup: async () => ['127.0.0.1'],
+      });
+
+      expect(claims.sub).toBe('a-stable-subject');
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

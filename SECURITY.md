@@ -1,38 +1,34 @@
 # Security Policy
 
-We take the security of Documenso seriously. As a platform trusted with legally binding documents, the safety of the project and the people who rely on it is a priority for us. We're grateful to the security researchers who help keep it that way. If you've found an issue, we'd genuinely like to hear about it.
+TerraPay Sign is TerraPay's fork of Documenso, used to sign legally binding documents. This policy covers this fork. Report anything you find here to TerraPay, not to the Documenso project.
 
 ## Reporting a Vulnerability
 
-Report security vulnerabilities privately. Do not open a public issue, discussion, or pull request for security reports.
+Report security vulnerabilities privately, through either channel:
 
-We accept reports through two channels, in order of preference:
+1. **Email** to [security@terrapay.com](mailto:security@terrapay.com).
+2. **GitHub private vulnerability reporting**, using the [report form](https://github.com/Terra-Payment-Services/terrapay-sign/security/advisories/new) on the public mirror.
 
-1. **GitHub Security Advisories (preferred)**. Use the [private vulnerability reporting form](https://github.com/documenso/documenso/security/advisories/new). This is our primary channel and lets us triage and work with you on a fix.
-2. **Email**. If you cannot use GitHub Security Advisories, email [security@documenso.com](mailto:security@documenso.com).
+Do not open a public issue, discussion or pull request for a security report.
 
-Include the affected version, a clear description, steps to reproduce, and the potential impact.
-
-## Triage and Response
-
-We triage reports as we have availability. We read every report we receive, and we appreciate the time and effort it takes to put one together.
-
-We also run [Codex](https://openai.com/codex/) security analysis across the codebase. If Codex has already reported the issue you're sending us, we may close your report as a duplicate. Please don't take this as a reflection on your work; it just means our automated tooling happened to surface the same thing first.
+Include the affected version or commit, a clear description, steps to reproduce and the impact you expect. If the issue also affects upstream Documenso, say so; we will coordinate with the Documenso maintainers rather than ask you to report twice.
 
 ## Scope
 
-This policy covers vulnerabilities in the Documenso application code in this repository.
+In scope is the application code in this repository, including everything TerraPay changed or added. That includes the areas upstream treats as operator concerns, because this fork changed them:
 
-The items below are out of scope and will not be accepted. They are deployment, infrastructure, and configuration concerns that belong with the operator's firewall, network, and environment setup, not the application:
+- Sign-in through Microsoft Entra, account linking and session handling
+- Access to documents, envelopes and files across users, teams and recipients
+- Presign and recipient tokens
+- Server-side request forgery, DNS rebinding and other outbound request handling
+- Webhook delivery and signing
+- Document sealing, signatures, timestamps and the audit trail
+- Rate limiting where the application enforces it
 
-- Server-Side Request Forgery (SSRF) and related network-egress concerns
-- DNS rebinding and other DNS-level issues
-- Rate limiting, denial of service, and volumetric attacks
-- TLS and certificate configuration, HTTP security headers, and other reverse-proxy or web-server configuration
-- Findings that depend on insecure self-hosted infrastructure or misconfiguration
+Out of scope are findings that depend on a deployment someone else has misconfigured, and volumetric denial of service.
 
-If you're unsure whether something is in scope, report it privately anyway and we'll happily take a look.
+If you are unsure whether something is in scope, report it privately anyway.
 
 ## Supported Versions
 
-Security fixes are applied to the latest release. Run the most recent version of Documenso.
+Security fixes go into the latest release. Only the latest release is supported.

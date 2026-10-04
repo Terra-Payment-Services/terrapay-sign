@@ -25,6 +25,7 @@ import { onAuthorize } from './authorizer';
 import { assertIdTokenClaims } from './id-token-claims';
 import { extractEmailFromClaims, extractNameFromClaims } from './oauth-claims';
 import { getOpenIdConfiguration } from './open-id';
+import { assertSupportedOAuthProvider } from './supported-oauth-provider';
 import { exchangeAuthorizationCode } from './token-exchange';
 import { verifyIdToken } from './verify-id-token';
 
@@ -157,7 +158,7 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
   }
 
   // Check if signups are disabled for this provider.
-  if (!isSignupEnabledForProvider(clientOptions.id as 'google' | 'microsoft' | 'oidc')) {
+  if (!isSignupEnabledForProvider(clientOptions.id as 'microsoft')) {
     const errorUrl = new URL(formatPath('/signin'), NEXT_PUBLIC_WEBAPP_URL());
 
     errorUrl.searchParams.set('error', AuthenticationErrorCode.SignupDisabled);
@@ -238,6 +239,8 @@ export const handleOAuthCallbackUrl = async (options: HandleOAuthCallbackUrlOpti
 
 export const validateOauth = async (options: HandleOAuthCallbackUrlOptions) => {
   const { c, clientOptions } = options;
+
+  assertSupportedOAuthProvider(clientOptions);
 
   if (!clientOptions.clientId || !clientOptions.clientSecret) {
     throw new AppError(AppErrorCode.NOT_SETUP);

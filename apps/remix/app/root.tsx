@@ -27,6 +27,7 @@ import { nonceMiddleware } from '~/middleware/nonce';
 import type { Route } from './+types/root';
 import stylesheet from './app.css?url';
 import { GenericErrorLayout } from './components/general/generic-error-layout';
+import { SourceCodeFooter } from './components/general/source-code-footer';
 import { langCookie } from './storage/lang-cookie.server';
 import { themeSessionResolver } from './storage/theme-session.server';
 import { appMetaTags } from './utils/meta';
@@ -125,6 +126,8 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
   // route tree, attached directly to document.body).
   const matches = useMatches();
   const isRecipientRoute = matches.some((m) => m.id?.startsWith('routes/_recipient+'));
+  // Embedded signing runs inside someone else's page, which has its own footer.
+  const isEmbedRoute = matches.some((m) => m.id?.startsWith('routes/embed+'));
 
   return (
     // `suppressHydrationWarning` because `remix-themes` intentionally mutates
@@ -163,6 +166,8 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
             <TooltipProvider>
               <TrpcProvider>
                 {children}
+
+                {!isEmbedRoute && <SourceCodeFooter />}
 
                 <Toaster />
               </TrpcProvider>

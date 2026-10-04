@@ -273,27 +273,6 @@ export class AuthClient {
     },
   };
 
-  public google = {
-    signIn: async ({ redirectPath }: { redirectPath?: string } = {}) => {
-      const response = await this.client['oauth'].authorize.google.$post({
-        json: { redirectPath },
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-
-        throw AppError.parseError(error);
-      }
-
-      const data = await response.json();
-
-      // Redirect to external Google auth URL.
-      if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
-      }
-    },
-  };
-
   public microsoft = {
     signIn: async ({ redirectPath }: { redirectPath?: string } = {}) => {
       const response = await this.client['oauth'].authorize.microsoft.$post({
@@ -308,25 +287,6 @@ export class AuthClient {
 
       const data = await response.json();
 
-      if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
-      }
-    },
-  };
-
-  public oidc = {
-    signIn: async ({ redirectPath }: { redirectPath?: string } = {}) => {
-      const response = await this.client['oauth'].authorize.oidc.$post({ json: { redirectPath } });
-
-      if (!response.ok) {
-        const error = await response.json();
-
-        throw AppError.parseError(error);
-      }
-
-      const data = await response.json();
-
-      // Redirect to external OIDC provider URL.
       if (data.redirectUrl) {
         window.location.href = data.redirectUrl;
       }

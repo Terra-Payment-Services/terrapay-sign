@@ -314,7 +314,7 @@ export const getOpenIdConfiguration = async (
   wellKnownUrl: string,
   options: GetOpenIdConfigurationOptions = {},
 ): Promise<OpenIdConfiguration> => {
-  const fetchFn = options.fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
+  const fetchFn = options.fetchFn;
   const lookup = options.lookup ?? systemLookup;
 
   const body = await guardedFetch({

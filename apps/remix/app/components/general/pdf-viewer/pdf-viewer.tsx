@@ -1,6 +1,7 @@
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import type { ImageLoadingState, PageRenderData } from '@documenso/lib/client-only/providers/envelope-render-provider';
 import { PDF_VIEWER_PAGE_CLASSNAME } from '@documenso/lib/constants/pdf-viewer';
+import { getPresignRequestHeaders } from '@documenso/lib/utils/envelope-download';
 import { cn } from '@documenso/ui/lib/utils';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -42,6 +43,11 @@ export type PDFViewerProps = {
   data: Uint8Array | string | null;
 
   /**
+   * Presign token sent as a bearer header when `data` is a URL.
+   */
+  presignToken?: string | undefined;
+
+  /**
    * Ref to the scrollable parent container that handles scrolling.
    *
    * This must point to an element with `overflow-y: auto` or `overflow-y: scroll`
@@ -62,6 +68,7 @@ export type PDFViewerProps = {
 export default function PDFViewer({
   className,
   data,
+  presignToken,
   scrollParentRef,
   onDocumentLoad,
   customPageRenderer,
@@ -98,7 +105,7 @@ export default function PDFViewer({
         let result: Uint8Array | null = typeof data === 'string' ? null : new Uint8Array(data);
 
         if (typeof data === 'string') {
-          const response = await fetch(data);
+          const response = await fetch(data, { headers: getPresignRequestHeaders(presignToken) });
 
           if (!response.ok) {
             throw new Error(`Failed to fetch PDF data: ${response.status}`);
@@ -175,7 +182,7 @@ export default function PDFViewer({
         pdfRef.current = null;
       }
     };
-  }, [data]);
+  }, [data, presignToken]);
 
   // Notify when document is loaded
   useEffect(() => {

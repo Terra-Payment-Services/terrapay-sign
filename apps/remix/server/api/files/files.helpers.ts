@@ -18,6 +18,19 @@ type DocumentDataInput = {
   initialData: string;
 };
 
+/**
+ * Reads a presign token from the `Authorization: Bearer` header. The file
+ * routes take it from nowhere else, because a token in the query string is
+ * written to the load balancer's access logs and the browser's history.
+ */
+export const getPresignBearerToken = <E extends HonoEnv>(c: Context<E>): string | undefined => {
+  const authorizationHeader = c.req.header('authorization');
+
+  const [bearerToken] = (authorizationHeader || '').split('Bearer ').filter((part) => part.length > 0);
+
+  return bearerToken;
+};
+
 export const resolveFileUploadUserId = async <E extends HonoEnv>(c: Context<E>): Promise<number | null> => {
   const session = await getOptionalSession(c);
 
@@ -25,12 +38,7 @@ export const resolveFileUploadUserId = async <E extends HonoEnv>(c: Context<E>):
     return session.user.id;
   }
 
-  const authorizationHeader = c.req.header('authorization');
-
-  const [bearerToken] = (authorizationHeader || '').split('Bearer ').filter((part) => part.length > 0);
-
-  const queryToken = c.req.query('token');
-  const presignToken = bearerToken || queryToken;
+  const presignToken = getPresignBearerToken(c);
 
   if (!presignToken) {
     return null;
@@ -123,12 +131,11 @@ const handleStaticFileRequest = async ({
   c.header('Content-Type', 'application/pdf');
   c.header('ETag', etag);
 
+  // Contracts are kept out of every cache, shared or browser. Upstream marked a
+  // completed document public for a year, which lets a CDN or proxy hand it to
+  // the next request for the same URL without the access check ever running.
   if (!isDownload) {
-    if (status === DocumentStatus.COMPLETED) {
-      c.header('Cache-Control', 'public, max-age=31536000, immutable');
-    } else {
-      c.header('Cache-Control', 'public, max-age=0, must-revalidate');
-    }
+    c.header('Cache-Control', 'private, no-store');
   }
 
   if (isDownload) {

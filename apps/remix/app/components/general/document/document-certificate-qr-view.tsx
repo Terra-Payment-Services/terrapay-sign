@@ -160,7 +160,6 @@ export const DocumentCertificateQRView = ({
                 documentDataId: envelopeItems[0]?.documentDataId,
                 version: 'current',
                 token,
-                presignToken: undefined,
               })}
               scrollParentRef="window"
             />
