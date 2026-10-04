@@ -61,7 +61,7 @@ export const updateEnvelopeFields = async ({
     });
   }
 
-  assertEnvelopeMutable(envelope);
+  await assertEnvelopeMutable(envelope);
 
   if (envelope.completedAt) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {

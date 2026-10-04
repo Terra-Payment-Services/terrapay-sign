@@ -60,7 +60,7 @@ export const deleteDocumentField = async ({ userId, teamId, fieldId, requestMeta
     });
   }
 
-  assertEnvelopeMutable(envelope);
+  await assertEnvelopeMutable(envelope);
 
   if (envelope.completedAt) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {

@@ -2,14 +2,15 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 2 October 2026. This file is the notice that section
+program, and this version is dated 3 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
-the release tag `v2.18.0`. That commit and everything before it are upstream's; the single
-commit on top of it holds all of TerraPay's changes. The upstream code and TerraPay's
-changes are distributed under the GNU Affero General Public License, version 3, as set
-out in `LICENSE`. The program contains none of Documenso's Enterprise Edition code.
+the release tag `v2.18.0`. That commit and everything before it are upstream's; the
+commits on top of it hold TerraPay's changes, one for each version TerraPay has published.
+The upstream code and TerraPay's changes are distributed under the GNU Affero General
+Public License, version 3, as set out in `LICENSE`. The program contains none of
+Documenso's Enterprise Edition code.
 
 The sections below describe what TerraPay changed, by area.
 
@@ -55,12 +56,15 @@ that a counterparty applied with another product. This version detects an existi
 signature, flattens with signature fields left alone, saves incrementally and then checks
 that the original bytes survive unchanged at the start of the output. Upstream's bundled
 development certificate is replaced, and the PDF library is patched so that a signature
-uses the digest algorithm it declares. Signatures are made to PAdES B-LTA, with an RFC 3161
-timestamp and embedded validation data, once a timestamp authority is configured.
+uses the digest algorithm it declares. Signatures are made to PAdES B-LTA, with an RFC
+3161 timestamp and embedded validation data, once a timestamp authority is configured.
 
 Validation data is not trusted until it is checked. Revocation responses are verified,
 and the certificate that issued them is proved before it is believed. Timestamp tokens
-are verified for their signature, message imprint, nonce and time. An answer from a remote
+are verified for their signature, message imprint, nonce and time, and their signer must
+chain, every link checked, to one of the timestamp authorities' root keys that the
+deployment pins, so that whoever can answer for an authority's address cannot set the time
+a document claims. An answer from a remote
 signing service is checked against the credential's own certificate before it is
 embedded, and an RSA-PSS key is refused because the PDF library cannot declare one
 correctly. A signing transport for a remote service implementing the Cloud Signature
@@ -105,11 +109,13 @@ only when the page loads. An emailed access code locks for an hour after five wr
 attempts, and a document it protects is withheld, with its files, until the code is
 entered. Writes authenticated by a cookie are refused when they come from another origin.
 
-Webhook delivery connects only to the address it has just validated, fails closed when
-the address cannot be resolved, and caps the response it stores. Request bodies are capped
-before anything reads them, and a presign token cannot reach another team's documents.
-Signing tokens are kept out of logs, only embedded pages may be framed, and the health
-endpoint does not publish error detail.
+Each webhook delivery that has a secret is signed with HMAC-SHA256 over a timestamp and
+the body, in `X-TerraPay-Timestamp` and `X-TerraPay-Signature`, so a receiver can check
+that the body is the one sent and refuse a replayed one. Webhook delivery connects only to
+the address it has just validated, fails closed when the address cannot be resolved, and
+caps the response it stores. Request bodies are capped before anything reads them, and a
+presign token cannot reach another team's documents. Signing tokens are kept out of logs,
+only embedded pages may be framed, and the health endpoint does not publish error detail.
 
 ## Signing pages and staff screens
 
@@ -119,8 +125,8 @@ an external signer cannot hold an account. A document that still has a placehold
 recipient is refused at send. Placeholder addresses use the reserved `.invalid` domain,
 and webhooks carry their secret in an `X-TerraPay-Secret` header as well as upstream's
 header. Staff who need help are sent to the deployment's own support address, billing code
-that could never run here is deleted, and the security settings offer only the options
-the deployment supports. All ten offered languages are fully translated.
+that could never run here is deleted, and the security settings offer only the options the
+deployment supports. All ten offered languages are fully translated.
 
 ## Archiving to SharePoint
 
@@ -158,11 +164,12 @@ replaced.
 
 ## Appearance
 
-Documenso's colours and fonts are replaced with TerraPay's design system, which also raises
-error text, input borders and danger buttons to the contrast WCAG AA asks for, and the
-product is called TerraPay Sign throughout. This copy carries upstream's logos and icons in
-place of TerraPay's, which are trademarks, and leaves out the TT Firs Neue font files,
-which TerraPay licenses and may not redistribute. Anyone building it supplies their own.
+Documenso's colours and fonts are replaced with TerraPay's design system, which also
+raises error text, input borders and danger buttons to the contrast WCAG AA asks for, and
+the product is called TerraPay Sign throughout. This copy carries upstream's logos and
+icons in place of TerraPay's, which are trademarks, and leaves out the TT Firs Neue font
+files, which TerraPay licenses and may not redistribute. Anyone building it supplies their
+own.
 
 ## Testing
 

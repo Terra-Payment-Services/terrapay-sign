@@ -94,7 +94,7 @@ export const createEnvelopeFields = async ({
     });
   }
 
-  assertEnvelopeMutable(envelope);
+  await assertEnvelopeMutable(envelope);
 
   if (envelope.type === EnvelopeType.DOCUMENT && envelope.completedAt) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {

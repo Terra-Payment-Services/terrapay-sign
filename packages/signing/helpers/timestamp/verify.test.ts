@@ -23,8 +23,8 @@ const FIXTURES = path.join(__dirname, '__fixtures__');
 const read = (name: string) => new Uint8Array(readFileSync(path.join(FIXTURES, name)));
 
 /** The digest and nonce actually sent, read back out of the recorded request. */
-const request = () => {
-  const fields = (asn1js.fromBER(read('request.tsq').buffer as ArrayBuffer).result as asn1js.Sequence).valueBlock.value;
+const request = (name = 'request.tsq') => {
+  const fields = (asn1js.fromBER(read(name).buffer as ArrayBuffer).result as asn1js.Sequence).valueBlock.value;
   const imprint = fields[1] as asn1js.Sequence;
 
   return {
@@ -34,8 +34,8 @@ const request = () => {
 };
 
 /** The token, unwrapped from the recorded TimeStampResp. */
-const token = () => {
-  const response = asn1js.fromBER(read('response.tsr').buffer as ArrayBuffer).result as asn1js.Sequence;
+const token = (name = 'response.tsr') => {
+  const response = asn1js.fromBER(read(name).buffer as ArrayBuffer).result as asn1js.Sequence;
 
   return new Uint8Array(response.valueBlock.value[1].toBER(false));
 };
@@ -131,5 +131,62 @@ describe('verifyTimestampToken', () => {
         now: new Date('2020-01-01T00:00:00Z'),
       }),
     ).rejects.toThrow(/claims a time in the future/);
+  });
+});
+
+/**
+ * The keys production pins: the roots of the two authorities it uses. Taken
+ * from the chains the authorities return, with
+ * `openssl x509 -pubkey | openssl pkey -pubin -outform DER | sha256sum`.
+ */
+const SECTIGO_ROOT_R46 = 'a4db8668c6796ebf476ddc5ace453a9260dbd4dbb09f51ecec9a839003824795';
+const DIGICERT_ROOT_G4 = '59df317bfa9f4f0ab7ca514d7772296aa2c765b87664d08b96e57399e364729c';
+
+describe('verifyTimestampToken with pinned keys', () => {
+  it('accepts a Sectigo token that chains to the pinned Sectigo root', async () => {
+    const { digest, nonce } = request();
+
+    await expect(
+      verifyTimestampToken({
+        token: token(),
+        digest,
+        digestAlgorithm: 'SHA-256',
+        nonce,
+        now,
+        pinnedKeySha256: [DIGICERT_ROOT_G4, SECTIGO_ROOT_R46],
+      }),
+    ).resolves.toMatchObject({ genTime: expect.any(Date) });
+  });
+
+  it('accepts a DigiCert token, recorded 3 October 2026, that chains to the pinned DigiCert root', async () => {
+    const { digest, nonce } = request('digicert-request.tsq');
+
+    const { genTime } = await verifyTimestampToken({
+      token: token('digicert-response.tsr'),
+      digest,
+      digestAlgorithm: 'SHA-256',
+      nonce,
+      now: new Date('2026-10-03T05:00:00Z'),
+      pinnedKeySha256: [SECTIGO_ROOT_R46, DIGICERT_ROOT_G4],
+    });
+
+    expect(genTime.toISOString()).toBe('2026-10-03T04:07:05.000Z');
+  });
+
+  it('refuses a valid token whose signer chains to no pinned key', async () => {
+    // A well-formed token from a real authority, refused only because that
+    // authority is not one we chose. This is the case an impersonator is in.
+    const { digest, nonce } = request();
+
+    await expect(
+      verifyTimestampToken({
+        token: token(),
+        digest,
+        digestAlgorithm: 'SHA-256',
+        nonce,
+        now,
+        pinnedKeySha256: [DIGICERT_ROOT_G4],
+      }),
+    ).rejects.toThrow(/does not chain to a pinned key/);
   });
 });

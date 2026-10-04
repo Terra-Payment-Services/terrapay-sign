@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 import { apiSignin, apiSignout } from '../fixtures/authentication';
 import { expectTextToBeVisible, expectTextToNotBeVisible, openDropdownMenu } from '../fixtures/generic';
 
-test('[ORGANISATIONS]: create and delete organisation', async ({ page }) => {
+test('[ORGANISATIONS]: delete organisation, and no create entry afterwards', async ({ page }) => {
   const { user, organisation } = await seedUser({
     isPersonalOrganisation: false,
   });
@@ -29,14 +29,10 @@ test('[ORGANISATIONS]: create and delete organisation', async ({ page }) => {
 
   await page.waitForURL(`/settings/organisations`);
   await expectTextToBeVisible(page, 'No results found');
-  await page.getByRole('button', { name: 'Create organization' }).click();
 
-  await page.getByLabel('Organization Name*').fill('test');
-  await page.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByText('Your organization has been created').first()).toBeVisible();
-  await page.reload();
-
-  await page.getByRole('row').filter({ hasText: 'test' }).getByRole('link').nth(1).click();
+  // TerraPay Sign keeps one organisation and only admins may create it, so a
+  // member who has deleted theirs is not offered a new one.
+  await expect(page.getByRole('button', { name: 'Create organization' })).toHaveCount(0);
 });
 
 test('[ORGANISATIONS]: manage general settings', async ({ page }) => {

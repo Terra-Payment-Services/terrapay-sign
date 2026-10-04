@@ -60,7 +60,7 @@ export const replaceEnvelopeItemPdfRoute = authenticatedProcedure
       });
     }
 
-    assertEnvelopeMutable(envelope);
+    await assertEnvelopeMutable(envelope);
 
     if (envelope.internalVersion !== 2) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {

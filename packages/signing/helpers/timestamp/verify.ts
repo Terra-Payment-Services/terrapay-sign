@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import * as asn1js from 'asn1js';
 import * as pkijs from 'pkijs';
 
@@ -73,6 +75,11 @@ export type VerifyTimestampTokenOptions = {
   nonce: Uint8Array;
   /** Overridden in tests, where the fixture is older than today. */
   now?: Date;
+  /**
+   * SHA-256 hashes, lowercase hex, of the DER SubjectPublicKeyInfo of keys
+   * the token's signer must chain to. Empty or absent accepts any signer.
+   */
+  pinnedKeySha256?: string[];
 };
 
 /**
@@ -88,6 +95,7 @@ export const verifyTimestampToken = async ({
   digestAlgorithm,
   nonce,
   now = new Date(),
+  pinnedKeySha256 = [],
 }: VerifyTimestampTokenOptions): Promise<{ genTime: Date }> => {
   const signedData = parseSignedData(token);
 
@@ -104,6 +112,10 @@ export const verifyTimestampToken = async ({
   await assertSignatureIsValid(signedData, new Uint8Array(eContent.getValue()));
   assertSignerMayTimestamp(signedData);
 
+  if (pinnedKeySha256.length > 0) {
+    await assertChainsToPinnedKey(signedData, pinnedKeySha256);
+  }
+
   const info = parseTstInfo(new Uint8Array(eContent.getValue()));
 
   assertImprintMatches(info, digest, digestAlgorithm);
@@ -114,6 +126,60 @@ export const verifyTimestampToken = async ({
   }
 
   return { genTime: info.genTime };
+};
+
+/** SHA-256 of a certificate's DER SubjectPublicKeyInfo, lowercase hex. */
+export const publicKeySha256 = (certificate: pkijs.Certificate): string =>
+  createHash('sha256')
+    .update(new Uint8Array(certificate.subjectPublicKeyInfo.toSchema().toBER(false)))
+    .digest('hex');
+
+/** Longest signer-to-anchor path walked. Real authorities use three. */
+const MAX_CHAIN_LENGTH = 5;
+
+/**
+ * The signer must chain, through certificates the token carries, to a pinned
+ * key, with every link's signature checked.
+ *
+ * This is the trust decision the signature check above leaves open. Without
+ * it, anything able to answer for the authority's address can mint a
+ * certificate of its own, sign a well-formed token with it, and set the time
+ * our documents claim. Keys rather than certificates are pinned, because roots
+ * are re-issued and cross-signed under the same key, and a rotated leaf or
+ * intermediate must not stop every signature.
+ */
+const assertChainsToPinnedKey = async (signedData: pkijs.SignedData, pins: string[]): Promise<void> => {
+  const certificates = (signedData.certificates ?? []).filter(
+    (candidate): candidate is pkijs.Certificate => candidate instanceof pkijs.Certificate,
+  );
+
+  let current: pkijs.Certificate | undefined = certificates[0];
+
+  for (let depth = 0; current && depth < MAX_CHAIN_LENGTH; depth++) {
+    if (pins.includes(publicKeySha256(current))) {
+      return;
+    }
+
+    const child = current;
+    const candidates = certificates.filter(
+      (candidate) => candidate !== child && candidate.subject.isEqual(child.issuer),
+    );
+
+    let issuer: pkijs.Certificate | undefined;
+
+    for (const candidate of candidates) {
+      if (await child.verify(candidate).catch(() => false)) {
+        issuer = candidate;
+        break;
+      }
+    }
+
+    current = issuer;
+  }
+
+  throw new TimestampVerificationError(
+    'Timestamp token signer does not chain to a pinned key (NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY_KEY_SHA256)',
+  );
 };
 
 const parseSignedData = (token: Uint8Array): pkijs.SignedData => {

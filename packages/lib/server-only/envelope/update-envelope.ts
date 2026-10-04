@@ -84,7 +84,7 @@ export const updateEnvelope = async ({
     });
   }
 
-  assertEnvelopeMutable(envelope);
+  await assertEnvelopeMutable(envelope);
 
   if (meta.signingOrder !== undefined) {
     assertCompatibleSigningOrder({

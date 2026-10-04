@@ -33,6 +33,8 @@ export type VerifyingTimestampAuthorityOptions = {
   fetchImpl?: typeof fetch;
   /** Injected in tests so a recorded fixture verifies against its own date. */
   now?: () => Date;
+  /** Passed to verifyTimestampToken; see there. */
+  pinnedKeySha256?: string[];
 };
 
 export class VerifyingTimestampAuthority {
@@ -40,12 +42,14 @@ export class VerifyingTimestampAuthority {
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
+  private readonly pinnedKeySha256: string[];
 
   constructor(url: string, options: VerifyingTimestampAuthorityOptions = {}) {
     this.url = url;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
+    this.pinnedKeySha256 = options.pinnedKeySha256 ?? [];
   }
 
   /**
@@ -101,6 +105,7 @@ export class VerifyingTimestampAuthority {
       digestAlgorithm: algorithm,
       nonce,
       now: this.now(),
+      pinnedKeySha256: this.pinnedKeySha256,
     });
 
     return token;

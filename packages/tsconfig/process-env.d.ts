@@ -76,6 +76,7 @@ declare namespace NodeJS {
     NEXT_PRIVATE_SIGNING_REMOTE_CSC_CREDENTIAL_ID?: string;
     NEXT_PRIVATE_SIGNING_REMOTE_CSC_PIN?: string;
     NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY?: string;
+    NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY_KEY_SHA256?: string;
     /**
      * How to treat a certificate whose revocation status cannot be
      * established. Strict, the default, fails the signing. Permissive warns

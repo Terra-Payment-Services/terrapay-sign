@@ -3569,7 +3569,8 @@ test.describe('Document API V2', () => {
           recipients: [
             {
               id: doc.recipients[0].id,
-              email: doc.recipients[0].email,
+              // The seeded template recipient is a placeholder, which send refuses.
+              email: 'use-endpoint-recipient@test.documenso.com',
               name: 'New Name',
             },
           ],
@@ -3599,7 +3600,7 @@ test.describe('Document API V2', () => {
 
         expect(createdEnvelope).toBeDefined();
         expect(createdEnvelope?.recipients.length).toBe(1);
-        expect(createdEnvelope?.recipients[0].email).toBe(doc.recipients[0].email);
+        expect(createdEnvelope?.recipients[0].email).toBe('use-endpoint-recipient@test.documenso.com');
         expect(createdEnvelope?.recipients[0].name).toBe('New Name');
         expect(createdEnvelope?.recipients[0].token).toBe(data.recipients[0].token);
         expect(createdEnvelope?.recipients[0].token).not.toBe(doc.recipients[0].token);

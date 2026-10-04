@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -227,6 +228,19 @@ const describeError = (error: unknown): string => {
   return error instanceof Error ? error.message : 'Unknown error';
 };
 
+/**
+ * Sign a delivery so the receiver can check it came from us, unaltered and
+ * recently. The MAC covers the timestamp as well as the body, so a captured
+ * delivery cannot be replayed under a fresh timestamp.
+ *
+ * @param secret - the webhook's secret
+ * @param timestamp - seconds since the epoch, as sent in X-TerraPay-Timestamp
+ * @param payload - the exact bytes sent as the request body
+ * @returns the X-TerraPay-Signature header value, `v1=` and a hex HMAC-SHA256
+ */
+export const signWebhookPayload = (secret: string, timestamp: number, payload: string): string =>
+  `v1=${createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex')}`;
+
 export const executeWebhookCall = async (options: {
   url: string;
   body: unknown;
@@ -240,14 +254,23 @@ export const executeWebhookCall = async (options: {
   try {
     await assertNotPrivateUrl(url, { lookup: async (hostname) => await resolve(hostname) });
 
+    const payload = JSON.stringify(body);
+    const timestamp = Math.floor(Date.now() / 1000);
+
     const response = await postWebhook({
       url: new URL(url),
-      payload: JSON.stringify(body),
+      payload,
       headers: {
         'Content-Type': 'application/json',
         'X-TerraPay-Secret': secret ?? '',
         // Kept so receivers built against upstream Documenso keep verifying.
         'X-Documenso-Secret': secret ?? '',
+        ...(secret
+          ? {
+              'X-TerraPay-Timestamp': String(timestamp),
+              'X-TerraPay-Signature': signWebhookPayload(secret, timestamp, payload),
+            }
+          : {}),
       },
       lookup: createWebhookLookup({ resolve, allowPrivate: isBypassedHost(url) }),
     });

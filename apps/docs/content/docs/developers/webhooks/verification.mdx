@@ -37,6 +37,36 @@ X-Documenso-Secret: your_webhook_secret_here
 
 Each header contains your webhook secret as a plain string. If you did not configure a secret, both headers are empty strings.
 
+## Signed Deliveries
+
+When a webhook has a secret, each delivery also carries an HMAC signature. Checking it proves that the body was not altered on the way and lets you refuse a delivery replayed later, which the plain secret header cannot do.
+
+| Header                 | Description                                                                 |
+| ---------------------- | --------------------------------------------------------------------------- |
+| `X-TerraPay-Timestamp` | Seconds since the Unix epoch at the time of sending                         |
+| `X-TerraPay-Signature` | `v1=` followed by the hex HMAC-SHA256 of `<timestamp>.<raw body>`, keyed by your secret |
+
+To verify, read the raw request body before any JSON parsing, compute `HMAC-SHA256(secret, timestamp + "." + body)`, and compare its hex digest with the part of the header after `v1=` using a constant-time comparison. Refuse the delivery when they differ, or when the timestamp is more than five minutes from your clock.
+
+```javascript
+const crypto = require('crypto');
+
+const isValidDelivery = (rawBody, headers, secret) => {
+  const timestamp = headers['x-terrapay-timestamp'];
+  const signature = headers['x-terrapay-signature'] ?? '';
+
+  if (!timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
+    return false;
+  }
+
+  const expected = 'v1=' + crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
+
+  return signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+};
+```
+
+The signature headers are absent when the webhook has no secret.
+
 ## Verification Steps
 
 {/* prettier-ignore */}

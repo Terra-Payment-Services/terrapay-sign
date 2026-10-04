@@ -43,7 +43,7 @@ test('[SIGNER_PAGES]: the cancelled page carries no marketing line', async ({ pa
 
   await page.goto(`/sign/${document.recipients[0].token}`);
 
-  await expect(page.getByText('Document Cancelled')).toBeVisible();
+  await expect(page.getByText('Document Canceled')).toBeVisible();
   await expect(page.getByText(/slick signing links/)).toHaveCount(0);
   await expect(page.getByText(/Ask your administrator/)).toHaveCount(0);
 });

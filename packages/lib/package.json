@@ -40,7 +40,6 @@
     "@scure/base": "^1.2.6",
     "@simplewebauthn/server": "^13.2.2",
     "@sindresorhus/slugify": "^3.0.0",
-    "@team-plain/typescript-sdk": "^5.11.0",
     "@vvo/tzdb": "^6.196.0",
     "bullmq": "^5.71.1",
     "colord": "^2.9.3",

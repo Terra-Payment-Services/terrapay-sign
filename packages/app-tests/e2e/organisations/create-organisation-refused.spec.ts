@@ -10,7 +10,10 @@ import { apiSignin } from '../fixtures/authentication';
  * TerraPay Sign holds one organisation and staff join it when they first sign
  * in. Only admins may create one, and only while none exists.
  * The seeded database always holds organisations, so every case here is the
- * "one already exists" case; the fresh-install case is covered by unit tests.
+ * "one already exists" case; the fresh-install case is covered by unit tests. *
+ * English renders through the en catalogue, which spells these labels the
+ * American way ("Create Organization"), so the selectors do too; a British
+ * spelling here would make every absence check pass whatever the page shows.
  */
 
 test.describe.configure({ mode: 'parallel' });
@@ -65,8 +68,8 @@ test('nobody is offered organisation creation once one exists', async ({ page })
 
   await apiSignin({ page, email: user.email, redirectPath: '/settings/organisations?action=add-organisation' });
 
-  await expect(page.getByRole('heading', { name: 'Organisations', exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create organisation' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Organizations', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create organization' })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
@@ -76,8 +79,8 @@ test('an admin is not offered organisation creation on a user page', async ({ pa
 
   await apiSignin({ page, email: admin.email, redirectPath: `/admin/users/${user.id}` });
 
-  await expect(page.getByRole('heading', { name: 'User Organisations' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create Organisation' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'User Organizations' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create Organization' })).toHaveCount(0);
 });
 
 test('the settings sidebar organisation selector offers no create entry once one exists', async ({ page }) => {
@@ -101,5 +104,5 @@ test('the header organisation menu offers no create entry once one exists', asyn
   await page.getByTestId('menu-switcher').click();
 
   await expect(page.getByRole('menuitem', { name: 'Account', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Create Organisation' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Create Organization' })).toHaveCount(0);
 });
