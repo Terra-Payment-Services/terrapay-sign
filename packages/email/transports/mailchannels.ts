@@ -1,11 +1,19 @@
 import { env } from '@documenso/lib/utils/env';
 import type { SentMessageInfo, Transport } from 'nodemailer';
-import type { Address } from 'nodemailer/lib/mailer';
 import type MailMessage from 'nodemailer/lib/mailer/mail-message';
+import type { MimeNodeAddressInput } from 'nodemailer/lib/mime-node';
 
 import { normalizeMailHeaders } from './normalize-headers';
 
 const VERSION = '1.0.0';
+
+/**
+ * The flat address shapes every sendMail caller in this codebase passes. Nodemailer 10's own
+ * declarations type mail.data addresses as a recursive MimeNodeAddressInput whose address is
+ * optional; the conversion below has always assumed this narrower shape, as @types/nodemailer 8
+ * declared it, and the types now say so explicitly.
+ */
+type Address = { name?: string; address: string };
 
 type NodeMailerAddress = string | Address | Array<string | Address> | undefined;
 
@@ -46,9 +54,9 @@ export class MailChannelsTransport implements Transport<SentMessageInfo> {
     };
   }
 
-  public send(mail: MailMessage, callback: (_err: Error | null, _info: SentMessageInfo) => void) {
+  public send(mail: MailMessage, callback: (_err: Error | null, _info?: SentMessageInfo) => void) {
     if (!mail.data.to || !mail.data.from) {
-      return callback(new Error('Missing required fields "to" or "from"'), null);
+      return callback(new Error('Missing required fields "to" or "from"'));
     }
 
     const mailTo = this.toMailChannelsAddresses(mail.data.to);
@@ -59,7 +67,7 @@ export class MailChannelsTransport implements Transport<SentMessageInfo> {
     const [replyTo] = this.toMailChannelsAddresses(mail.data.replyTo);
 
     if (!from) {
-      return callback(new Error('Missing required field "from"'), null);
+      return callback(new Error('Missing required field "from"'));
     }
 
     const requestHeaders: Record<string, string> = {
@@ -104,11 +112,13 @@ export class MailChannelsTransport implements Transport<SentMessageInfo> {
         if (res.status >= 200 && res.status <= 299) {
           return callback(null, {
             messageId: '',
+            // Passed through as nodemailer 9 did. Nothing reads these, and the v10 interface wants
+            // them already flattened to strings.
             envelope: {
               from: mail.data.from,
               to: mail.data.to,
-            },
-            accepted: mail.data.to,
+            } as SentMessageInfo['envelope'],
+            accepted: mail.data.to as SentMessageInfo['accepted'],
             rejected: [],
             pending: [],
           });
@@ -116,18 +126,20 @@ export class MailChannelsTransport implements Transport<SentMessageInfo> {
 
         res
           .json()
-          .then((data) => callback(new Error(`MailChannels error: ${data.message}`), null))
-          .catch((err) => callback(err, null));
+          .then((data) => callback(new Error(`MailChannels error: ${data.message}`)))
+          .catch((err) => callback(err));
       })
       .catch((err) => {
-        return callback(err, null);
+        return callback(err);
       });
   }
 
   /**
    * Converts a nodemailer address(s) to an array of MailChannel compatible address.
    */
-  private toMailChannelsAddresses(address: NodeMailerAddress): Array<MailChannelsAddress> {
+  private toMailChannelsAddresses(input: MimeNodeAddressInput | undefined): Array<MailChannelsAddress> {
+    const address = input as NodeMailerAddress;
+
     if (!address) {
       return [];
     }

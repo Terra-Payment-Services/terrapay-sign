@@ -7,12 +7,20 @@ import type {
 } from '@documenso/lib/server-only/email/microsoft-graph-mail';
 import { sendGraphMail } from '@documenso/lib/server-only/email/microsoft-graph-mail';
 import type { SentMessageInfo, Transport } from 'nodemailer';
-import type { Address } from 'nodemailer/lib/mailer';
 import type MailMessage from 'nodemailer/lib/mailer/mail-message';
+import type { MimeNodeAddressInput } from 'nodemailer/lib/mime-node';
 
 import { normalizeMailHeaders } from './normalize-headers';
 
 const VERSION = '1.0.0';
+
+/**
+ * The flat address shapes every sendMail caller in this codebase passes. Nodemailer 10's own
+ * declarations type mail.data addresses as a recursive MimeNodeAddressInput whose address is
+ * optional; the conversion below has always assumed this narrower shape, as @types/nodemailer 8
+ * declared it, and the types now say so explicitly.
+ */
+type Address = { name?: string; address: string };
 
 type NodeMailerAddress = string | Address | Array<string | Address> | undefined;
 
@@ -55,11 +63,11 @@ export class MicrosoftGraphTransport implements Transport<SentMessageInfo> {
     this._sender = sender ? sender.trim().toLowerCase() : null;
   }
 
-  public send(mail: MailMessage, callback: (_err: Error | null, _info: SentMessageInfo) => void) {
+  public send(mail: MailMessage, callback: (_err: Error | null, _info?: SentMessageInfo) => void) {
     const [from] = toGraphAddresses(mail.data.from);
 
     if (!from) {
-      return callback(new Error('Missing required field "from"'), null);
+      return callback(new Error('Missing required field "from"'));
     }
 
     // Every team on this deployment sends from the shared mailbox, and the
@@ -75,7 +83,6 @@ export class MicrosoftGraphTransport implements Transport<SentMessageInfo> {
             'one mailbox the Entra application access policy admits. Clear the organisation custom sender, or ' +
             'widen the policy deliberately and set NEXT_PRIVATE_SMTP_FROM_ADDRESS to match.',
         ),
-        null,
       );
     }
 
@@ -106,20 +113,24 @@ export class MicrosoftGraphTransport implements Transport<SentMessageInfo> {
       .then((messageId) =>
         callback(null, {
           messageId: messageId ?? '',
-          envelope: { from: mail.data.from, to: mail.data.to },
-          accepted: mail.data.to,
+          // Passed through as nodemailer 9 did. Nothing reads these, and the v10 interface wants them
+          // already flattened to strings.
+          envelope: { from: mail.data.from, to: mail.data.to } as SentMessageInfo['envelope'],
+          accepted: mail.data.to as SentMessageInfo['accepted'],
           rejected: [],
           pending: [],
         }),
       )
-      .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null));
+      .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error))));
   }
 }
 
 /**
  * Convert nodemailer's several address shapes into the one Graph takes.
  */
-const toGraphAddresses = (address: NodeMailerAddress): GraphAddress[] => {
+const toGraphAddresses = (input: MimeNodeAddressInput | undefined): GraphAddress[] => {
+  const address = input as NodeMailerAddress;
+
   if (!address) {
     return [];
   }

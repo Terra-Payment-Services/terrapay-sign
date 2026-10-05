@@ -6,6 +6,8 @@ import { seedPendingDocument } from '@documenso/prisma/seed/documents';
 import { seedUser } from '@documenso/prisma/seed/users';
 import { expect, test } from '@playwright/test';
 
+import { apiSignin } from '../fixtures/authentication';
+
 const WEBAPP_BASE_URL = NEXT_PUBLIC_WEBAPP_URL();
 
 /**
@@ -142,4 +144,38 @@ test('[DOCUMENT_AUTH]: withholds the download and item.pdf bytes until the email
     expect(res.status(), url).toBe(200);
     expect((await res.body()).subarray(0, 4).toString('latin1'), url).toBe('%PDF');
   }
+});
+
+/**
+ * The tRPC query document.getDocumentByToken used to return the item's
+ * documentData, the PDF itself under the database transport, to a signed-in
+ * recipient without asking for the code. Nothing called it, so it was removed.
+ */
+test('[DOCUMENT_AUTH]: gives a signed-in recipient no document data over tRPC before the access code', async ({
+  page,
+}) => {
+  const { user, team } = await seedUser();
+  const { user: recipientUser } = await seedUser();
+
+  const document = await seedPendingDocument(user, team.id, [recipientUser], {
+    createDocumentOptions: {
+      authOptions: createDocumentAuthOptions({
+        globalAccessAuth: ['TWO_FACTOR_AUTH'],
+        globalActionAuth: [],
+      }),
+    },
+  });
+
+  const recipient = await prisma.recipient.findFirstOrThrow({ where: { envelopeId: document.id } });
+
+  await apiSignin({ page, email: recipientUser.email });
+
+  const input = encodeURIComponent(JSON.stringify({ json: { token: recipient.token } }));
+
+  const res = await page
+    .context()
+    .request.get(`${WEBAPP_BASE_URL}/api/trpc/document.getDocumentByToken?input=${input}`);
+
+  expect(res.ok()).toBeFalsy();
+  expect(await res.text()).not.toContain('documentData');
 });

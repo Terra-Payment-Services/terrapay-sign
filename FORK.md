@@ -111,7 +111,9 @@ right-hand end of `X-Forwarded-For`, which the trusted proxy writes, rather than
 left, which the client controls. Access rules are checked on every signing action and not
 only when the page loads. An emailed access code locks for an hour after five wrong
 attempts, and a document it protects is withheld, with its files, until the code is
-entered. Writes authenticated by a cookie are refused when they come from another origin.
+entered. An unused query that returned a document's data to a signed-in recipient without
+the code is removed. Writes authenticated by a cookie are refused when they come from another
+origin.
 
 Each webhook delivery that has a secret is signed with HMAC-SHA256 over a timestamp and
 the body, in `X-TerraPay-Timestamp` and `X-TerraPay-Signature`, so a receiver can check

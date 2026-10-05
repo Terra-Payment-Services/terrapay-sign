@@ -1789,10 +1789,6 @@ msgstr "예기치 않은 오류가 발생했습니다."
 #: apps/remix/app/components/forms/public-profile-form.tsx
 #: apps/remix/app/components/forms/signin.tsx
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/team-update-form.tsx
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
@@ -2608,10 +2604,6 @@ msgstr "청구 건"
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Claim account"
 msgstr "계정 청구"
-
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-msgid "Claims"
-msgstr "클레임"
 
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "Clear"
@@ -4687,11 +4679,6 @@ msgstr "문서가 아직 보류 중이면 서명자에게 이메일 보내기"
 msgid "Email transport"
 msgstr "이메일 전송 방식"
 
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Email Transports"
-msgstr "이메일 전송 방식들"
-
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Email usage is approaching fair use limits"
 msgstr "이메일 사용량이 공정 이용 한도에 가까워지고 있습니다."
@@ -6372,17 +6359,9 @@ msgstr "관리"
 msgid "Manage {0}'s profile"
 msgstr "{0}의 프로필 관리"
 
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Manage all email transports"
-msgstr "모든 이메일 전송 방식을 관리합니다"
-
 #: apps/remix/app/routes/_authenticated+/settings+/organisations.tsx
 msgid "Manage all organisations you are currently associated with."
 msgstr "현재 속해 있는 모든 조직을 관리하세요."
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Manage all subscription claims"
-msgstr "모든 구독 클레임 관리"
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/templates.$id._index.tsx
 msgid "Manage and view template"
@@ -8776,10 +8755,6 @@ msgstr "검색"
 msgid "Search and manage all organisations"
 msgstr "모든 조직을 검색하고 관리합니다."
 
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Search by claim ID or name"
-msgstr "클레임 ID 또는 이름으로 검색"
-
 #: apps/remix/app/routes/_authenticated+/admin+/documents._index.tsx
 msgid "Search by document title, recipient:123, team:123 or user:123"
 msgstr "문서 제목, recipient:123, team:123 또는 user:123으로 검색"
@@ -8791,10 +8766,6 @@ msgstr "ID로 검색"
 #: apps/remix/app/components/tables/admin-dashboard-users-table.tsx
 msgid "Search by name or email"
 msgstr "이름 또는 이메일로 검색"
-
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Search by name or from address"
-msgstr "이름 또는 보낸 사람 주소로 검색"
 
 #: apps/remix/app/routes/_authenticated+/admin+/organisations._index.tsx
 msgid "Search by organisation ID, name, customer ID or owner email"
@@ -9787,10 +9758,6 @@ msgstr "구독 클레임이 성공적으로 삭제되었습니다."
 #: apps/remix/app/components/dialogs/claim-update-dialog.tsx
 msgid "Subscription claim updated successfully."
 msgstr "구독 클레임이 성공적으로 업데이트되었습니다."
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Subscription Claims"
-msgstr "구독 클레임"
 
 #: apps/remix/app/components/dialogs/admin-swap-subscription-dialog.tsx
 msgid "Subscription moved successfully"
@@ -12362,13 +12329,9 @@ msgid "We encountered an unknown error while attempting to revoke access. Please
 msgstr "접근 권한을 철회하는 중 알 수 없는 오류가 발생했습니다. 다시 시도하시거나 지원팀에 문의해 주세요."
 
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
 msgid "We encountered an unknown error while attempting to sign you In. Please try again later."
 msgstr "로그인 중 알 수 없는 오류가 발생했습니다. 나중에 다시 시도해 주세요."
 
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 msgid "We encountered an unknown error while attempting to sign you Up. Please try again later."
 msgstr "가입 중 알 수 없는 오류가 발생했습니다. 나중에 다시 시도해 주세요."

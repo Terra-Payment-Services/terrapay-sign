@@ -1789,10 +1789,6 @@ msgstr "发生意外错误。"
 #: apps/remix/app/components/forms/public-profile-form.tsx
 #: apps/remix/app/components/forms/signin.tsx
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/team-update-form.tsx
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
@@ -2608,10 +2604,6 @@ msgstr "索赔"
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Claim account"
 msgstr "认领账号"
-
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-msgid "Claims"
-msgstr "声明"
 
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "Clear"
@@ -4687,11 +4679,6 @@ msgstr "如果文档仍在待处理状态，则向签署人发送电子邮件通
 msgid "Email transport"
 msgstr "电子邮件传输方式"
 
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Email Transports"
-msgstr "电子邮件传输方式"
-
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Email usage is approaching fair use limits"
 msgstr "电子邮件使用量正接近公平使用限制"
@@ -6372,17 +6359,9 @@ msgstr "管理"
 msgid "Manage {0}'s profile"
 msgstr "管理 {0} 的资料"
 
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Manage all email transports"
-msgstr "管理所有电子邮件传输方式"
-
 #: apps/remix/app/routes/_authenticated+/settings+/organisations.tsx
 msgid "Manage all organisations you are currently associated with."
 msgstr "管理您当前所属的所有组织。"
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Manage all subscription claims"
-msgstr "管理所有订阅声明"
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/templates.$id._index.tsx
 msgid "Manage and view template"
@@ -8776,10 +8755,6 @@ msgstr "搜索"
 msgid "Search and manage all organisations"
 msgstr "搜索并管理所有组织"
 
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Search by claim ID or name"
-msgstr "按声明 ID 或名称搜索"
-
 #: apps/remix/app/routes/_authenticated+/admin+/documents._index.tsx
 msgid "Search by document title, recipient:123, team:123 or user:123"
 msgstr "按文档标题、recipient:123、team:123 或 user:123 搜索"
@@ -8791,10 +8766,6 @@ msgstr "按 ID 搜索"
 #: apps/remix/app/components/tables/admin-dashboard-users-table.tsx
 msgid "Search by name or email"
 msgstr "按姓名或邮箱搜索"
-
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Search by name or from address"
-msgstr "按名称或发件地址搜索"
 
 #: apps/remix/app/routes/_authenticated+/admin+/organisations._index.tsx
 msgid "Search by organisation ID, name, customer ID or owner email"
@@ -9787,10 +9758,6 @@ msgstr "订阅声明删除成功。"
 #: apps/remix/app/components/dialogs/claim-update-dialog.tsx
 msgid "Subscription claim updated successfully."
 msgstr "订阅声明更新成功。"
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Subscription Claims"
-msgstr "订阅声明"
 
 #: apps/remix/app/components/dialogs/admin-swap-subscription-dialog.tsx
 msgid "Subscription moved successfully"
@@ -12362,13 +12329,9 @@ msgid "We encountered an unknown error while attempting to revoke access. Please
 msgstr "尝试撤销访问权限时出现未知错误。请重试或联系支持。"
 
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
 msgid "We encountered an unknown error while attempting to sign you In. Please try again later."
 msgstr "尝试为你登录时出现未知错误。请稍后再试。"
 
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 msgid "We encountered an unknown error while attempting to sign you Up. Please try again later."
 msgstr "尝试为你注册时出现未知错误。请稍后再试。"

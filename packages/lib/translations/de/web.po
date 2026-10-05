@@ -1789,10 +1789,6 @@ msgstr "Ein unerwarteter Fehler ist aufgetreten."
 #: apps/remix/app/components/forms/public-profile-form.tsx
 #: apps/remix/app/components/forms/signin.tsx
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/team-update-form.tsx
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
@@ -2608,10 +2604,6 @@ msgstr "Anspruch"
 #: apps/remix/app/components/general/claim-account.tsx
 msgid "Claim account"
 msgstr "Konto beanspruchen"
-
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-msgid "Claims"
-msgstr "Ansprüche"
 
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "Clear"
@@ -4687,11 +4679,6 @@ msgstr "Unterzeichner per E-Mail benachrichtigen, wenn das Dokument noch aussteh
 msgid "Email transport"
 msgstr "E-Mail-Transport"
 
-#: apps/remix/app/routes/_authenticated+/admin+/_layout.tsx
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Email Transports"
-msgstr "E-Mail-Transporte"
-
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Email usage is approaching fair use limits"
 msgstr "Die E-Mail-Nutzung nähert sich den Fair-Use-Grenzwerten"
@@ -6372,17 +6359,9 @@ msgstr "Verwalten"
 msgid "Manage {0}'s profile"
 msgstr "Verwalten Sie das Profil von {0}"
 
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Manage all email transports"
-msgstr "Alle E-Mail-Transporte verwalten"
-
 #: apps/remix/app/routes/_authenticated+/settings+/organisations.tsx
 msgid "Manage all organisations you are currently associated with."
 msgstr "Verwalten Sie alle Organisationen, mit denen Sie derzeit verbunden sind."
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Manage all subscription claims"
-msgstr "Verwalten Sie alle Abonnementsansprüche"
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/templates.$id._index.tsx
 msgid "Manage and view template"
@@ -8776,10 +8755,6 @@ msgstr "Suchen"
 msgid "Search and manage all organisations"
 msgstr "Alle Organisationen durchsuchen und verwalten"
 
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Search by claim ID or name"
-msgstr "Suche nach Anspruchs-ID oder Name"
-
 #: apps/remix/app/routes/_authenticated+/admin+/documents._index.tsx
 msgid "Search by document title, recipient:123, team:123 or user:123"
 msgstr "Nach Dokumenttitel, recipient:123, team:123 oder user:123 suchen"
@@ -8791,10 +8766,6 @@ msgstr "Nach ID suchen"
 #: apps/remix/app/components/tables/admin-dashboard-users-table.tsx
 msgid "Search by name or email"
 msgstr "Nach Name oder E-Mail suchen"
-
-#: apps/remix/app/routes/_authenticated+/admin+/email-transports._index.tsx
-msgid "Search by name or from address"
-msgstr "Nach Name oder Absenderadresse suchen"
 
 #: apps/remix/app/routes/_authenticated+/admin+/organisations._index.tsx
 msgid "Search by organisation ID, name, customer ID or owner email"
@@ -9787,10 +9758,6 @@ msgstr "Abonnementanspruch erfolgreich gelöscht."
 #: apps/remix/app/components/dialogs/claim-update-dialog.tsx
 msgid "Subscription claim updated successfully."
 msgstr "Abonnementanspruch erfolgreich aktualisiert."
-
-#: apps/remix/app/routes/_authenticated+/admin+/claims.tsx
-msgid "Subscription Claims"
-msgstr "Abonnementansprüche"
 
 #: apps/remix/app/components/dialogs/admin-swap-subscription-dialog.tsx
 msgid "Subscription moved successfully"
@@ -12362,13 +12329,9 @@ msgid "We encountered an unknown error while attempting to revoke access. Please
 msgstr "Wir sind auf einen unbekannten Fehler gestoßen, während wir versucht haben, den Zugriff zu widerrufen. Bitte versuchen Sie es später oder kontaktieren Sie den Support."
 
 #: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
-#: apps/remix/app/components/forms/signin.tsx
 msgid "We encountered an unknown error while attempting to sign you In. Please try again later."
 msgstr "Wir sind auf einen unbekannten Fehler gestoßen, während wir versucht haben, Sie anzumelden. Bitte versuchen Sie es später erneut."
 
-#: apps/remix/app/components/forms/signup.tsx
-#: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/forms/signup.tsx
 msgid "We encountered an unknown error while attempting to sign you Up. Please try again later."
 msgstr "Wir sind auf einen unbekannten Fehler gestoßen, während wir versucht haben, Sie anzumelden. Bitte versuchen Sie es später erneut."
