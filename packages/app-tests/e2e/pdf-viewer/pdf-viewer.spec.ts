@@ -1,9 +1,5 @@
-import path from 'node:path';
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
-import { createEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/create-embedding-presign-token';
-import { createApiToken } from '@documenso/lib/server-only/public-api/create-api-token';
 import { prefixedId } from '@documenso/lib/universal/id';
-import { mapSecondaryIdToDocumentId, mapSecondaryIdToTemplateId } from '@documenso/lib/utils/envelope';
 import { formatDirectTemplatePath } from '@documenso/lib/utils/templates';
 import { prisma } from '@documenso/prisma';
 import {
@@ -289,118 +285,6 @@ test.describe('PDF Viewer Rendering', () => {
       // Todo: Multisign does not support multiple envelope items.
       // await page.getByRole('button', { name: /Page 2/ }).click();
       // await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
-    });
-
-    test('should render PDF on embed authoring document create page', async ({ page }) => {
-      const { user, team } = await seedUser();
-
-      const { token: apiToken } = await createApiToken({
-        userId: user.id,
-        teamId: team.id,
-        tokenName: 'pdf-viewer-test',
-        expiresIn: null,
-      });
-
-      const { token: presignToken } = await createEmbeddingPresignToken({
-        apiToken,
-      });
-
-      const embedParams = { darkModeDisabled: false, features: {} };
-      const hash = btoa(encodeURIComponent(JSON.stringify(embedParams)));
-
-      await page.goto(`${NEXT_PUBLIC_WEBAPP_URL()}/embed/v1/authoring/document/create?token=${presignToken}#${hash}`);
-
-      await expect(page.getByText('Configure Document')).toBeVisible({ timeout: 15_000 });
-
-      const titleInput = page.getByLabel('Title');
-      await titleInput.click();
-      await titleInput.fill('PDF Viewer E2E Test');
-
-      const emailInput = page.getByPlaceholder('Email').first();
-      await emailInput.click();
-      await emailInput.fill('test-signer@documenso.com');
-
-      const [fileChooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        page
-          .locator('input[type=file]')
-          .first()
-          .evaluate((el) => {
-            if (el instanceof HTMLInputElement) {
-              el.click();
-            }
-          }),
-      ]);
-
-      await fileChooser.setFiles(path.join(__dirname, '../../../../assets/example.pdf'));
-
-      await page.getByRole('button', { name: 'Continue' }).click();
-
-      await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
-    });
-
-    test('should render PDF on embed document edit page', async ({ page }) => {
-      const { user, team } = await seedUser();
-
-      const document = await seedBlankDocument(user, team.id);
-      const documentId = mapSecondaryIdToDocumentId(document.secondaryId);
-
-      const { token: apiToken } = await createApiToken({
-        userId: user.id,
-        teamId: team.id,
-        tokenName: 'pdf-viewer-doc-edit-test',
-        expiresIn: null,
-      });
-
-      const { token: presignToken } = await createEmbeddingPresignToken({
-        apiToken,
-        scope: `documentId:${documentId}`,
-      });
-
-      const embedParams = {
-        darkModeDisabled: false,
-        features: {},
-        onlyEditFields: true,
-      };
-      const hash = btoa(encodeURIComponent(JSON.stringify(embedParams)));
-
-      await page.goto(
-        `${NEXT_PUBLIC_WEBAPP_URL()}/embed/v1/authoring/document/edit/${documentId}?token=${presignToken}#${hash}`,
-      );
-
-      await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
-    });
-
-    test('should render PDF on embed template edit page', async ({ page }) => {
-      const { user, team } = await seedUser();
-
-      const template = await seedBlankTemplate(user, team.id);
-      const templateId = mapSecondaryIdToTemplateId(template.secondaryId);
-
-      const { token: apiToken } = await createApiToken({
-        userId: user.id,
-        teamId: team.id,
-        tokenName: 'pdf-viewer-template-edit-test',
-        expiresIn: null,
-      });
-
-      const { token: presignToken } = await createEmbeddingPresignToken({
-        apiToken,
-        scope: `templateId:${templateId}`,
-      });
-
-      const embedParams = {
-        darkModeDisabled: false,
-        features: {},
-        onlyEditFields: true,
-      };
-      const hash = btoa(encodeURIComponent(JSON.stringify(embedParams)));
-
-      await page.goto(
-        `${NEXT_PUBLIC_WEBAPP_URL()}/embed/v1/authoring/template/edit/${templateId}?token=${presignToken}#${hash}`,
-      );
-
-      await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
     });
   });
 });

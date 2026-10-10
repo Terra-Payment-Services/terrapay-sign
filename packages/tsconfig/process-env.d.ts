@@ -166,6 +166,11 @@ declare namespace NodeJS {
     NEXT_PRIVATE_ENTRA_RECONCILE_DRY_RUN?: string;
     NEXT_PRIVATE_ENTRA_RECONCILE_MINIMUM_MEMBERS?: string;
     NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO?: string;
+    /** Test-only overrides of the Graph and login origins the reconciliation calls. */
+    NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL?: string;
+    NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL?: string;
+    /** Comma separated addresses the reconciliation never disables. */
+    NEXT_PRIVATE_ENTRA_RECONCILE_EXEMPT_EMAILS?: string;
 
     /**
      * SharePoint contract archive environment variables.

@@ -13,9 +13,7 @@ import {
   getEnvelopeItemDropzoneInput,
   getEnvelopeItemReplaceButtons,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   setRecipientEmail,
   setRecipientName,
   type TEnvelopeEditorSurface,
@@ -437,76 +435,6 @@ test.describe('template editor', () => {
   test('replace PDF deletes fields on out-of-bounds pages', async ({ page }) => {
     const surface = await openTemplateEnvelopeEditor(page);
     const result = await runFieldCleanupReplaceFlow(surface);
-
-    await assertFieldCleanupInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded create', () => {
-  test('replace PDF on an envelope item', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-replace',
-    });
-
-    const result = await runBasicReplaceFlow(surface);
-
-    await persistEmbeddedEnvelope(surface);
-
-    await assertBasicReplaceInDatabase({
-      surface,
-      ...result,
-    });
-  });
-
-  test('replace PDF deletes fields on out-of-bounds pages', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-replace-fields',
-    });
-
-    const result = await runFieldCleanupReplaceFlow(surface);
-
-    await persistEmbeddedEnvelope(surface);
-
-    await assertFieldCleanupInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('replace PDF on an envelope item', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-replace',
-    });
-
-    const result = await runBasicReplaceFlow(surface);
-
-    await persistEmbeddedEnvelope(surface);
-
-    await assertBasicReplaceInDatabase({
-      surface,
-      ...result,
-    });
-  });
-
-  test('replace PDF deletes fields on out-of-bounds pages', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-replace-fields',
-    });
-
-    const result = await runFieldCleanupReplaceFlow(surface);
-
-    await persistEmbeddedEnvelope(surface);
 
     await assertFieldCleanupInDatabase({
       surface,

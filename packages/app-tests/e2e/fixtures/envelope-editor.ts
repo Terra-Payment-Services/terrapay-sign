@@ -1,8 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
-import { createApiToken } from '@documenso/lib/server-only/public-api/create-api-token';
-import { DEFAULT_EMBEDDED_EDITOR_CONFIG } from '@documenso/lib/types/envelope-editor';
 import { seedBlankDocument } from '@documenso/prisma/seed/documents';
 import { seedBlankTemplate } from '@documenso/prisma/seed/templates';
 import { seedUser } from '@documenso/prisma/seed/users';
@@ -25,60 +22,6 @@ export type TEnvelopeEditorSurface = {
 };
 
 export type TEnvelopeEditorType = 'DOCUMENT' | 'TEMPLATE';
-
-type TEmbeddedHashCommonOptions = {
-  externalId?: string;
-  features?: typeof DEFAULT_EMBEDDED_EDITOR_CONFIG;
-  css?: string;
-  cssVars?: Record<string, string>;
-  darkModeDisabled?: boolean;
-};
-
-const encodeEmbeddedOptions = (options: Record<string, unknown>) => {
-  const encodedPayload = encodeURIComponent(JSON.stringify(options));
-
-  if (typeof btoa === 'function') {
-    return btoa(encodedPayload);
-  }
-
-  return Buffer.from(encodedPayload, 'utf8').toString('base64');
-};
-
-export const createEmbeddedEnvelopeCreateHash = ({
-  envelopeType,
-  externalId,
-  folderId,
-  features = DEFAULT_EMBEDDED_EDITOR_CONFIG,
-  css,
-  cssVars,
-  darkModeDisabled,
-}: { envelopeType: TEnvelopeEditorType; folderId?: string } & TEmbeddedHashCommonOptions) => {
-  return encodeEmbeddedOptions({
-    externalId,
-    type: envelopeType,
-    folderId,
-    features,
-    css,
-    cssVars,
-    darkModeDisabled,
-  });
-};
-
-export const createEmbeddedEnvelopeEditHash = ({
-  externalId,
-  features = DEFAULT_EMBEDDED_EDITOR_CONFIG,
-  css,
-  cssVars,
-  darkModeDisabled,
-}: TEmbeddedHashCommonOptions) => {
-  return encodeEmbeddedOptions({
-    externalId,
-    features,
-    css,
-    cssVars,
-    darkModeDisabled,
-  });
-};
 
 export const openDocumentEnvelopeEditor = async (page: Page): Promise<TEnvelopeEditorSurface> => {
   const { user, team } = await seedUser();
@@ -128,103 +71,6 @@ export const openTemplateEnvelopeEditor = async (page: Page): Promise<TEnvelopeE
     isEmbedded: false,
     envelopeId: template.id,
     envelopeType: 'TEMPLATE',
-    userId: user.id,
-    userEmail: user.email,
-    userName: user.name ?? '',
-    teamId: team.id,
-  };
-};
-
-type OpenEmbeddedEnvelopeEditorOptions = {
-  envelopeType: TEnvelopeEditorType;
-  mode?: 'create' | 'edit';
-  tokenNamePrefix?: string;
-  externalId?: string;
-  folderId?: string;
-  features?: typeof DEFAULT_EMBEDDED_EDITOR_CONFIG;
-  css?: string;
-  cssVars?: Record<string, string>;
-  darkModeDisabled?: boolean;
-};
-
-export const openEmbeddedEnvelopeEditor = async (
-  page: Page,
-  {
-    envelopeType,
-    mode = 'create',
-    tokenNamePrefix = 'e2e-embed',
-    externalId,
-    folderId,
-    features,
-    css,
-    cssVars,
-    darkModeDisabled,
-  }: OpenEmbeddedEnvelopeEditorOptions,
-): Promise<TEnvelopeEditorSurface> => {
-  const { user, team } = await seedUser();
-
-  const envelopeToEdit =
-    mode === 'edit'
-      ? envelopeType === 'DOCUMENT'
-        ? await seedBlankDocument(user, team.id, {
-            internalVersion: 2,
-          })
-        : await seedBlankTemplate(user, team.id, {
-            createTemplateOptions: {
-              title: `E2E Template ${Date.now()}`,
-              userId: user.id,
-              teamId: team.id,
-              internalVersion: 2,
-            },
-          })
-      : null;
-
-  const { token } = await createApiToken({
-    userId: user.id,
-    teamId: team.id,
-    tokenName: `${tokenNamePrefix}-${envelopeType.toLowerCase()}`,
-    expiresIn: null,
-  });
-
-  const embeddedToken = await resolveEmbeddingToken(
-    page,
-    token,
-    envelopeToEdit ? `envelopeId:${envelopeToEdit.id}` : undefined,
-  );
-
-  if (envelopeToEdit) {
-    const hash = createEmbeddedEnvelopeEditHash({
-      externalId,
-      features: features ?? DEFAULT_EMBEDDED_EDITOR_CONFIG,
-      css,
-      cssVars,
-      darkModeDisabled,
-    });
-
-    await page.goto(
-      `/embed/v2/authoring/envelope/edit/${envelopeToEdit.id}?token=${encodeURIComponent(embeddedToken)}#${hash}`,
-    );
-  } else {
-    const hash = createEmbeddedEnvelopeCreateHash({
-      envelopeType,
-      externalId,
-      folderId,
-      features,
-      css,
-      cssVars,
-      darkModeDisabled,
-    });
-
-    await page.goto(`/embed/v2/authoring/envelope/create?token=${encodeURIComponent(embeddedToken)}#${hash}`);
-  }
-
-  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
-
-  return {
-    root: page,
-    isEmbedded: true,
-    envelopeId: envelopeToEdit?.id,
-    envelopeType,
     userId: user.id,
     userEmail: user.email,
     userName: user.name ?? '',
@@ -339,69 +185,4 @@ export const setSigningOrderValue = async (root: Page, index: number, value: num
   const input = getSigningOrderInputs(root).nth(index);
   await input.fill(value.toString());
   await input.blur();
-};
-
-export const persistEmbeddedEnvelope = async (surface: TEnvelopeEditorSurface) => {
-  if (!surface.isEmbedded) {
-    return;
-  }
-
-  const isUpdateFlow =
-    (await surface.root.getByRole('button', { name: 'Update Document' }).count()) > 0 ||
-    (await surface.root.getByRole('button', { name: 'Update Template' }).count()) > 0;
-
-  const actionButtonName = isUpdateFlow
-    ? surface.envelopeType === 'DOCUMENT'
-      ? 'Update Document'
-      : 'Update Template'
-    : surface.envelopeType === 'DOCUMENT'
-      ? 'Create Document'
-      : 'Create Template';
-
-  await surface.root.getByRole('button', { name: actionButtonName }).click();
-
-  const completionHeading = isUpdateFlow
-    ? surface.envelopeType === 'DOCUMENT'
-      ? 'Document Updated'
-      : 'Template Updated'
-    : surface.envelopeType === 'DOCUMENT'
-      ? 'Document Created'
-      : 'Template Created';
-
-  await expect(surface.root.getByRole('heading', { name: completionHeading })).toBeVisible();
-};
-
-const resolveEmbeddingToken = async (page: Page, inputToken: string, scope?: string): Promise<string> => {
-  if (!inputToken.startsWith('api_')) {
-    return inputToken;
-  }
-
-  const response = await page
-    .context()
-    .request.post(`${NEXT_PUBLIC_WEBAPP_URL()}/api/v2/embedding/create-presign-token`, {
-      headers: {
-        Authorization: `Bearer ${inputToken}`,
-        'Content-Type': 'application/json',
-      },
-      data: scope ? { scope } : {},
-    });
-
-  if (!response.ok()) {
-    const text = await response.text();
-    throw new Error(`Failed to exchange API token (${response.status()}): ${text}`);
-  }
-
-  const data: unknown = await response.json();
-
-  if (typeof data !== 'object' || data === null || !('token' in data)) {
-    throw new Error(`Unexpected response shape: ${JSON.stringify(data)}`);
-  }
-
-  const token = data.token;
-
-  if (typeof token !== 'string' || token.length === 0) {
-    throw new Error(`Unexpected response shape: ${JSON.stringify(data)}`);
-  }
-
-  return token;
 };

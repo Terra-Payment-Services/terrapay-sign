@@ -30,7 +30,6 @@ const ZAttachmentFormSchema = z.object({
 
 type TAttachmentFormSchema = z.infer<typeof ZAttachmentFormSchema>;
 
-// NOTE: REMEMBER TO UPDATE THE EMBEDDED VERSION OF THIS COMPONENT TOO.
 export const DocumentAttachmentsPopover = ({
   envelopeId,
   buttonClassName,

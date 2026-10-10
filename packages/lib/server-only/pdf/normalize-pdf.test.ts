@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { inspectEmbeddedSignatures } from '@documenso/signing/helpers/embedded-signatures';
 import { PDF } from '@libpdf/core';
 import { describe, expect, it } from 'vitest';
 
+import { ownerProtectedPdf, ownerProtectedSignedPdf, userProtectedPdf } from './__fixtures__/protected-pdfs';
 import { normalizePdf } from './normalize-pdf';
 
 const fixture = (name: string) => readFileSync(path.join(__dirname, '__fixtures__', name));
@@ -68,5 +70,32 @@ describe('normalizePdf', () => {
 
   it('rejects a file that is not a PDF', async () => {
     await expect(normalizePdf(Buffer.from('this is not a pdf'))).rejects.toThrow();
+  });
+
+  it('accepts a PDF that opens without a password but carries owner restrictions', async () => {
+    const output = await normalizePdf(await ownerProtectedPdf());
+
+    const doc = await PDF.load(output);
+
+    expect(doc.isAuthenticated).toBe(true);
+    expect(doc.isEncrypted).toBe(true);
+    expect(doc.getPageCount()).toBe(1);
+  });
+
+  it('keeps the signature on an owner-protected PDF that arrived already signed', async () => {
+    const input = await ownerProtectedSignedPdf();
+
+    const output = await normalizePdf(input);
+
+    expect(await readSignatures(output)).toEqual({ total: 1, signed: 1 });
+    expect(output.subarray(0, input.length).equals(input)).toBe(true);
+    expect(await inspectEmbeddedSignatures(output)).toMatchObject({ checked: 1, intact: 1 });
+  });
+
+  it('refuses a PDF that needs a password to open, and says that is why', async () => {
+    await expect(normalizePdf(await userProtectedPdf())).rejects.toMatchObject({
+      code: 'PASSWORD_PROTECTED_DOCUMENT',
+      message: expect.stringMatching(/password/i),
+    });
   });
 });

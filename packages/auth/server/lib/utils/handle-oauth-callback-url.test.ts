@@ -67,7 +67,7 @@ const clientOptions = {
   scope: ['openid', 'email', 'profile'],
   clientId: '00000000-0000-0000-0000-000000000002',
   clientSecret: 'a-secret',
-  redirectUrl: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+  redirectUrl: 'https://sign.example.com/api/auth/callback/microsoft',
   wellKnownUrl: 'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
   bypassEmailVerification: true,
 };

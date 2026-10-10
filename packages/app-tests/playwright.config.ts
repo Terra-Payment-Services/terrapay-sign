@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import os from 'os';
 import path from 'path';
 
+import { ENV_FILES } from './reporters/secret-values';
+
 function calculateWorkers() {
   const total = os.cpus().length;
 
@@ -15,8 +17,6 @@ function calculateWorkers() {
   // Max 6 workers
   return Math.min(workers, 6);
 }
-
-const ENV_FILES = ['.env', '.env.local', `.env.${process.env.NODE_ENV || 'development'}`];
 
 ENV_FILES.forEach((file) => {
   dotenv.config({
@@ -84,6 +84,11 @@ const remoteProject = {
   use: {
     ...devices['Desktop Chrome'],
     viewport: { width: 1920, height: 1200 },
+    // No traces here at all. The signing journey sends E2E_REMOTE_API_TOKEN
+    // as a bearer header, a trace records request headers, and a failed run's
+    // trace would carry the token into the job artifacts. Screenshots and
+    // failure videos stay, from the shared settings below.
+    trace: 'off',
   },
   workers: REMOTE_WORKERS,
 };
@@ -99,12 +104,22 @@ const localProjects = [
   {
     name: 'ui',
     testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
-    testIgnore: [/e2e\/remote\/.*\.spec\.ts/],
+    testIgnore: [/e2e\/remote\/.*\.spec\.ts/, /e2e\/directory-sync\/.*\.spec\.ts/],
     use: {
       ...devices['Desktop Chrome'],
       viewport: { width: 1920, height: 1200 },
     },
     workers: calculateWorkers(),
+  },
+  // The directory sync specs start a built server of their own per test,
+  // with the sync configured against a stub of Microsoft Graph, and give each
+  // worker a database of its own: the sync considers every account in the
+  // database, so it cannot share one with specs seeding users in parallel.
+  // Their own project keeps a worker, and so its database, to these files.
+  {
+    name: 'directory-sync',
+    testMatch: /e2e\/directory-sync\/.*\.spec\.ts/,
+    workers: 2,
   },
   // The remote-capable specs run on the local path too, against the server
   // start-server-and-test boots. That keeps them exercised on every local run
@@ -133,8 +148,20 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 4 : 1,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [['html'], ['list']],
+  // Every reporter on every run, local or CI, so a run leaves results a
+  // machine can read and someone else can check. CI used to add junit with a
+  // --reporter flag, which replaces this list rather than extending it: the
+  // staging job's flag left it with no html report at all. The html report
+  // never opens itself, so a local run ends when the tests do. The manifest
+  // reporter writes test-results/manifest.json: commit, command, target, seed
+  // and tool versions, so the run can be checked and repeated.
+  reporter: [
+    ['html', { open: 'never' }],
+    ['list'],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+    ['json', { outputFile: 'test-results/results.json' }],
+    ['./reporters/manifest-reporter.ts'],
+  ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -143,6 +170,8 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
+    // Passing tests keep a screenshot too, so a green run shows what it reached.
+    screenshot: 'on',
 
     /* Add explicit timeouts for actions */
     actionTimeout: 15_000,

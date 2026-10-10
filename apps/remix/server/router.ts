@@ -2,6 +2,7 @@ import { tsRestHonoApp } from '@documenso/api/hono';
 import { auth } from '@documenso/auth/server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { jobsClient } from '@documenso/lib/jobs/client';
+import { assertDirectoryReconcileIsLive } from '@documenso/lib/server-only/directory/assert-directory-reconcile-live';
 import { isCsrfExemptRequest } from '@documenso/lib/server-only/http/csrf-exemptions';
 import { createSameOriginMiddleware } from '@documenso/lib/server-only/http/same-origin-middleware';
 import { createRateLimitMiddleware } from '@documenso/lib/server-only/rate-limit/rate-limit-middleware';
@@ -173,6 +174,10 @@ app.use(`/api/v2-beta/*`, async (c) =>
 // The licence client POSTed the licence key to https://license.documenso.com on
 // every boot. It existed only to gate the enterprise code, which has been
 // deleted, so the client has gone with it.
+
+// Before the scheduler starts, so a production server whose directory
+// reconcile would not act never comes up at all.
+assertDirectoryReconcileIsLive();
 
 // Start cron scheduler for background jobs (e.g. envelope expiration sweep).
 // No-op for Inngest provider which handles cron externally.

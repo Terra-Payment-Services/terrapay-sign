@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { getDocumentDataUrl, getEnvelopeItemPdfUrl, getPresignRequestHeaders } from './envelope-download';
+import { getDocumentDataUrl, getEnvelopeItemPdfUrl } from './envelope-download';
 
 const envelopeItem = { id: 'item_1', envelopeId: 'envelope_1' };
 
 describe('file URLs', () => {
-  it('carry no query string for the session or presign routes', () => {
+  it('carry no query string for the session routes', () => {
     const urls = [
       getDocumentDataUrl({
         envelopeId: 'envelope_1',
@@ -34,16 +34,5 @@ describe('file URLs', () => {
     });
 
     expect(url).not.toContain('secret-presign-token');
-  });
-});
-
-describe('getPresignRequestHeaders', () => {
-  it('sends the presign token as a bearer credential', () => {
-    expect(getPresignRequestHeaders('abc')).toEqual({ Authorization: 'Bearer abc' });
-  });
-
-  it('sends nothing without a token', () => {
-    expect(getPresignRequestHeaders(undefined)).toEqual({});
-    expect(getPresignRequestHeaders('')).toEqual({});
   });
 });

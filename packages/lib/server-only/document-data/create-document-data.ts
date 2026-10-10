@@ -1,5 +1,5 @@
 import { prisma } from '@documenso/prisma';
-import type { DocumentDataType } from '@prisma/client';
+import type { DocumentDataType, Prisma } from '@prisma/client';
 
 /**
  * Who the bytes belong to, recorded as they are written.
@@ -30,10 +30,16 @@ export type CreateDocumentDataOptions = {
 
   /** Who these bytes belong to. Required, so no caller can leave it open. */
   owner: DocumentDataOwner;
+
+  /** Create the row in this transaction, so it rolls back with it. Defaults to no transaction. */
+  tx?: Prisma.TransactionClient;
 };
 
-export const createDocumentData = async ({ type, data, initialData, owner }: CreateDocumentDataOptions) => {
-  return await prisma.documentData.create({
+/**
+ * Creates a document data record for bytes already stored, inside `tx` when one is given.
+ */
+export const createDocumentData = async ({ type, data, initialData, owner, tx }: CreateDocumentDataOptions) => {
+  return await (tx ?? prisma).documentData.create({
     data: {
       type,
       data,

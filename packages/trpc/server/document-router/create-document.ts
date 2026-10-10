@@ -2,6 +2,7 @@ import { convertToPdf } from '@documenso/lib/server-only/document-conversion';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
 import { getEnvelopeItemLimit } from '@documenso/lib/server-only/organisation/get-envelope-item-limit';
 import { insertFormValuesInPdf } from '@documenso/lib/server-only/pdf/insert-form-values-in-pdf';
+import { assertLegacyEnvelopeAcceptsPdf } from '@documenso/lib/server-only/pdf/normalize-pdf';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { EnvelopeType } from '@prisma/client';
@@ -44,6 +45,9 @@ export const createDocumentRoute = authenticatedProcedure
         formValues,
       });
     }
+
+    // Refuse before storing, so a refused upload leaves nothing behind.
+    await assertLegacyEnvelopeAcceptsPdf(pdf);
 
     const { id: documentDataId } = await putNormalizedPdfFileServerSide(
       {

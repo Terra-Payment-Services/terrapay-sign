@@ -2,7 +2,9 @@ import { type TFieldAndMeta, ZEnvelopeFieldAndMetaSchema } from '@documenso/lib/
 import { PDF, rgb } from '@libpdf/core';
 import type { FieldType, Recipient } from '@prisma/client';
 
+import { inspectExistingSignatures } from './existing-signatures';
 import { parseFieldMetaFromPlaceholder, parseFieldTypeFromPlaceholder } from './helpers';
+import { assertSignedBytesUntouched } from './normalize-pdf';
 
 const PLACEHOLDER_REGEX = /\{\{([^}]+)\}\}/g;
 const DEFAULT_FIELD_HEIGHT_PERCENT = 2;
@@ -36,6 +38,24 @@ export const whiteoutRegions = (pdfDoc: PDF, regions: Array<{ pageIndex: number;
       borderWidth: 2,
     });
   }
+};
+
+/**
+ * Save a PDF after placeholders were whited out on it.
+ *
+ * A PDF that arrived signed is appended to rather than rewritten, so its
+ * signature still covers the bytes it was made over, as in `normalizePdf`.
+ */
+export const savePdfWithWhiteouts = async (pdfDoc: PDF, original: Uint8Array) => {
+  if (inspectExistingSignatures(pdfDoc).signedFieldCount === 0) {
+    return await pdfDoc.save();
+  }
+
+  const bytes = await pdfDoc.save({ incremental: true });
+
+  assertSignedBytesUntouched(original, bytes);
+
+  return bytes;
 };
 
 export type PlaceholderInfo = {
@@ -169,7 +189,7 @@ export const removePlaceholdersFromPDF = async (pdf: Buffer, placeholders?: Plac
 
   whiteoutRegions(pdfDoc, regions);
 
-  const modifiedPdfBytes = await pdfDoc.save();
+  const modifiedPdfBytes = await savePdfWithWhiteouts(pdfDoc, new Uint8Array(pdf));
 
   return Buffer.from(modifiedPdfBytes);
 };

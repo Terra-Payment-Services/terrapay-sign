@@ -6,9 +6,7 @@ import { DocumentDistributionMethod, DocumentVisibility } from '@prisma/client';
 import {
   getEnvelopeEditorSettingsTrigger,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   type TEnvelopeEditorSurface,
 } from '../fixtures/envelope-editor';
 import { expectToastTextToBeVisible } from '../fixtures/generic';
@@ -443,55 +441,6 @@ test.describe('template editor', () => {
       surface,
       hasActionAuthSelect,
       shouldAssertVisibility: true,
-    });
-  });
-});
-
-test.describe('embedded create', () => {
-  test('update and persist settings', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-settings',
-    });
-    const externalId = `e2e-settings-${nanoid()}`;
-
-    const { hasActionAuthSelect } = await runSettingsFlow(surface, {
-      externalId,
-      isEmbedded: true,
-    });
-
-    await persistEmbeddedEnvelope(surface);
-
-    await assertEnvelopeSettingsPersistedInDatabase({
-      externalId,
-      surface,
-      hasActionAuthSelect,
-      shouldAssertVisibility: false,
-    });
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('update and persist settings', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-settings',
-    });
-    const externalId = `e2e-settings-${nanoid()}`;
-
-    const { hasActionAuthSelect } = await runSettingsFlow(surface, {
-      externalId,
-      isEmbedded: true,
-    });
-
-    await persistEmbeddedEnvelope(surface);
-
-    await assertEnvelopeSettingsPersistedInDatabase({
-      externalId,
-      surface,
-      hasActionAuthSelect,
-      shouldAssertVisibility: false,
     });
   });
 });

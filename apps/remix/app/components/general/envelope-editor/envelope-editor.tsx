@@ -453,7 +453,6 @@ export const EnvelopeEditor = () => {
               />
             )}
 
-            {/* Check envelope ID since it can be in embedded create mode. */}
             {allowDeletion && envelope.id && (
               <EnvelopeDeleteDialog
                 id={envelope.id}
@@ -496,31 +495,29 @@ export const EnvelopeEditor = () => {
           </div>
 
           {/* Footer of left sidebar. */}
-          {!editorConfig.embedded && (
-            <div
-              className={cn('mt-auto px-4', {
-                'px-2': minimizeLeftSidebar,
+          <div
+            className={cn('mt-auto px-4', {
+              'px-2': minimizeLeftSidebar,
+            })}
+          >
+            <Button
+              variant="ghost"
+              className={cn('w-full justify-start', {
+                'flex items-center justify-center': minimizeLeftSidebar,
               })}
+              asChild
             >
-              <Button
-                variant="ghost"
-                className={cn('w-full justify-start', {
-                  'flex items-center justify-center': minimizeLeftSidebar,
-                })}
-                asChild
-              >
-                <Link to={relativePath.basePath}>
-                  <ArrowLeftIcon className="h-4 w-4 flex-shrink-0" />
+              <Link to={relativePath.basePath}>
+                <ArrowLeftIcon className="h-4 w-4 flex-shrink-0" />
 
-                  {!minimizeLeftSidebar && (
-                    <span className="ml-2">
-                      {isDocument ? <Trans>Return to documents</Trans> : <Trans>Return to templates</Trans>}
-                    </span>
-                  )}
-                </Link>
-              </Button>
-            </div>
-          )}
+                {!minimizeLeftSidebar && (
+                  <span className="ml-2">
+                    {isDocument ? <Trans>Return to documents</Trans> : <Trans>Return to templates</Trans>}
+                  </span>
+                )}
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Main Content - Changes based on current step */}

@@ -175,6 +175,9 @@ export const UNUSED_CLAIM_FLAG_KEYS: ReadonlyArray<keyof TClaimFlags> = [
   'authenticationPortal',
   'emailDomains',
   'cscQesSigning',
+  // Embedded authoring is removed.
+  'embedAuthoring',
+  'embedAuthoringWhiteLabel',
 ];
 
 /**

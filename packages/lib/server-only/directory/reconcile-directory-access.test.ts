@@ -1,5 +1,5 @@
 import { Role } from '@prisma/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError } from '../../errors/app-error';
 import type { EntraDirectoryMember } from './entra-graph';
@@ -9,7 +9,7 @@ import type {
   ReconcileDirectoryAccessConfig,
   ReconcileDirectoryAccessOptions,
 } from './reconcile-directory-access';
-import { reconcileDirectoryAccess } from './reconcile-directory-access';
+import { readDirectoryObjectId, reconcileDirectoryAccess } from './reconcile-directory-access';
 
 const createLogger = () => ({
   info: vi.fn(),
@@ -21,6 +21,7 @@ const createConfig = (overrides: Partial<ReconcileDirectoryAccessConfig> = {}): 
   dryRun: false,
   minimumMemberCount: 3,
   maximumDisableRatio: 0.75,
+  exemptEmails: [],
   ...overrides,
 });
 
@@ -38,6 +39,7 @@ const createUser = (overrides: Partial<ReconcilableUser> = {}): ReconcilableUser
   name: 'Person',
   roles: [Role.USER],
   disabled: false,
+  directoryObjectIds: [],
   ...overrides,
 });
 
@@ -231,6 +233,123 @@ describe('reconcileDirectoryAccess', () => {
 
     expect(disableUserAccount).not.toHaveBeenCalled();
     expect(result.outcome).toBe('aborted');
+  });
+
+  it('keeps a renamed user whose Sign account still carries the old address, matched by Entra object id', async () => {
+    const { result } = await run({
+      members: [
+        createMember({ id: 'oid-renamed', mail: 'new.name@example.com', userPrincipalName: 'new.name@example.com' }),
+        ...padding(4),
+      ],
+      users: [
+        createUser({ id: 10, email: 'old.name@example.com', directoryObjectIds: ['oid-renamed'] }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.candidateUserIds).toEqual([]);
+    expect(result.disabledUserIds).toEqual([]);
+  });
+
+  it('disables a renamed user once Entra disables the object the account is linked to', async () => {
+    const { result } = await run({
+      members: [
+        createMember({
+          id: 'oid-leaver',
+          mail: 'new.name@example.com',
+          userPrincipalName: 'new.name@example.com',
+          accountEnabled: false,
+        }),
+        ...padding(4),
+      ],
+      users: [
+        createUser({ id: 10, email: 'old.name@example.com', directoryObjectIds: ['oid-leaver'] }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.disabledUserIds).toEqual([10]);
+  });
+
+  it('falls back to email for an account with no linked Entra object id', async () => {
+    const { result } = await run({
+      members: [createMember({ id: 'oid-stays', mail: 'stays@example.com' }), ...padding(4)],
+      users: [
+        createUser({ id: 10, email: 'stays@example.com', directoryObjectIds: [] }),
+        createUser({ id: 11, email: 'left@example.com', directoryObjectIds: [] }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.disabledUserIds).toEqual([11]);
+  });
+
+  it('disables a leaver whose address has been reassigned to somebody else, on the object id', async () => {
+    const { result } = await run({
+      members: [
+        createMember({ id: 'oid-alice', mail: 'alice.old@example.com', accountEnabled: false }),
+        createMember({ id: 'oid-bob', mail: 'shared@example.com', userPrincipalName: 'shared@example.com' }),
+        ...padding(4),
+      ],
+      users: [
+        createUser({ id: 10, email: 'shared@example.com', directoryObjectIds: ['oid-alice'] }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.disabledUserIds).toEqual([10]);
+  });
+
+  // The safe failure: a person deleted and recreated in Entra has a new object
+  // id that their Sign account has not seen, so the account is disabled until
+  // somebody re-enables it, however well the address matches.
+  it('disables an account whose person was recreated in Entra and has not signed in as the new identity', async () => {
+    const { result } = await run({
+      members: [createMember({ id: 'oid-recreated', mail: 'recreated@example.com' }), ...padding(4)],
+      users: [
+        createUser({ id: 10, email: 'recreated@example.com', directoryObjectIds: ['oid-before-recreation'] }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.disabledUserIds).toEqual([10]);
+  });
+
+  it('never disables an exempt address, whatever its case, and leaves it out of the disable ratio', async () => {
+    const { result } = await run({
+      config: createConfig({ exemptEmails: [' Scanner@Example.com '], maximumDisableRatio: 0.2 }),
+      members: padding(5),
+      users: [
+        createUser({ id: 10, email: 'scanner@EXAMPLE.com' }),
+        createUser({ id: 11, email: 'left@example.com' }),
+        ...paddingUsers(4),
+      ],
+    });
+
+    expect(result.outcome).toBe('completed');
+    expect(result.exemptUserCount).toBe(1);
+    expect(result.consideredUserCount).toBe(5);
+    expect(result.disabledUserIds).toEqual([11]);
+  });
+});
+
+describe('readDirectoryObjectId', () => {
+  const idToken = (payload: Record<string, unknown>) =>
+    ['e30', Buffer.from(JSON.stringify(payload)).toString('base64url'), 'signature'].join('.');
+
+  it('reads the object id from a stored Entra ID token issued by the reconciled tenant', () => {
+    expect(readDirectoryObjectId(idToken({ oid: 'oid-1', tid: 'tenant-id' }), 'tenant-id')).toBe('oid-1');
+  });
+
+  it.each([
+    ['no token is stored', null],
+    ['the token is not a JWT', 'not-a-jwt'],
+    ['the payload is not JSON', 'e30.%%%.signature'],
+    ['the token carries no oid', idToken({ tid: 'tenant-id' })],
+    ['the token came from another tenant', idToken({ oid: 'oid-1', tid: 'other-tenant' })],
+    ['the token carries no tid', idToken({ oid: 'oid-1' })],
+  ])('reads nothing when %s', (_reason, token) => {
+    expect(readDirectoryObjectId(token, 'tenant-id')).toBeNull();
   });
 });
 
@@ -672,13 +791,39 @@ describe('fetchEntraTenantUsers', () => {
     expect(disableUserAccount).not.toHaveBeenCalled();
   });
 
-  it('refuses to reconcile when Graph withholds accountEnabled, rather than guessing either way', async () => {
-    const { fetchFn } = createGraphFetch([
-      { status: 200, body: { value: [tenantUser({ accountEnabled: undefined })] } },
-    ]);
+  // Criterion 24: a missing or null accountEnabled means not enabled. The run
+  // goes on, and the user keeps no account.
+  for (const [label, accountEnabled] of [
+    ['missing', undefined],
+    ['null', null],
+  ] as const) {
+    it(`treats a user whose accountEnabled is ${label} as not enabled, without aborting`, async () => {
+      const { fetchFn } = createGraphFetch([
+        {
+          status: 200,
+          body: {
+            value: [
+              tenantUser({ id: 'kept', mail: 'kept@example.com', userPrincipalName: 'kept@example.com' }),
+              tenantUser({
+                id: 'unknown',
+                mail: 'unknown@example.com',
+                userPrincipalName: 'unknown@example.com',
+                accountEnabled,
+              }),
+            ],
+          },
+        },
+      ]);
 
-    await expect(fetchEntraTenantUsers({ credentials, fetchFn })).rejects.toThrow(/without accountEnabled/);
-  });
+      const { result } = await reconcileAgainstTenant(fetchFn, [
+        createUser({ id: 10, email: 'kept@example.com' }),
+        createUser({ id: 11, email: 'unknown@example.com' }),
+      ]);
+
+      expect(result.outcome).toBe('completed');
+      expect(result.disabledUserIds).toEqual([11]);
+    });
+  }
 
   it('refuses a user Graph would not name', async () => {
     const { fetchFn } = createGraphFetch([
@@ -687,4 +832,99 @@ describe('fetchEntraTenantUsers', () => {
 
     await expect(fetchEntraTenantUsers({ credentials, fetchFn })).rejects.toThrow(/neither mail nor userPrincipalName/);
   });
+});
+
+/**
+ * Criterion 33: in production the token and Graph requests go to Microsoft,
+ * whatever the base-URL settings say. The client is driven through its public
+ * functions with `fetch` replaced at the network boundary, and the module is
+ * loaded afresh after the environment is set, so the result does not depend
+ * on whether it reads the settings at import or at call time.
+ */
+describe('production endpoints', () => {
+  const MICROSOFT_ORIGINS = ['https://login.microsoftonline.com', 'https://graph.microsoft.com'];
+
+  const loadInProduction = async (baseUrls: Record<string, string>) => {
+    vi.stubEnv('NODE_ENV', 'production');
+
+    for (const [name, value] of Object.entries(baseUrls)) {
+      vi.stubEnv(name, value);
+    }
+
+    vi.resetModules();
+
+    const graph = await import('./entra-graph');
+    graph.clearEntraTokenCache();
+
+    return graph;
+  };
+
+  const page = (nextLink?: string) => ({
+    status: 200,
+    body: {
+      value: [
+        {
+          id: 'user-id',
+          '@odata.type': '#microsoft.graph.user',
+          mail: 'person@example.com',
+          userPrincipalName: 'person@example.com',
+          accountEnabled: true,
+          userType: 'Member',
+        },
+      ],
+      ...(nextLink ? { '@odata.nextLink': nextLink } : {}),
+    },
+  });
+
+  const SETTINGS: [string, Record<string, string>][] = [
+    [
+      'both base URLs pointing elsewhere',
+      {
+        NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL: 'https://graph.attacker.example',
+        NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL: 'https://login.attacker.example',
+      },
+    ],
+    ['only the Graph base URL pointing elsewhere', { NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL: 'http://127.0.0.1:9' }],
+    ['only the login base URL pointing elsewhere', { NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL: 'http://127.0.0.1:9' }],
+    ['both base URLs empty', { NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL: '', NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL: '' }],
+  ];
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  for (const [label, baseUrls] of SETTINGS) {
+    it(`reads the tenant from Microsoft with ${label}`, async () => {
+      const graph = await loadInProduction(baseUrls);
+      const { fetchFn, requestedUrls } = createGraphFetch([
+        page('https://graph.microsoft.com/v1.0/users?$skiptoken=next'),
+        page(),
+      ]);
+
+      await graph.fetchEntraTenantUsers({ credentials, fetchFn }).catch(() => undefined);
+
+      expect(requestedUrls.length).toBeGreaterThan(0);
+      expect(requestedUrls.map((url) => new URL(url).origin).filter((o) => !MICROSOFT_ORIGINS.includes(o))).toEqual([]);
+      expect(requestedUrls.some((url) => url.startsWith('https://login.microsoftonline.com/'))).toBe(true);
+      expect(requestedUrls.some((url) => url.startsWith('https://graph.microsoft.com/v1.0/users'))).toBe(true);
+    });
+
+    it(`reads the access group from Microsoft with ${label}`, async () => {
+      const graph = await loadInProduction(baseUrls);
+      const { fetchFn, requestedUrls } = createGraphFetch([
+        page('https://graph.microsoft.com/v1.0/groups/group-id/transitiveMembers?$skiptoken=next'),
+        page(),
+      ]);
+
+      await graph.fetchEntraGroupMembers({ groupId: 'group-id', credentials, fetchFn }).catch(() => undefined);
+
+      expect(requestedUrls.length).toBeGreaterThan(0);
+      expect(requestedUrls.map((url) => new URL(url).origin).filter((o) => !MICROSOFT_ORIGINS.includes(o))).toEqual([]);
+      expect(requestedUrls.some((url) => url.startsWith('https://login.microsoftonline.com/'))).toBe(true);
+      expect(requestedUrls.some((url) => url.startsWith('https://graph.microsoft.com/v1.0/groups/group-id/'))).toBe(
+        true,
+      );
+    });
+  }
 });

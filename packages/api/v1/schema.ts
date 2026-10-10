@@ -528,6 +528,8 @@ export type TAuthorizationHeadersSchema = z.infer<typeof ZAuthorizationHeadersSc
 
 export const ZUnsuccessfulResponseSchema = z.object({
   message: z.string(),
+  /** Set by some refusals, such as a PDF whose signature is already invalid, so a client can tell why. */
+  code: z.string().optional(),
 });
 
 export type TUnsuccessfulResponseSchema = z.infer<typeof ZUnsuccessfulResponseSchema>;

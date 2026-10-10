@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { inspectEmbeddedSignatures } from '@documenso/signing/helpers/embedded-signatures';
 import { P12Signer, PDF } from '@libpdf/core';
 import { describe, expect, it } from 'vitest';
+
+import { ownerProtectedSignedPdf } from './__fixtures__/protected-pdfs';
+import { rawSignatureContents, signatureObjectNumber } from './__fixtures__/signature-bytes';
+import { normalizePdf } from './normalize-pdf';
 
 /**
  * The sealing pipeline in `seal-document.handler.ts` cannot be called directly
@@ -80,5 +85,38 @@ describe('counter-signing a document that arrived already signed', () => {
     });
 
     expect(await readSignatures(bytes)).toEqual({ total: 1, signed: 1 });
+  });
+});
+
+describe('counter-signing an owner-protected document that arrived already signed', () => {
+  it('uploads, seals and leaves the counterparty signature valid in the sealed file', async () => {
+    const received = await ownerProtectedSignedPdf();
+    const objectNumber = await signatureObjectNumber(received);
+    const counterpartySignature = rawSignatureContents(received, objectNumber);
+
+    const uploaded = await normalizePdf(received);
+
+    // The seal handler's sequence, with an overlay drawn the way V2 field
+    // insertion draws one.
+    const pdfDoc = await PDF.load(uploaded);
+    pdfDoc.flattenAll({ form: { skipSignatures: true } });
+    pdfDoc.upgradeVersion('1.7');
+
+    const overlay = await PDF.load(fixture('unsigned.pdf'));
+    pdfDoc.getPage(0)?.drawPage(await pdfDoc.embedPage(overlay, 0), { x: 0, y: 0 });
+
+    expect(pdfDoc.canSaveIncrementally()).toBeNull();
+
+    const { bytes: sealed } = await pdfDoc.sign({
+      signer: await signer(),
+      reason: 'Counter-signature',
+      subFilter: 'ETSI.CAdES.detached',
+    });
+
+    expect(Buffer.from(sealed).subarray(0, received.length).equals(received)).toBe(true);
+    expect(await readSignatures(sealed)).toEqual({ total: 2, signed: 2 });
+    expect(await inspectEmbeddedSignatures(sealed)).toMatchObject({ checked: 2, intact: 2 });
+    expect(rawSignatureContents(sealed, objectNumber)).toBe(counterpartySignature);
+    expect((await PDF.load(sealed)).isEncrypted).toBe(true);
   });
 });

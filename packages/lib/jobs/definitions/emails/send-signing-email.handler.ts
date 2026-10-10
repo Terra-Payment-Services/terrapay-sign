@@ -16,12 +16,15 @@ import { getI18nInstance } from '../../../client-only/providers/i18n-server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../../constants/app';
 import { isTemplateRecipientEmailPlaceholder } from '../../../constants/placeholder-recipients';
 import { RECIPIENT_ROLE_TO_EMAIL_TYPE, RECIPIENT_ROLES_DESCRIPTION } from '../../../constants/recipient-roles';
+import { AppError } from '../../../errors/app-error';
 import { buildEnvelopeEmailHeaders } from '../../../server-only/email/build-envelope-email-headers';
 import { getEmailContext } from '../../../server-only/email/get-email-context';
+import { assertLegacyEnvelopeAcceptsPdf } from '../../../server-only/pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../../../server-only/rate-limit/assert-organisation-rates-and-limits';
 import { updateRecipientNextReminder } from '../../../server-only/recipient/update-recipient-next-reminder';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../../types/document-audit-logs';
 import { extractDerivedDocumentEmailSettings } from '../../../types/document-email';
+import { getFileServerSide } from '../../../universal/upload/get-file.server';
 import { createDocumentAuditLogData } from '../../../utils/document-audit-logs';
 import { unsafeBuildEnvelopeIdQuery } from '../../../utils/envelope';
 import { renderCustomEmailTemplate } from '../../../utils/render-custom-email-template';
@@ -29,6 +32,12 @@ import { renderEmailWithI18N } from '../../../utils/render-email-with-i18n';
 import type { JobRunIO } from '../../client/_internal/job';
 import type { TSendSigningEmailJobDefinition } from './send-signing-email';
 
+/**
+ * Emails one recipient the invitation to act on a PENDING document.
+ *
+ * A V1 document whose stored PDF fails `assertLegacyEnvelopeAcceptsPdf`, the
+ * send path's check, gets no invitation, whichever path queued this job.
+ */
 export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefinition; io: JobRunIO }) => {
   const { userId, documentId, recipientId, requestMetadata } = payload;
 
@@ -56,6 +65,18 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
       },
       include: {
         documentMeta: true,
+        envelopeItems: {
+          select: {
+            documentData: {
+              select: {
+                type: true,
+                id: true,
+                data: true,
+                initialData: true,
+              },
+            },
+          },
+        },
         user: {
           select: {
             disabled: true,
@@ -113,6 +134,30 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
   // Don't send signing invitations if the organisation has email sending disabled or the owner is disabled (e.g. banned).
   if (envelope.user.disabled || emailsDisabled) {
     return;
+  }
+
+  // The callers check the PDF before queuing this job, but it may have changed
+  // since (a two-step upload URL still accepts a new file), so check the bytes
+  // stored now. Errors fetching the file are not refusals and propagate.
+  if (envelope.internalVersion === 1) {
+    for (const envelopeItem of envelope.envelopeItems) {
+      const pdf = await getFileServerSide(envelopeItem.documentData);
+      const refusal = await assertLegacyEnvelopeAcceptsPdf(pdf).then(
+        () => null,
+        (err: unknown) => AppError.parseError(err),
+      );
+
+      if (refusal) {
+        io.logger.warn({
+          msg: 'Signing invitation dropped: the document PDF fails the send check',
+          envelopeId: envelope.id,
+          recipientId: recipient.id,
+          code: refusal.code,
+        });
+
+        return;
+      }
+    }
   }
 
   const customEmail = envelope?.documentMeta;

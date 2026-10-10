@@ -1,0 +1,12 @@
+{
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.stryker.config.ts" },
+  "mutate": ["server-only/directory/reconcile-directory-access.ts"],
+  "reporters": ["clear-text", "json", "html"],
+  "jsonReporter": { "fileName": "reports/mutation/reconcile-directory-access.json" },
+  "htmlReporter": { "fileName": "reports/mutation/reconcile-directory-access.html" },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "concurrency": 4
+}

@@ -195,18 +195,6 @@ export const EmbedSignDocumentV2ClientPage = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasFinishedInit]);
 
-  // Listen for document completion events from the envelope signing context
-  useEffect(() => {
-    if (isCompleted) {
-      onDocumentCompleted({
-        token: recipient.token,
-        envelopeId: envelope.id,
-        documentId: mapSecondaryIdToDocumentId(envelope.secondaryId),
-        recipientId: recipient.id,
-      });
-    }
-  }, [isCompleted, envelope.id, recipient.id, recipient.token]);
-
   // Listen for document rejection events
   useEffect(() => {
     if (isRejected) {

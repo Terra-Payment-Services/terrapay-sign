@@ -402,10 +402,10 @@ describe('the local development escape hatch', () => {
   });
 
   it('cannot be opened on a deployment served over https', async () => {
-    // Covers a deployment that never set NODE_ENV. sign.terrapay.com is https,
+    // Covers a deployment that never set NODE_ENV. sign.example.com is https,
     // and the apex carries HSTS, so there is no plain-http way to run it.
     vi.stubEnv('NEXT_PRIVATE_OIDC_ALLOW_LOCAL_AUTHORITY', 'true');
-    vi.stubEnv('NEXT_PUBLIC_WEBAPP_URL', 'https://sign.terrapay.com');
+    vi.stubEnv('NEXT_PUBLIC_WEBAPP_URL', 'https://sign.example.com');
 
     await expect(
       fetchConfiguration(localConfiguration(), {

@@ -44,6 +44,13 @@ export enum AppErrorCode {
   ENVELOPE_TSP_LOCKED = 'ENVELOPE_TSP_LOCKED',
 
   /**
+   * A request that writes a new revision of an envelope item's PDF lost the
+   * race to other requests on the same item more times than it retries.
+   * Nothing was saved, and sending the request again is safe.
+   */
+  ENVELOPE_ITEM_REVISION_CONFLICT = 'ENVELOPE_ITEM_REVISION_CONFLICT',
+
+  /**
    * A completion request was made for a recipient that has already signed.
    * Thrown for retried, stale or concurrent duplicate submissions so callers
    * can resolve them idempotently instead of surfacing an error.
@@ -70,6 +77,18 @@ export enum AppErrorCode {
    * signer has no signature field.
    */
   MISSING_SIGNATURE_FIELD = 'MISSING_SIGNATURE_FIELD',
+
+  /**
+   * An uploaded PDF needs a password to open. One that opens without a
+   * password and carries only owner restrictions is accepted.
+   */
+  PASSWORD_PROTECTED_DOCUMENT = 'PASSWORD_PROTECTED_DOCUMENT',
+
+  /**
+   * An uploaded PDF carries a signature that already fails to verify, so the
+   * file was changed after it was signed and before it reached us.
+   */
+  SIGNATURE_ALREADY_INVALID = 'SIGNATURE_ALREADY_INVALID',
 
   /**
    * CSC (Cloud Signature Consortium) error codes. See the CSC QES V1 spec
@@ -119,7 +138,10 @@ export const genericErrorCodeToTrpcErrorCodeMap: Record<string, { code: string; 
   [AppErrorCode.ENVELOPE_CANCELLED]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.ENVELOPE_LEGACY]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.ENVELOPE_TSP_LOCKED]: { code: 'BAD_REQUEST', status: 400 },
+  [AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT]: { code: 'CONFLICT', status: 409 },
   [AppErrorCode.MISSING_SIGNATURE_FIELD]: { code: 'BAD_REQUEST', status: 400 },
+  [AppErrorCode.PASSWORD_PROTECTED_DOCUMENT]: { code: 'BAD_REQUEST', status: 400 },
+  [AppErrorCode.SIGNATURE_ALREADY_INVALID]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.RECIPIENT_HAS_UNSIGNED_FIELDS]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.RECIPIENT_OUT_OF_TURN]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.CSC_INSTANCE_MODE_MISMATCH]: { code: 'BAD_REQUEST', status: 400 },
@@ -314,7 +336,7 @@ export class AppError extends Error {
   }
 
   static toRestAPIError(err: unknown): {
-    status: 400 | 401 | 403 | 404 | 500 | 501;
+    status: 400 | 401 | 403 | 404 | 409 | 500 | 501;
     body: { message: string };
   } {
     const error = AppError.parseError(err);
@@ -330,6 +352,8 @@ export class AppError extends Error {
         AppErrorCode.ENVELOPE_LEGACY,
         AppErrorCode.ENVELOPE_TSP_LOCKED,
         AppErrorCode.MISSING_SIGNATURE_FIELD,
+        AppErrorCode.PASSWORD_PROTECTED_DOCUMENT,
+        AppErrorCode.SIGNATURE_ALREADY_INVALID,
         AppErrorCode.RECIPIENT_HAS_UNSIGNED_FIELDS,
         AppErrorCode.RECIPIENT_OUT_OF_TURN,
         AppErrorCode.CSC_INSTANCE_MODE_MISMATCH,
@@ -343,6 +367,7 @@ export class AppError extends Error {
       .with(AppErrorCode.UNAUTHORIZED, () => 401 as const)
       .with(AppErrorCode.FORBIDDEN, AppErrorCode.CSC_UNLICENSED, () => 403 as const)
       .with(AppErrorCode.NOT_FOUND, () => 404 as const)
+      .with(AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT, () => 409 as const)
       .with(AppErrorCode.NOT_IMPLEMENTED, () => 501 as const)
       .otherwise(() => 500 as const);
 

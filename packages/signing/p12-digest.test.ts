@@ -37,10 +37,26 @@ let unsignedPdf = new Uint8Array();
 const openssl = (args: string[]) =>
   execFileSync('openssl', args, { cwd: workDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
+/** The DER object at the start of `bytes`, its tag and length header included. */
+const derPrefix = (bytes: Buffer) => {
+  const first = bytes[1];
+
+  if (first < 0x80) {
+    return bytes.subarray(0, 2 + first);
+  }
+
+  const lengthBytes = first & 0x7f;
+  const length = bytes.subarray(2, 2 + lengthBytes).reduce((total, byte) => total * 256 + byte, 0);
+
+  return bytes.subarray(0, 2 + lengthBytes + length);
+};
+
 /**
  * Pull the CMS blob and the bytes it covers out of a signed PDF, the way any
  * verifier does: read /ByteRange, join the two covered spans, and hex-decode
- * /Contents, dropping the zero padding libpdf leaves in the placeholder.
+ * /Contents up to the length its DER header declares. The rest is the zero
+ * padding libpdf leaves in the placeholder; stripping trailing zeros instead
+ * would also cut a CMS whose last byte is 0x00.
  */
 const extractSignature = (signed: Uint8Array) => {
   const buffer = Buffer.from(signed);
@@ -60,7 +76,7 @@ const extractSignature = (signed: Uint8Array) => {
       buffer.subarray(start, start + firstLength),
       buffer.subarray(secondStart, secondStart + secondLength),
     ]),
-    cms: Buffer.from(contents[1].replace(/(?:00)+$/, ''), 'hex'),
+    cms: derPrefix(Buffer.from(contents[1], 'hex')),
   };
 };
 
@@ -132,6 +148,22 @@ afterAll(() => {
 });
 
 const createSigner = async () => await P12Signer.create(p12Bytes, '', { buildChain: false });
+
+describe('extractSignature', () => {
+  it('keeps a CMS whose last byte is zero', () => {
+    // A SEQUENCE of one INTEGER 0, ending 0x00, then the placeholder's padding.
+    const pdf = Buffer.from('/ByteRange [0 1 2 1] /Contents <3003020100000000>', 'latin1');
+
+    expect(extractSignature(pdf).cms.toString('hex')).toBe('3003020100');
+  });
+
+  it('reads a long-form length', () => {
+    const cms = `3081830281800${'0'.repeat(255)}`;
+    const pdf = Buffer.from(`/ByteRange [0 1 2 1] /Contents <${cms}0000>`, 'latin1');
+
+    expect(extractSignature(pdf).cms.toString('hex')).toBe(cms);
+  });
+});
 
 describe('P12 signatures verify under the digest they declare', () => {
   it.each(DIGESTS)('%s produces a CMS an independent verifier accepts', async (digestAlgorithm) => {

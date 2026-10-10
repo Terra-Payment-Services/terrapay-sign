@@ -56,6 +56,7 @@ export const createDocumentTemporaryRoute = authenticatedProcedure
       userId: ctx.user.id,
       teamId,
       normalizePdf: false, // Not normalizing because of presigned URL.
+      isPdfUploadPending: true,
       internalVersion: 1,
       data: {
         type: EnvelopeType.DOCUMENT,

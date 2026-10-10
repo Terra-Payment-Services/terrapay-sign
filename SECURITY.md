@@ -19,7 +19,7 @@ In scope is the application code in this repository, including everything TerraP
 
 - Sign-in through Microsoft Entra, account linking and session handling
 - Access to documents, envelopes and files across users, teams and recipients
-- Presign and recipient tokens
+- Recipient tokens
 - Server-side request forgery, DNS rebinding and other outbound request handling
 - Webhook delivery and signing
 - Document sealing, signatures, timestamps and the audit trail

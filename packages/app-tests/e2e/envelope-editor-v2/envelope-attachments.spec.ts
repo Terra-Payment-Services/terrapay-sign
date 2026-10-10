@@ -3,12 +3,9 @@ import { prisma } from '@documenso/prisma';
 import { expect, type Page, test } from '@playwright/test';
 
 import {
-  addEnvelopeItemPdf,
   getEnvelopeEditorSettingsTrigger,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   type TEnvelopeEditorSurface,
 } from '../fixtures/envelope-editor';
 import { expectToastTextToBeVisible } from '../fixtures/generic';
@@ -199,47 +196,6 @@ const runAttachmentFlow = async (surface: TEnvelopeEditorSurface): Promise<Attac
   };
 };
 
-const runEmbeddedAttachmentFlow = async (surface: TEnvelopeEditorSurface): Promise<AttachmentFlowResult> => {
-  const externalId = `e2e-attachments-${nanoid()}`;
-
-  await updateExternalId(surface, externalId);
-  await openAttachmentsPopover(surface.root);
-
-  // Create first attachment.
-  await addAttachment(surface.root, TEST_ATTACHMENTS.first);
-  await expectToastTextToBeVisible(surface.root, 'Attachment added successfully.');
-  await assertAttachmentVisibleInPopover(surface.root, TEST_ATTACHMENTS.first);
-  await assertAttachmentCount(surface.root, 1);
-
-  // Create second attachment.
-  await addAttachment(surface.root, TEST_ATTACHMENTS.second);
-  await expectToastTextToBeVisible(surface.root, 'Attachment added successfully.');
-  await assertAttachmentVisibleInPopover(surface.root, TEST_ATTACHMENTS.second);
-  await assertAttachmentCount(surface.root, 2);
-
-  // Create third attachment.
-  await addAttachment(surface.root, TEST_ATTACHMENTS.third);
-  await expectToastTextToBeVisible(surface.root, 'Attachment added successfully.');
-  await assertAttachmentVisibleInPopover(surface.root, TEST_ATTACHMENTS.third);
-  await assertAttachmentCount(surface.root, 3);
-
-  // Delete first attachment.
-  await getAttachmentDeleteButtons(surface.root).first().click();
-  await expectToastTextToBeVisible(surface.root, 'Attachment removed successfully.');
-
-  await expect(getAttachmentItems(surface.root)).toHaveCount(2);
-  await assertAttachmentNotVisibleInPopover(surface.root, TEST_ATTACHMENTS.first.label);
-  await assertAttachmentVisibleInPopover(surface.root, TEST_ATTACHMENTS.second);
-  await assertAttachmentVisibleInPopover(surface.root, TEST_ATTACHMENTS.third);
-  await assertAttachmentCount(surface.root, 2);
-
-  return {
-    externalId,
-    expectedAttachments: [TEST_ATTACHMENTS.second, TEST_ATTACHMENTS.third],
-    deletedAttachment: TEST_ATTACHMENTS.first,
-  };
-};
-
 const assertAttachmentsPersistedInDatabase = async ({
   surface,
   externalId,
@@ -275,43 +231,6 @@ test.describe('template editor', () => {
   test('add, verify and delete attachments', async ({ page }) => {
     const surface = await openTemplateEnvelopeEditor(page);
     const result = await runAttachmentFlow(surface);
-
-    await assertAttachmentsPersistedInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded create', () => {
-  test('add, verify and delete attachments', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-attachments',
-    });
-
-    await addEnvelopeItemPdf(surface.root, 'embedded-document-attachments.pdf');
-
-    const result = await runEmbeddedAttachmentFlow(surface);
-    await persistEmbeddedEnvelope(surface);
-
-    await assertAttachmentsPersistedInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('add, verify and delete attachments', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-attachments',
-    });
-
-    const result = await runEmbeddedAttachmentFlow(surface);
-    await persistEmbeddedEnvelope(surface);
 
     await assertAttachmentsPersistedInDatabase({
       surface,

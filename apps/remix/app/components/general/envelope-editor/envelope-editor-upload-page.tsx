@@ -3,10 +3,8 @@ import { useEnvelopeAutosave } from '@documenso/lib/client-only/hooks/use-envelo
 import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
 import { useCurrentEnvelopeEditor } from '@documenso/lib/client-only/providers/envelope-editor-provider';
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
-import type { TEditorEnvelope } from '@documenso/lib/types/envelope-editor';
 import { nanoid } from '@documenso/lib/universal/id';
 import { megabytesToBytes } from '@documenso/lib/universal/unit-convertions';
-import { PRESIGNED_ENVELOPE_ITEM_ID_PREFIX } from '@documenso/lib/utils/embed-config';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
 import { trpc } from '@documenso/trpc/react';
 import type { TCreateEnvelopeItemsPayload } from '@documenso/trpc/server/envelope-router/create-envelope-items.types';
@@ -53,7 +51,6 @@ export const EnvelopeEditorUploadPage = () => {
     setLocalEnvelope,
     editorFields,
     editorConfig,
-    isEmbedded,
     navigateToStep,
     registerExternalFlush,
     registerPendingMutation,
@@ -157,44 +154,17 @@ export const EnvelopeEditorUploadPage = () => {
   const onFileDrop = async (files: File[]) => {
     const newUploadingFiles: (LocalFile & {
       file: File;
-      data: TEditorEnvelope['envelopeItems'][number]['data'] | null;
-    })[] = await Promise.all(
-      files.map(async (file) => {
-        return {
-          id: nanoid(),
-          envelopeItemId: isEmbedded ? `${PRESIGNED_ENVELOPE_ITEM_ID_PREFIX}${nanoid()}` : null,
-          title: file.name,
-          file,
-          isUploading: isEmbedded ? false : true,
-          isReplacing: false,
-          // Clone the buffer so it can be read multiple times (File.arrayBuffer() consumes the stream once)
-          data: isEmbedded ? new Uint8Array((await file.arrayBuffer()).slice(0)) : null,
-          isError: false,
-        };
-      }),
-    );
+    })[] = files.map((file) => ({
+      id: nanoid(),
+      envelopeItemId: null,
+      title: file.name,
+      file,
+      isUploading: true,
+      isReplacing: false,
+      isError: false,
+    }));
 
     setLocalFiles((prev) => [...prev, ...newUploadingFiles]);
-
-    // Directly commit the files for embedded documents since those are not uploaded
-    // until the end of the embedded flow.
-    if (isEmbedded) {
-      setLocalEnvelope({
-        envelopeItems: [
-          ...envelope.envelopeItems,
-          ...newUploadingFiles.map((file) => ({
-            id: file.envelopeItemId!,
-            title: file.title,
-            order: envelope.envelopeItems.length + 1,
-            envelopeId: envelope.id,
-            data: file.data!,
-            documentDataId: '',
-          })),
-        ],
-      });
-
-      return;
-    }
 
     const payload = {
       envelopeId: envelope.id,
@@ -216,7 +186,7 @@ export const EnvelopeEditorUploadPage = () => {
       console.error(error);
 
       analytics.captureException(error, {
-        source: isEmbedded ? 'embed' : 'editor',
+        source: 'editor',
         location: 'create_envelope_items',
         envelopeId: envelope.id,
       });
@@ -255,33 +225,6 @@ export const EnvelopeEditorUploadPage = () => {
     setLocalFiles((prev) => prev.map((f) => (f.envelopeItemId === envelopeItemId ? { ...f, isReplacing: true } : f)));
 
     try {
-      if (isEmbedded) {
-        // For embedded mode, store the file data locally on the envelope item.
-        // The actual replacement will happen when the embed flow submits.
-        const arrayBuffer = await file.arrayBuffer();
-        const data = new Uint8Array(arrayBuffer.slice(0));
-
-        // Count pages in the new PDF to remove out-of-bounds fields.
-        const { PDF } = await import('@libpdf/core');
-        const pdfDoc = await PDF.load(data);
-        const newPageCount = pdfDoc.getPageCount();
-
-        // Remove fields that are on pages beyond the new PDF's page count.
-        const remainingFields = envelope.fields.filter(
-          (field) => field.envelopeItemId !== envelopeItemId || field.page <= newPageCount,
-        );
-
-        setLocalEnvelope({
-          envelopeItems: envelope.envelopeItems.map((item) => (item.id === envelopeItemId ? { ...item, data } : item)),
-          fields: remainingFields,
-        });
-
-        editorFields.resetForm(remainingFields);
-
-        return;
-      }
-
-      // Normal mode: upload immediately via tRPC.
       const payload = {
         envelopeId: envelope.id,
         envelopeItemId,
@@ -299,7 +242,7 @@ export const EnvelopeEditorUploadPage = () => {
       console.error(error);
 
       analytics.captureException(error, {
-        source: isEmbedded ? 'embed' : 'editor',
+        source: 'editor',
         location: 'replace_pdf',
         envelopeId: envelope.id,
       });
@@ -352,31 +295,6 @@ export const EnvelopeEditorUploadPage = () => {
 
   const { triggerSave: debouncedUpdateEnvelopeItems, flush: flushUpdateEnvelopeItems } = useEnvelopeAutosave(
     async (files: LocalFile[]) => {
-      if (isEmbedded) {
-        const nextEnvelopeItems = files
-          .filter((item) => item.envelopeItemId)
-          .map((item, index) => {
-            const originalEnvelopeItem = envelope.envelopeItems.find(
-              (envelopeItem) => envelopeItem.id === item.envelopeItemId,
-            );
-
-            return {
-              id: item.envelopeItemId || '',
-              title: item.title,
-              order: index + 1,
-              envelopeId: envelope.id,
-              data: originalEnvelopeItem?.data,
-              documentDataId: originalEnvelopeItem?.documentDataId || '',
-            };
-          });
-
-        setLocalEnvelope({
-          envelopeItems: nextEnvelopeItems,
-        });
-
-        return;
-      }
-
       await updateEnvelopeItems({
         envelopeId: envelope.id,
         data: files
@@ -388,7 +306,7 @@ export const EnvelopeEditorUploadPage = () => {
           })),
       });
     },
-    isEmbedded ? 0 : 1000,
+    1000,
   );
 
   const flushUpdateEnvelopeItemsRef = useRef(flushUpdateEnvelopeItems);
@@ -594,37 +512,25 @@ export const EnvelopeEditorUploadPage = () => {
                                   </Button>
                                 )}
 
-                              {localFile.envelopeItemId &&
-                                uploadConfig?.allowDelete &&
-                                (isEmbedded ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    data-testid={`envelope-item-remove-button-${localFile.id}`}
-                                    onClick={() => onFileDelete(localFile.envelopeItemId!)}
-                                    disabled={localFile.isReplacing || localFile.isUploading}
-                                  >
-                                    <XIcon className="h-4 w-4" />
-                                  </Button>
-                                ) : (
-                                  <EnvelopeItemDeleteDialog
-                                    canItemBeDeleted={envelopeItemPermissions.canFileBeChanged}
-                                    envelopeId={envelope.id}
-                                    envelopeItemId={localFile.envelopeItemId}
-                                    envelopeItemTitle={localFile.title}
-                                    onDelete={onFileDelete}
-                                    trigger={
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        data-testid={`envelope-item-remove-button-${localFile.id}`}
-                                        disabled={localFile.isReplacing || localFile.isUploading}
-                                      >
-                                        <XIcon className="h-4 w-4" />
-                                      </Button>
-                                    }
-                                  />
-                                ))}
+                              {localFile.envelopeItemId && uploadConfig?.allowDelete && (
+                                <EnvelopeItemDeleteDialog
+                                  canItemBeDeleted={envelopeItemPermissions.canFileBeChanged}
+                                  envelopeId={envelope.id}
+                                  envelopeItemId={localFile.envelopeItemId}
+                                  envelopeItemTitle={localFile.title}
+                                  onDelete={onFileDelete}
+                                  trigger={
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      data-testid={`envelope-item-remove-button-${localFile.id}`}
+                                      disabled={localFile.isReplacing || localFile.isUploading}
+                                    >
+                                      <XIcon className="h-4 w-4" />
+                                    </Button>
+                                  }
+                                />
+                              )}
                             </div>
                           </div>
                         )}

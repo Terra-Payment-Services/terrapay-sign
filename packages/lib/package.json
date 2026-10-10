@@ -59,7 +59,7 @@
     "pino-pretty": "^13.1.2",
     "playwright": "1.56.1",
     "postcss": "^8.5.19",
-    "postcss-selector-parser": "^7.1.4",
+    "postcss-selector-parser": "^7.1.6",
     "react": "^19.2.7",
     "remeda": "^2.32.0",
     "sharp": "0.35.5",
@@ -68,6 +68,8 @@
   },
   "devDependencies": {
     "@playwright/browser-chromium": "1.56.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/luxon": "^3.7.1",
     "@types/pg": "^8.15.6",
     "vitest": "^4.0.18"

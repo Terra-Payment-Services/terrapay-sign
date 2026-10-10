@@ -73,7 +73,7 @@ const DISCOVERY_MAX_BYTES = 256 * 1024;
  *
  * So the decision moved off the URL and onto the environment. Opening it needs
  * a variable somebody set on purpose, on a deployment that is not running as
- * NODE_ENV production and is served over plain http. sign.terrapay.com fails
+ * NODE_ENV production and is served over plain http. sign.example.com fails
  * both of those environment conditions on its own, and the second is there to
  * cover a deployment that forgot to set NODE_ENV at all.
  */

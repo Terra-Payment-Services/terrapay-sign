@@ -10,6 +10,8 @@ describe('admin claim feature flags', () => {
     'authenticationPortal',
     'emailDomains',
     'cscQesSigning',
+    'embedAuthoring',
+    'embedAuthoringWhiteLabel',
   ] as const)('does not offer %s, which nothing reads', (key) => {
     expect(offered).not.toContain(key);
 

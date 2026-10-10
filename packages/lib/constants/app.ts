@@ -214,6 +214,26 @@ export const NEXT_PRIVATE_ENTRA_CLIENT_SECRET = () => env('NEXT_PRIVATE_ENTRA_CL
 export const NEXT_PRIVATE_ENTRA_ACCESS_GROUP_ID = () => env('NEXT_PRIVATE_ENTRA_ACCESS_GROUP_ID');
 
 /**
+ * Origins the reconciliation sends its Graph reads and its token request to.
+ *
+ * Defaults are Microsoft's. The overrides exist so the end-to-end tests can
+ * stand a stub in Microsoft's place, and they are ignored in production, so the
+ * client secret and the Graph token go only to Microsoft there. A production
+ * server given either one refuses to start (`assertDirectoryReconcileIsLive`).
+ */
+const entraBaseUrlOverride = (variable: 'NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL' | 'NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL') =>
+  env('NODE_ENV') === 'production' ? undefined : env(variable);
+
+export const NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL = () =>
+  (entraBaseUrlOverride('NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL') || 'https://graph.microsoft.com').replace(/\/+$/, '');
+
+export const NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL = () =>
+  (entraBaseUrlOverride('NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL') || 'https://login.microsoftonline.com').replace(
+    /\/+$/,
+    '',
+  );
+
+/**
  * Whether the reconciliation job only reports what it would do.
  *
  * Dry run is the default and stays on until an operator sets the variable to
@@ -233,37 +253,79 @@ export const ENTRA_RECONCILE_DRY_RUN = () => env('NEXT_PRIVATE_ENTRA_RECONCILE_D
  * genuinely small deployment and high enough to catch the empty and near-empty
  * answers that misconfiguration produces. Set it near your real headcount for a
  * tighter guard.
+ *
+ * Only an unset or empty variable takes the default. Any other value must be a
+ * positive whole number, and anything else throws, so a typo fails the job and
+ * the production start-up check rather than quietly lowering the floor to ten.
+ *
+ * @throws {Error} when the variable is set to anything but a positive whole number
  */
 export const ENTRA_RECONCILE_MINIMUM_MEMBERS = () => {
-  // Read the raw value first: a shell-supplied `FOO=` arrives as an empty
-  // string, which `Number` turns into 0 and would silently switch the guard
-  // off. An unusable value falls back to the default rather than to zero.
   const raw = env('NEXT_PRIVATE_ENTRA_RECONCILE_MINIMUM_MEMBERS');
 
   if (!raw) {
     return 10;
   }
 
-  const parsed = Number(raw);
+  const value = raw.trim();
+  const parsed = Number(value);
 
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+  // The digit check rules out signs, exponents and hex, which `Number` accepts.
+  // The safe integer check rules out a digit string so long that it rounds or
+  // becomes Infinity, which would pass any comparison meant to stop it.
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`NEXT_PRIVATE_ENTRA_RECONCILE_MINIMUM_MEMBERS must be a positive whole number, not "${raw}"`);
+  }
+
+  return parsed;
 };
 
 /**
  * Largest proportion of the accounts considered in a run that the job is
- * willing to disable, as a fraction between 0 and 1.
+ * willing to disable, as a fraction above 0 and at most 0.5.
  *
  * Default 0.1. Ordinary attrition moves a fraction of a percent of staff in the
  * interval between runs, so ten percent in one run is already two orders of
  * magnitude above normal and reads as a directory or configuration fault rather
  * than an offboarding. Breaching it aborts the whole run rather than disabling
  * the first few.
+ *
+ * The ceiling is 0.5 because a guard that lets one run disable most of the
+ * instance can no longer tell a broken directory read from attrition, which is
+ * the only thing it is for. As with the minimum, only an unset variable takes the
+ * default and any other unusable value throws.
+ *
+ * @throws {Error} when the variable is set to anything outside (0, 0.5]
  */
 export const ENTRA_RECONCILE_MAX_DISABLE_RATIO = () => {
-  const parsed = Number(env('NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO'));
+  const raw = env('NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO');
 
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : 0.1;
+  if (!raw) {
+    return 0.1;
+  }
+
+  const parsed = raw.trim() ? Number(raw) : NaN;
+
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 0.5) {
+    throw new Error(`NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO must be above 0 and at most 0.5, not "${raw}"`);
+  }
+
+  return parsed;
 };
+
+/**
+ * Addresses the reconciliation never disables, as a comma separated list
+ * compared without regard to case.
+ *
+ * For service and shared accounts that sign documents but are not people in the
+ * directory. The two system accounts that hold orphaned documents are excluded
+ * already and need not be listed.
+ */
+export const ENTRA_RECONCILE_EXEMPT_EMAILS = () =>
+  (env('NEXT_PRIVATE_ENTRA_RECONCILE_EXEMPT_EMAILS') ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0);
 
 /**
  * SharePoint contract archive.

@@ -3,10 +3,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * A presign token is a bearer credential. Read from the query string it is written to the load
- * balancer's access logs and the browser's history, so the file routes take it from the
- * `Authorization` header only.
- * The recipient-token routes carry their token in the path and read no query either.
+ * A token read from the query string is written to the load balancer's access logs and the
+ * browser's history. The file routes once took a presign token there; presign tokens are removed,
+ * and the recipient-token routes carry their token in the path, so no file route reads the query.
  */
 
 const FILES_ROOT = path.resolve(__dirname, '../../apps/remix/server/api/files');
@@ -42,6 +41,6 @@ describe('file routes', () => {
     expect(QUERY_READ.test(`const { token } = c.req.query();`)).toBe(true);
     expect(QUERY_READ.test(`const queryToken = c.req.query('token');`)).toBe(true);
     expect(QUERY_READ.test(`sValidator('query', ZGetEnvelopeItemPdfRequestQuerySchema),`)).toBe(true);
-    expect(QUERY_READ.test(`const token = getPresignBearerToken(c);`)).toBe(false);
+    expect(QUERY_READ.test(`const session = await getOptionalSession(c);`)).toBe(false);
   });
 });

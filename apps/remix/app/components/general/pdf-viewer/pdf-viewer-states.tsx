@@ -9,7 +9,22 @@ export const PdfViewerLoadingState = () => {
   );
 };
 
-export const PdfViewerErrorState = () => {
+export const PdfViewerErrorState = ({ isPasswordProtected = false }: { isPasswordProtected?: boolean }) => {
+  if (isPasswordProtected) {
+    return (
+      <div className="flex h-[80vh] max-h-[60rem] flex-col items-center justify-center bg-white/50 dark:bg-background">
+        <div className="text-center text-muted-foreground">
+          <p>
+            <Trans>This document is password-protected and cannot be opened.</Trans>
+          </p>
+          <p className="mt-1 text-sm">
+            <Trans>Ask for a copy without a password.</Trans>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[80vh] max-h-[60rem] flex-col items-center justify-center bg-white/50 dark:bg-background">
       <div className="text-center text-muted-foreground">

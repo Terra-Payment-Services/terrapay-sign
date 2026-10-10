@@ -2,7 +2,10 @@ import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { PlaceholderInfo } from '@documenso/lib/server-only/pdf/auto-place-fields';
 import { convertPlaceholdersToFieldInputs } from '@documenso/lib/server-only/pdf/auto-place-fields';
 import { findRecipientByPlaceholder } from '@documenso/lib/server-only/pdf/helpers';
-import { normalizePdf as makeNormalizedPdf } from '@documenso/lib/server-only/pdf/normalize-pdf';
+import {
+  assertLegacyEnvelopeAcceptsPdf,
+  normalizePdf as makeNormalizedPdf,
+} from '@documenso/lib/server-only/pdf/normalize-pdf';
 import { ZDefaultRecipientsSchema } from '@documenso/lib/types/default-recipients';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
@@ -74,6 +77,11 @@ export type CreateEnvelopeOptions = {
   userId: number;
   teamId: number;
   normalizePdf?: boolean;
+  /**
+   * The items' files have not been uploaded yet (two-step creation through a
+   * presigned URL), so the V1 owner-restriction check waits for `sendDocument`.
+   */
+  isPdfUploadPending?: boolean;
   internalVersion: 1 | 2;
   data: {
     type: EnvelopeType;
@@ -122,6 +130,7 @@ export const createEnvelope = async ({
   userId,
   teamId,
   normalizePdf,
+  isPdfUploadPending = false,
   data,
   attachments,
   meta,
@@ -237,6 +246,16 @@ export const createEnvelope = async ({
     throw new AppError(AppErrorCode.INVALID_BODY, {
       message: `Envelopes signed at '${signatureLevel}' require internalVersion=2; the legacy V1 envelope shape cannot host TSP signing.`,
     });
+  }
+
+  if (internalVersion === 1 && !isPdfUploadPending) {
+    for (const item of data.envelopeItems) {
+      const documentData = await prisma.documentData.findFirst({ where: { id: item.documentDataId } });
+
+      if (documentData) {
+        await assertLegacyEnvelopeAcceptsPdf(await getFileServerSide(documentData));
+      }
+    }
   }
 
   let envelopeItems = data.envelopeItems;

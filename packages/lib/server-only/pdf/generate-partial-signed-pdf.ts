@@ -2,7 +2,10 @@ import type { FieldWithSignature } from '@documenso/prisma/types/field-with-sign
 import { PDF } from '@libpdf/core';
 import { groupBy } from 'remeda';
 
+import { AppError } from '../../errors/app-error';
+import { inspectExistingSignatures } from './existing-signatures';
 import { insertFieldInPDFV2 } from './insert-field-in-pdf-v2';
+import { assertSignedBytesUntouched } from './normalize-pdf';
 
 type GeneratePartialSignedPdfOptions = {
   pdfData: Uint8Array;
@@ -20,7 +23,20 @@ type GeneratePartialSignedPdfOptions = {
 export const generatePartialSignedPdf = async ({ pdfData, fields }: GeneratePartialSignedPdfOptions) => {
   const pdfDoc = await PDF.load(pdfData);
 
-  pdfDoc.flattenAll();
+  // A counterparty's signature survives only if the form is flattened around it
+  // and the result is appended rather than rewritten, as in `normalizePdf`.
+  const existingSignatures = inspectExistingSignatures(pdfDoc);
+  const preserveSignatures = existingSignatures.signedFieldCount > 0;
+
+  if (preserveSignatures && !existingSignatures.canPreserve) {
+    throw new AppError('INVALID_DOCUMENT_FILE', {
+      message:
+        'This document carries an existing signature that a pending copy cannot preserve ' +
+        `(${existingSignatures.blocker ?? 'unknown reason'}).`,
+    });
+  }
+
+  pdfDoc.flattenAll({ form: { skipSignatures: preserveSignatures } });
   pdfDoc.upgradeVersion('1.7');
 
   const fieldsGroupedByPage = groupBy(fields, (field) => field.page);
@@ -70,7 +86,15 @@ export const generatePartialSignedPdf = async ({ pdfData, fields }: GeneratePart
     });
   }
 
-  pdfDoc.flattenAll();
+  pdfDoc.flattenAll({ form: { skipSignatures: preserveSignatures } });
 
-  return await pdfDoc.save({ useXRefStream: true });
+  if (!preserveSignatures) {
+    return await pdfDoc.save({ useXRefStream: true });
+  }
+
+  const bytes = await pdfDoc.save({ incremental: true });
+
+  assertSignedBytesUntouched(pdfData, bytes);
+
+  return bytes;
 };

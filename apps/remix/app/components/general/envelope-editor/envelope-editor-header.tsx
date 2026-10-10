@@ -23,7 +23,6 @@ import { EnvelopeRedistributeDialog } from '~/components/dialogs/envelope-redist
 import { TemplateUseDialog } from '~/components/dialogs/template-use-dialog';
 import { BrandingLogo } from '~/components/general/branding-logo';
 import { DocumentAttachmentsPopover } from '~/components/general/document/document-attachments-popover';
-import { EmbeddedEditorAttachmentPopover } from '~/components/general/document/embedded-editor-attachment-popover';
 import { EnvelopeEditorSettingsDialog } from '~/components/general/envelope-editor/envelope-editor-settings-dialog';
 
 import { TemplateDirectLinkBadge } from '../template/template-direct-link-badge';
@@ -32,20 +31,10 @@ import { EnvelopeItemTitleInput } from './envelope-editor-title-input';
 export default function EnvelopeEditorHeader() {
   const { t } = useLingui();
 
-  const {
-    envelope,
-    isDocument,
-    isTemplate,
-    isEmbedded,
-    updateEnvelope,
-    autosaveError,
-    relativePath,
-    editorConfig,
-    flushAutosave,
-  } = useCurrentEnvelopeEditor();
+  const { envelope, isDocument, isTemplate, updateEnvelope, autosaveError, relativePath, editorConfig } =
+    useCurrentEnvelopeEditor();
 
   const {
-    embedded,
     general: { allowConfigureEnvelopeTitle },
     actions: { allowAttachments, allowDistributing },
   } = editorConfig;
@@ -55,29 +44,13 @@ export default function EnvelopeEditorHeader() {
     [envelope, envelope.recipients],
   );
 
-  const handleCreateEmbeddedEnvelope = async () => {
-    const latestEnvelope = await flushAutosave();
-
-    embedded?.onCreate?.(latestEnvelope);
-  };
-
-  const handleUpdateEmbeddedEnvelope = async () => {
-    const latestEnvelope = await flushAutosave();
-
-    embedded?.onUpdate?.(latestEnvelope);
-  };
-
   return (
     <nav className="w-full border-border border-b bg-background px-4 py-3 md:px-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center space-x-4">
-          {editorConfig.embedded?.customBrandingLogo ? (
-            <img src={`/api/branding/logo/team/${envelope.teamId}`} alt="Logo" className="h-6 w-auto" />
-          ) : (
-            <Link to="/">
-              <BrandingLogo className="h-6 w-auto" />
-            </Link>
-          )}
+          <Link to="/">
+            <BrandingLogo className="h-6 w-auto" />
+          </Link>
           <Separator orientation="vertical" className="h-6 shrink-0" />
 
           <div className="flex min-w-0 items-center space-x-2">
@@ -178,12 +151,7 @@ export default function EnvelopeEditorHeader() {
         </div>
 
         <div className="flex shrink-0 items-center space-x-2">
-          {allowAttachments &&
-            (isEmbedded ? (
-              <EmbeddedEditorAttachmentPopover buttonSize="sm" />
-            ) : (
-              <DocumentAttachmentsPopover envelopeId={envelope.id} buttonSize="sm" />
-            ))}
+          {allowAttachments && <DocumentAttachmentsPopover envelopeId={envelope.id} buttonSize="sm" />}
 
           {editorConfig.settings && (
             <EnvelopeEditorSettingsDialog
@@ -195,8 +163,8 @@ export default function EnvelopeEditorHeader() {
             />
           )}
 
-          {match({ isEmbedded, isDocument, isTemplate, allowDistributing })
-            .with({ isEmbedded: false, isDocument: true, allowDistributing: true }, () => (
+          {match({ isDocument, isTemplate, allowDistributing })
+            .with({ isDocument: true, allowDistributing: true }, () => (
               <>
                 <EnvelopeDistributeDialog
                   documentRootPath={relativePath.documentRootPath}
@@ -219,7 +187,7 @@ export default function EnvelopeEditorHeader() {
                 />
               </>
             ))
-            .with({ isEmbedded: false, isTemplate: true, allowDistributing: true }, () => (
+            .with({ isTemplate: true, allowDistributing: true }, () => (
               <TemplateUseDialog
                 envelopeId={envelope.id}
                 templateId={mapSecondaryIdToTemplateId(envelope.secondaryId)}
@@ -235,18 +203,6 @@ export default function EnvelopeEditorHeader() {
             ))
 
             .otherwise(() => null)}
-
-          {embedded?.mode === 'create' && (
-            <Button size="sm" onClick={handleCreateEmbeddedEnvelope}>
-              {isDocument ? <Trans>Create Document</Trans> : <Trans>Create Template</Trans>}
-            </Button>
-          )}
-
-          {embedded?.mode === 'edit' && (
-            <Button size="sm" onClick={handleUpdateEmbeddedEnvelope}>
-              {isDocument ? <Trans>Update Document</Trans> : <Trans>Update Template</Trans>}
-            </Button>
-          )}
         </div>
       </div>
     </nav>

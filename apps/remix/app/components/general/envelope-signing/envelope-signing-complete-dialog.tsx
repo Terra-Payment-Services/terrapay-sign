@@ -168,7 +168,7 @@ export const EnvelopeSignerCompleteDialog = () => {
         throw new Error('Recipient direct token is required');
       }
 
-      const { token } = await createDocumentFromDirectTemplate({
+      const { token, envelopeId, documentId, recipientId } = await createDocumentFromDirectTemplate({
         directTemplateToken: recipient.directToken, // The direct template token is inserted into the recipient token for ease of use.
         directTemplateExternalId,
         directRecipientName: recipientDetails?.name || fullName,
@@ -196,6 +196,8 @@ export const EnvelopeSignerCompleteDialog = () => {
       const redirectUrl = envelope.documentMeta.redirectUrl;
 
       if (onDocumentCompleted) {
+        onDocumentCompleted({ token, documentId, recipientId, envelopeId });
+
         await navigate({
           pathname: `/embed/sign/${token}`,
           search: window.location.search,

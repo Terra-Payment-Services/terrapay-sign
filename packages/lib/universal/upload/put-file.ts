@@ -9,27 +9,7 @@ type File = {
   arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
-/**
- * Options for uploads that are not authorized by a logged-in session.
- *
- * Embedded authoring flows run cross-origin without a session cookie, so they
- * must authorize uploads with their embedding presign token instead.
- */
-export type PutFileOptions = {
-  presignToken?: string;
-};
-
-const buildUploadAuthHeaders = (options?: PutFileOptions): Record<string, string> => {
-  if (!options?.presignToken) {
-    return {};
-  }
-
-  return {
-    Authorization: `Bearer ${options.presignToken}`,
-  };
-};
-
-export const putPdfFile = async (file: File, options?: PutFileOptions) => {
+export const putPdfFile = async (file: File) => {
   const formData = new FormData();
 
   // Create a proper File object from the data
@@ -41,13 +21,16 @@ export const putPdfFile = async (file: File, options?: PutFileOptions) => {
 
   const response = await fetch(formatPath('/api/files/upload-pdf'), {
     method: 'POST',
-    headers: buildUploadAuthHeaders(options),
     body: formData,
   });
 
   if (!response.ok) {
     console.error('Upload failed:', response.statusText);
-    throw new AppError('UPLOAD_FAILED');
+
+    // The server names some refusals, and the upload toasts are keyed on that code.
+    const refusal = AppError.parseFromJSON(await response.json().catch(() => null));
+
+    throw refusal ?? new AppError('UPLOAD_FAILED');
   }
 
   const result: TUploadPdfResponse = await response.json();

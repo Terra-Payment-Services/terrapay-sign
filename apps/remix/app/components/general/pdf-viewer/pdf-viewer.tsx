@@ -1,7 +1,6 @@
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import type { ImageLoadingState, PageRenderData } from '@documenso/lib/client-only/providers/envelope-render-provider';
 import { PDF_VIEWER_PAGE_CLASSNAME } from '@documenso/lib/constants/pdf-viewer';
-import { getPresignRequestHeaders } from '@documenso/lib/utils/envelope-download';
 import { cn } from '@documenso/ui/lib/utils';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -43,11 +42,6 @@ export type PDFViewerProps = {
   data: Uint8Array | string | null;
 
   /**
-   * Presign token sent as a bearer header when `data` is a URL.
-   */
-  presignToken?: string | undefined;
-
-  /**
    * Ref to the scrollable parent container that handles scrolling.
    *
    * This must point to an element with `overflow-y: auto` or `overflow-y: scroll`
@@ -68,7 +62,6 @@ export type PDFViewerProps = {
 export default function PDFViewer({
   className,
   data,
-  presignToken,
   scrollParentRef,
   onDocumentLoad,
   customPageRenderer,
@@ -81,6 +74,7 @@ export default function PDFViewer({
   const $el = useRef<HTMLDivElement>(null);
 
   const [loadingState, setLoadingState] = useState<LoadingState>('loading');
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
 
   const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
 
@@ -105,7 +99,7 @@ export default function PDFViewer({
         let result: Uint8Array | null = typeof data === 'string' ? null : new Uint8Array(data);
 
         if (typeof data === 'string') {
-          const response = await fetch(data, { headers: getPresignRequestHeaders(presignToken) });
+          const response = await fetch(data);
 
           if (!response.ok) {
             throw new Error(`Failed to fetch PDF data: ${response.status}`);
@@ -157,6 +151,11 @@ export default function PDFViewer({
         }
 
         console.error(err);
+
+        // pdf.js names the error it raises for a PDF that needs a password to open.
+        const isPasswordError = err instanceof Error && err.name === 'PasswordException';
+
+        setIsPasswordProtected(isPasswordError);
         setLoadingState('error');
 
         analytics.captureException(err, {
@@ -165,8 +164,10 @@ export default function PDFViewer({
         });
 
         toast({
-          title: t`Error`,
-          description: t`An error occurred while loading the document.`,
+          title: isPasswordError ? t`Password-protected PDF` : t`Error`,
+          description: isPasswordError
+            ? t`This document is password-protected and cannot be opened. Ask for a copy without a password.`
+            : t`An error occurred while loading the document.`,
           variant: 'destructive',
         });
       }
@@ -182,7 +183,7 @@ export default function PDFViewer({
         pdfRef.current = null;
       }
     };
-  }, [data, presignToken]);
+  }, [data]);
 
   // Notify when document is loaded
   useEffect(() => {
@@ -210,7 +211,7 @@ export default function PDFViewer({
       {isLoading && <PdfViewerLoadingState />}
 
       {/* Error State */}
-      {hasError && <PdfViewerErrorState />}
+      {hasError && <PdfViewerErrorState isPasswordProtected={isPasswordProtected} />}
 
       {/* Loaded State */}
       {loadingState === 'loaded' && pages.length > 0 && pdfRef.current && (

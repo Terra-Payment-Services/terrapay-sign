@@ -13,13 +13,14 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 | ----------------------- | ----------------------------------- |
 | Supported formats       | PDF, DOCX                           |
 | Maximum file size       | 50MB (configurable for self-hosted) |
-| Encrypted PDFs          | Not supported                       |
-| Password-protected PDFs | Not supported                       |
+| Owner-restricted PDFs   | Supported (opens without a password) |
+| Password-protected PDFs | Not supported (needs a password to open) |
 | Legacy `.doc` files     | Not supported (convert to DOCX)     |
 
 <Callout type="warn">
-  Documenso does not support password-protected or encrypted PDF files. Remove encryption before
-  uploading.
+  A PDF that needs a password to open cannot be uploaded. Remove the password before uploading. A
+  PDF that opens without a password but restricts editing, as signing tools often produce, is
+  accepted, and any signature already on it is kept.
 </Callout>
 
 ## Supported Formats
@@ -188,9 +189,15 @@ If the problem persists, export the document to PDF from Word and upload the PDF
   service](/docs/self-hosting/configuration/advanced/document-conversion) logs.
 </Accordion>
 
-<Accordion title="You cannot upload encrypted PDFs">
-  The PDF is password-protected or encrypted. Open it in a PDF reader, remove the security settings,
-  and save a new copy.
+<Accordion title="You cannot upload a password-protected PDF">
+  The PDF needs a password to open. Open it in a PDF reader, remove the password, and save a new
+  copy.
+</Accordion>
+
+<Accordion title="The PDF's existing signature is already invalid">
+  The file was changed after somebody signed it, for example by adding protection over the
+  signature, so that signature no longer verifies. Ask the sender for a copy whose signature still
+  verifies. A signature in a format Sign cannot check is refused the same way.
 </Accordion>
 
   <Accordion title="You have reached your document limit">

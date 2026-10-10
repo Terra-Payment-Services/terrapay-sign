@@ -18,10 +18,52 @@ export const FAIR_USE_LIMIT_EXCEEDED_ERROR_MESSAGE = {
   description: msg`Your organisation has reached its plan's fair use limit. Please contact your organisation administrator or support to continue.`,
 };
 
+export const PASSWORD_PROTECTED_DOCUMENT_ERROR_MESSAGE = {
+  title: msg`Password-protected PDF`,
+  description: msg`This PDF needs a password to open. Remove the password and upload it again.`,
+};
+
+export const SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE = {
+  title: msg`Signature already invalid`,
+  description: msg`This PDF's existing signature is already invalid: the file was changed after it was signed. Ask the sender for a copy whose signature still verifies.`,
+};
+
+/** Legacy (V1) documents cannot keep a PDF's owner restrictions through sealing. */
+export const LEGACY_OWNER_PROTECTED_ERROR_MESSAGE = {
+  title: msg`PDF not supported here`,
+  description: msg`This PDF restricts editing, which legacy documents cannot keep. Upload it as an envelope instead.`,
+};
+
+/** Shown to a direct-template signer, who did not choose the PDF and cannot change it. */
+export const DIRECT_TEMPLATE_PDF_RESTRICTED_ERROR_MESSAGE = {
+  title: msg`This document cannot be signed here`,
+  description: msg`The document's PDF restricts editing, which this signing link cannot handle. Please contact the sender.`,
+};
+
+export const DIRECT_TEMPLATE_PASSWORD_PROTECTED_ERROR_MESSAGE = {
+  title: msg`This document cannot be signed here`,
+  description: msg`The document's PDF is password-protected, which this signing link cannot handle. Please contact the sender.`,
+};
+
+/** Sending would rewrite the bytes an existing signature covers, or the PDF cannot be read. */
+export const DISTRIBUTE_INVALID_DOCUMENT_FILE_ERROR_MESSAGE = {
+  title: msg`Document not sent`,
+  description: msg`Preparing this PDF for sending would break the signature it carries, so it was not sent. If it has no signature, the file may be unreadable.`,
+};
+
+export const DIRECT_TEMPLATE_SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE = {
+  title: msg`Signature already invalid`,
+  description: msg`An existing signature on this document is already invalid, so it cannot be signed here. Please contact the sender.`,
+};
+
 export const getDistributeErrorMessage = (code: string): ToastMessageDescriptor => {
   return match(code)
     .with('RECIPIENT_LIMIT_EXCEEDED', () => RECIPIENT_LIMIT_EXCEEDED_ERROR_MESSAGE)
     .with(AppErrorCode.TOO_MANY_REQUESTS, () => FAIR_USE_LIMIT_EXCEEDED_ERROR_MESSAGE)
+    .with(AppErrorCode.PASSWORD_PROTECTED_DOCUMENT, () => PASSWORD_PROTECTED_DOCUMENT_ERROR_MESSAGE)
+    .with(AppErrorCode.SIGNATURE_ALREADY_INVALID, () => SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE)
+    .with(AppErrorCode.ENVELOPE_LEGACY, () => LEGACY_OWNER_PROTECTED_ERROR_MESSAGE)
+    .with('INVALID_DOCUMENT_FILE', () => DISTRIBUTE_INVALID_DOCUMENT_FILE_ERROR_MESSAGE)
     .otherwise(() => ({
       title: msg`Something went wrong`,
       description: msg`An error occurred while distributing the document.`,
@@ -36,6 +78,9 @@ export const getDirectTemplateErrorMessage = (code: string): ToastMessageDescrip
       title: msg`Missing signature fields`,
       description: msg`This direct link template cannot be used because one or more signers do not have a signature field assigned.`,
     }))
+    .with(AppErrorCode.ENVELOPE_LEGACY, () => DIRECT_TEMPLATE_PDF_RESTRICTED_ERROR_MESSAGE)
+    .with(AppErrorCode.PASSWORD_PROTECTED_DOCUMENT, () => DIRECT_TEMPLATE_PASSWORD_PROTECTED_ERROR_MESSAGE)
+    .with(AppErrorCode.SIGNATURE_ALREADY_INVALID, () => DIRECT_TEMPLATE_SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE)
     .otherwise(() => ({
       title: msg`Something went wrong`,
       description: msg`We were unable to submit this document at this time. Please try again later.`,
@@ -96,11 +141,14 @@ export const getUploadErrorMessage = (code: string): ToastMessageDescriptor => {
     .with(AppErrorCode.TOO_MANY_REQUESTS, () => FAIR_USE_LIMIT_EXCEEDED_ERROR_MESSAGE)
     .with('INVALID_DOCUMENT_FILE', () => ({
       title: msg`Error`,
-      // Covers an encrypted PDF, an unreadable one, and one already signed by
-      // somebody else that this upload would invalidate. The last is the
-      // reason the wording is no longer only about encryption.
-      description: msg`This PDF cannot be uploaded. It may be encrypted, unreadable, or carry a signature that uploading would invalidate.`,
+      // Covers an unreadable PDF and one already signed by somebody else that
+      // this upload would invalidate. A PDF that needs a password to open has
+      // its own code below; owner-only restrictions are accepted.
+      description: msg`This PDF cannot be uploaded. It may be unreadable, or carry a signature that uploading would invalidate.`,
     }))
+    .with(AppErrorCode.PASSWORD_PROTECTED_DOCUMENT, () => PASSWORD_PROTECTED_DOCUMENT_ERROR_MESSAGE)
+    .with(AppErrorCode.SIGNATURE_ALREADY_INVALID, () => SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE)
+    .with(AppErrorCode.ENVELOPE_LEGACY, () => LEGACY_OWNER_PROTECTED_ERROR_MESSAGE)
     .with(AppErrorCode.LIMIT_EXCEEDED, () => ({
       title: msg`Error`,
       description: msg`You have reached your document limit for this month. Please upgrade your plan.`,
@@ -150,6 +198,9 @@ export const getTemplateUseErrorMessage = (code: string): ToastMessageDescriptor
       description: msg`You have reached your document limit for this plan. Please upgrade your plan.`,
     }))
     .with(AppErrorCode.TOO_MANY_REQUESTS, () => FAIR_USE_LIMIT_EXCEEDED_ERROR_MESSAGE)
+    .with(AppErrorCode.PASSWORD_PROTECTED_DOCUMENT, () => PASSWORD_PROTECTED_DOCUMENT_ERROR_MESSAGE)
+    .with(AppErrorCode.SIGNATURE_ALREADY_INVALID, () => SIGNATURE_ALREADY_INVALID_ERROR_MESSAGE)
+    .with(AppErrorCode.ENVELOPE_LEGACY, () => LEGACY_OWNER_PROTECTED_ERROR_MESSAGE)
     .otherwise(() => ({
       title: msg`Error`,
       description: msg`An error occurred while creating document from template.`,

@@ -39,7 +39,7 @@ export type ExistingSignatureInfo = {
 export const inspectExistingSignatures = (pdfDoc: PDF): ExistingSignatureInfo => {
   const form = pdfDoc.getForm();
 
-  const signedFieldCount = form ? form.getSignatureFields().filter((field) => field.isSigned).length : 0;
+  const signedFieldCount = form ? form.getSignatureFields().filter((field) => field.isSigned()).length : 0;
 
   if (signedFieldCount === 0) {
     return { signedFieldCount: 0, canPreserve: true, blocker: null };

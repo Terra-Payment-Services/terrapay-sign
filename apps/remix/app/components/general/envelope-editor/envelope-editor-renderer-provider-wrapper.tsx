@@ -4,11 +4,9 @@ import { EnvelopeRenderProvider } from '@documenso/lib/client-only/providers/env
 export const EnvelopeEditorRenderProviderWrapper = ({
   children,
   token,
-  presignedToken,
 }: {
   children: React.ReactNode;
   token?: string;
-  presignedToken?: string;
 }) => {
   const { envelope } = useCurrentEnvelopeEditor();
 
@@ -20,7 +18,6 @@ export const EnvelopeEditorRenderProviderWrapper = ({
       fields={envelope.fields}
       recipients={envelope.recipients}
       token={token}
-      presignToken={presignedToken}
     >
       {children}
     </EnvelopeRenderProvider>

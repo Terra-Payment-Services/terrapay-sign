@@ -26,7 +26,7 @@ import { EnvelopeEditorInvalidDirectTemplateAlert } from './envelope-editor-inva
 import { EnvelopeRendererFileSelector } from './envelope-file-selector';
 
 export const EnvelopeEditorPreviewPage = () => {
-  const { envelope, editorFields, editorConfig } = useCurrentEnvelopeEditor();
+  const { envelope, editorFields } = useCurrentEnvelopeEditor();
 
   const { currentEnvelopeItem, fields } = useCurrentEnvelopeRender();
 
@@ -219,7 +219,6 @@ export const EnvelopeEditorPreviewPage = () => {
         ...recipient,
         signingStatus: SigningStatus.SIGNED,
       }))}
-      presignToken={editorConfig?.embedded?.presignToken}
       overrideSettings={{
         mode: 'export',
       }}

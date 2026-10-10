@@ -15,9 +15,7 @@ import {
   getEnvelopeItemRemoveButtons,
   getEnvelopeItemTitleInputs,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   type TEnvelopeEditorSurface,
 } from '../fixtures/envelope-editor';
 import { expectToastTextToBeVisible } from '../fixtures/generic';
@@ -253,56 +251,6 @@ test.describe('template editor', () => {
       initialCount: 1,
       filesToUpload: [createPdfPayload('template-item-added.pdf')],
     });
-
-    const items = await getEnvelopeItemsFromDatabase(surface, result.externalId);
-
-    expect(items).toHaveLength(1);
-    expect(items[0].title).toBe('Envelope Item A');
-    expect(items[0].order).toBe(2); // Expect order 2 because deleting items does not drop the order of sequential items.
-  });
-});
-
-test.describe('embedded create', () => {
-  test('add, remove, reorder and retitle items', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-items',
-    });
-
-    const result = await runEnvelopeItemCrudFlow({
-      surface,
-      initialCount: 0,
-      filesToUpload: [
-        createPdfPayload('embedded-document-item-a.pdf'),
-        createPdfPayload('embedded-document-item-b.pdf'),
-      ],
-    });
-
-    await persistEmbeddedEnvelope(surface);
-
-    const items = await getEnvelopeItemsFromDatabase(surface, result.externalId);
-
-    expect(items).toHaveLength(1);
-    expect(items[0].title).toBe('Envelope Item A');
-    expect(items[0].order).toBe(1); // Expect order 1 because this is a one shot create via embedding. There are no incremental updates.
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('add, remove, reorder and retitle items', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-items',
-    });
-
-    const result = await runEnvelopeItemCrudFlow({
-      surface,
-      initialCount: 1,
-      filesToUpload: [createPdfPayload('embedded-template-item-updated.pdf')],
-    });
-
-    await persistEmbeddedEnvelope(surface);
 
     const items = await getEnvelopeItemsFromDatabase(surface, result.externalId);
 

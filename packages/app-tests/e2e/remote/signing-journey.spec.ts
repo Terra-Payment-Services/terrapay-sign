@@ -195,10 +195,20 @@ test('[REMOTE] a document is created, signed and comes back sealed', async ({ pa
       /\/SubFilter\s*\/(ETSI\.CAdES\.detached|adbe\.pkcs7\.detached)/,
     );
   } finally {
+    // A production envelope left behind keeps its recipient's signing link
+    // live, so a cleanup that fails fails the test, and e2e_staging then
+    // publishes nothing from the run. The message names the envelope so it
+    // can be deleted by hand. It leaves out the request error, whose call log
+    // can carry the Authorization header.
     if (envelopeId) {
-      await request
+      const problem = await request
         .post(`${API}/envelope/delete`, { headers: authHeaders(), data: { envelopeId } })
-        .catch(() => undefined);
+        .then(
+          (response) => (response.ok() ? null : `HTTP ${response.status()}`),
+          () => 'the request failed',
+        );
+
+      expect.soft(problem, `envelope ${envelopeId} was not deleted; delete it by hand`).toBeNull();
     }
   }
 });

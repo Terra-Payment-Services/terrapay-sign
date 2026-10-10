@@ -1,8 +1,29 @@
 diff --git a/node_modules/@libpdf/core/dist/index.mjs b/node_modules/@libpdf/core/dist/index.mjs
-index ca55581..1a3da96 100644
+index ca55581..e522464 100644
 --- a/node_modules/@libpdf/core/dist/index.mjs
 +++ b/node_modules/@libpdf/core/dist/index.mjs
-@@ -44967,6 +44967,14 @@ var P12Signer = class P12Signer {
+@@ -33636,7 +33636,19 @@ var DocumentParser = class {
+ 						const result = new IndirectObjectParser(this.scanner, lengthResolver, recoveryOptions).parseObjectAt(entry.offset);
+ 						if (result.genNum !== ref.generation) this.warnings.push(`Generation mismatch for object ${ref.objectNumber}: expected ${ref.generation}, got ${result.genNum}`);
+ 						obj = result.value;
+-						if (securityHandler?.isAuthenticated) obj = decryptObject(obj, ref.objectNumber, ref.generation);
++						if (securityHandler?.isAuthenticated) {
++							obj = decryptObject(obj, ref.objectNumber, ref.generation);
++							/**
++							* decryptObject rebuilds dicts and arrays with set()/push(), which
++							* marks them dirty. Left dirty, every encrypted object that is merely
++							* read is written again by the next incremental save. For an existing
++							* signature that re-encrypts its /Contents, which readers take as raw
++							* bytes (poppler's pdfsig then reports the signature string invalid),
++							* so the signature is broken. What was decrypted is what is on disk,
++							* so it is not a change.
++							*/
++							clearDirtyFlags(obj);
++						}
+ 						break;
+ 					}
+ 					case "compressed": {
+@@ -44967,6 +44979,14 @@ var P12Signer = class P12Signer {
  	keyType;
  	signatureAlgorithm;
  	privateKey;
@@ -17,7 +38,7 @@ index ca55581..1a3da96 100644
  	constructor(privateKey, certificate, certificateChain, keyType, signatureAlgorithm) {
  		this.privateKey = privateKey;
  		this.certificate = certificate;
-@@ -45084,10 +45092,17 @@ var P12Signer = class P12Signer {
+@@ -45084,10 +45104,17 @@ var P12Signer = class P12Signer {
  	static async importPrivateKey(privateKeyInfo) {
  		const crypto = getCrypto();
  		const algorithmOid = privateKeyInfo.privateKeyAlgorithm.algorithmId;
@@ -39,7 +60,7 @@ index ca55581..1a3da96 100644
  		if (algorithmOid === "1.2.840.10045.2.1") {
  			const params = privateKeyInfo.privateKeyAlgorithm.algorithmParams;
  			let namedCurve = "P-256";
-@@ -45155,11 +45170,42 @@ var P12Signer = class P12Signer {
+@@ -45155,11 +45182,42 @@ var P12Signer = class P12Signer {
  				};
  				break;
  		}

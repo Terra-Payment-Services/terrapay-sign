@@ -422,7 +422,7 @@ For setup guides and provider recommendations, see [Background Jobs](/docs/self-
 
 ## Directory Reconciliation (Microsoft Entra ID)
 
-An hourly job that disables accounts for people who have left the Entra ID directory. It reads the directory over Microsoft Graph using app-only client credentials, then disables enabled non-admin accounts whose email address is no longer entitled. With an access group configured, the entitled people are the group's transitive members. Without one, they are every enabled member user in the tenant; guest users are treated as absent. Disabling an account signs out all of its sessions and expires its API tokens. It never deletes an account, never re-enables one, and never touches an administrator.
+An hourly job that disables accounts for people who have left the Entra ID directory. It reads the directory over Microsoft Graph using app-only client credentials, then disables enabled non-admin accounts that are no longer entitled. An account that has signed in with Microsoft is matched on the Entra object id recorded then, and only on that, so a renamed person keeps access and a reassigned address does not keep a leaver's account alive. An account that has never signed in with Microsoft is matched on its email address. With an access group configured, the entitled people are the group's transitive members. Without one, they are every enabled member user in the tenant; guest users are treated as absent. Disabling an account signs out all of its sessions and expires its API tokens. It never deletes an account, never re-enables one, and never touches an administrator.
 
 This is a cron job, so it only runs under the `bullmq` jobs provider. On `local` or `inngest` the schedule is inert.
 
@@ -436,9 +436,12 @@ The app registration needs the `User.Read.All` application permission with admin
 | `NEXT_PRIVATE_ENTRA_ACCESS_GROUP_ID`            | No       | Object id of the group whose membership confers access. Unset, the whole tenant does         |         |
 | `NEXT_PRIVATE_ENTRA_RECONCILE_DRY_RUN`          | No       | Set to `false` to let the job disable accounts. Any other value, including unset, is a dry run | `true`  |
 | `NEXT_PRIVATE_ENTRA_RECONCILE_MINIMUM_MEMBERS`  | No       | Abort the run if the directory returns fewer members than this                               | `10`    |
-| `NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO`| No       | Abort the run if it would disable more than this fraction of the accounts considered         | `0.1`   |
+| `NEXT_PRIVATE_ENTRA_RECONCILE_MAX_DISABLE_RATIO`| No       | Abort the run if it would disable more than this fraction of the accounts considered. At most `0.5` | `0.1`   |
+| `NEXT_PRIVATE_ENTRA_RECONCILE_EXEMPT_EMAILS`    | No       | Comma separated addresses never disabled, compared without regard to case                   |         |
+| `NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL`             | No       | Origin of Microsoft Graph for the job. For tests against a stub only. Ignored in production, where a server with it set refuses to start | `https://graph.microsoft.com` |
+| `NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL`             | No       | Origin of the token endpoint for the job. For tests against a stub only. Ignored in production, where a server with it set refuses to start | `https://login.microsoftonline.com` |
 
-A run that breaches either threshold disables nobody, logs the numbers, and fails so the stop is visible in Bull Board. A Graph failure aborts the run for the same reason: an unreadable directory is not evidence that anybody has left.
+A threshold that is set but cannot be parsed fails the job rather than falling back to its default. A run that breaches either threshold disables nobody, logs the numbers, and fails so the stop is visible in Bull Board. A Graph failure aborts the run for the same reason: an unreadable directory is not evidence that anybody has left.
 
 ---
 
@@ -508,7 +511,7 @@ Telemetry collects only: app version, installation ID, and node ID. No personal 
 
 ## Enterprise Features
 
-These variables require an active [Enterprise Edition](/docs/policies/enterprise-edition) license. Obtain a license key from [license.documenso.com](https://license.documenso.com) and set it below to unlock enterprise features such as SSO, embed editor, and 21 CFR Part 11 compliance. See [Apply Your License Key](/docs/self-hosting/configuration/license) for step-by-step setup.
+These variables require an active [Enterprise Edition](/docs/policies/enterprise-edition) license. Obtain a license key from [license.documenso.com](https://license.documenso.com) and set it below to unlock enterprise features such as SSO and 21 CFR Part 11 compliance. See [Apply Your License Key](/docs/self-hosting/configuration/license) for step-by-step setup.
 
 | Variable                             | Description                                      |
 | ------------------------------------ | ------------------------------------------------ |

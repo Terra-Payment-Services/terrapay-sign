@@ -295,13 +295,18 @@ const config = {
         permanent: true,
       },
       {
+        source: '/docs/developers/embedding/editor/:version(v1|v2)',
+        destination: '/docs/developers/embedding/editor',
+        permanent: true,
+      },
+      {
         source: '/developers/embedding/authoring',
         destination: '/docs/developers/embedding/editor',
         permanent: true,
       },
       {
         source: '/developers/embedding/authoring/:path*',
-        destination: '/docs/developers/embedding/editor/:path*',
+        destination: '/docs/developers/embedding/editor',
         permanent: true,
       },
       {
@@ -316,7 +321,7 @@ const config = {
       },
       {
         source: '/docs/developers/embedding/authoring/:path*',
-        destination: '/docs/developers/embedding/editor/:path*',
+        destination: '/docs/developers/embedding/editor',
         permanent: true,
       },
 

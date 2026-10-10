@@ -1,9 +1,7 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
-import { presignScopeCoversEnvelope } from '@documenso/lib/server-only/embedding-presign/presign-scope-covers-envelope';
-import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { prisma } from '@documenso/prisma';
@@ -13,7 +11,7 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 
 import type { HonoEnv } from '../../router';
-import { getPresignBearerToken, handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
+import { handleEnvelopeItemFileRequest, resolveFileUploadUserId } from './files.helpers';
 import {
   ZGetEnvelopeItemFileDownloadRequestParamsSchema,
   ZGetEnvelopeItemFileRequestParamsSchema,
@@ -74,6 +72,17 @@ export const filesRoute = new Hono<HonoEnv>()
 
       return c.json(result);
     } catch (error) {
+      // A refusal the client has a message for, such as a PDF that needs a
+      // password or one whose signature is already invalid, goes back as
+      // itself rather than as a generic failure.
+      if (
+        error instanceof AppError &&
+        (error.code === AppErrorCode.PASSWORD_PROTECTED_DOCUMENT ||
+          error.code === AppErrorCode.SIGNATURE_ALREADY_INVALID)
+      ) {
+        return c.json(AppError.toJSON(error), 400);
+      }
+
       console.error('Upload failed:', error);
       return c.json({ error: 'Upload failed' }, 500);
     }
@@ -83,28 +92,10 @@ export const filesRoute = new Hono<HonoEnv>()
     sValidator('param', ZGetEnvelopeItemFileRequestParamsSchema),
     async (c) => {
       const { envelopeId, envelopeItemId } = c.req.valid('param');
-      const token = getPresignBearerToken(c);
 
       const session = await getOptionalSession(c);
 
-      let userId = session.user?.id;
-
-      // The presign token is bound to its API token's team, not to every team
-      // its user belongs to. See get-envelope-item-pdf.ts.
-      let presignTeamId: number | undefined;
-
-      // A token scoped to one envelope opens that envelope and no other in the team.
-      let presignScope: string | undefined;
-
-      if (token) {
-        const presignToken = await verifyEmbeddingPresignToken({
-          token,
-        }).catch(() => undefined);
-
-        userId = presignToken?.userId;
-        presignTeamId = presignToken?.teamId;
-        presignScope = presignToken?.scope;
-      }
+      const userId = session.user?.id;
 
       if (!userId) {
         return c.json({ error: 'Unauthorized' }, 401);
@@ -127,14 +118,6 @@ export const filesRoute = new Hono<HonoEnv>()
       });
 
       if (!envelope) {
-        return c.json({ error: 'Envelope not found' }, 404);
-      }
-
-      if (token && envelope.teamId !== presignTeamId) {
-        return c.json({ error: 'Envelope not found' }, 404);
-      }
-
-      if (token && !presignScopeCoversEnvelope(presignScope, envelope)) {
         return c.json({ error: 'Envelope not found' }, 404);
       }
 

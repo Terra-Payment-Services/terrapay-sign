@@ -1,4 +1,12 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
+import { ownerProtectedSignedPdf } from '@documenso/lib/server-only/pdf/__fixtures__/protected-pdfs';
+import {
+  rawSignatureContents,
+  signatureObjectNumber,
+} from '@documenso/lib/server-only/pdf/__fixtures__/signature-bytes';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
@@ -241,4 +249,58 @@ test.describe('API V2 partial signed PDF downloads', () => {
     expect(legacyResponse.status()).toBe(400);
     expect(legacyError.code).toBe('ENVELOPE_LEGACY');
   });
+
+  // A counterparty's signature on the uploaded file must still be there, and
+  // still be the same value, in the pending copy. Counted with isSigned() and
+  // read from the newest revision's raw bytes, which is what a reader resolves.
+  const externallySigned = readFileSync(
+    path.join(__dirname, '../../../../lib/server-only/pdf/__fixtures__/externally-signed.pdf'),
+  );
+
+  for (const [label, received] of [
+    ['an unprotected', async () => externallySigned],
+    ['an owner-protected', ownerProtectedSignedPdf],
+  ] as const) {
+    test(`keeps the counterparty signature on ${label} document`, async ({ request }) => {
+      const input = await received();
+
+      const { envelope, token, distributeResult } = await apiSeedPendingDocument(request, {
+        pdfFile: { name: 'countersign.pdf', data: input },
+        recipients: [{ email: `partial-countersign-${Date.now()}@test.documenso.com`, name: 'Countersigner' }],
+        fieldsPerRecipient: [
+          [{ type: FieldType.SIGNATURE, page: 1, positionX: 5, positionY: 5, width: 15, height: 5 }],
+        ],
+      });
+
+      const [recipient] = distributeResult.recipients;
+      const field = envelope.fields.find((candidate) => candidate.recipientId === recipient.id);
+
+      if (!field) {
+        throw new Error('Expected signature field not found');
+      }
+
+      await trpcMutation(request, 'envelope.field.sign', {
+        token: recipient.token,
+        fieldId: field.id,
+        fieldValue: { type: FieldType.SIGNATURE, value: 'Signature' },
+      });
+
+      const response = await request.get(
+        `${API_BASE_URL}/envelope/item/${envelope.envelopeItems[0].id}/download?version=pending`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      expect(response.status()).toBe(200);
+
+      const pending = await getPdfBytes(response);
+      const pendingPdf = await PDF.load(pending);
+      const signed = (pendingPdf.getForm()?.getSignatureFields() ?? []).filter((candidate) => candidate.isSigned());
+
+      expect(signed).toHaveLength(1);
+
+      const objectNumber = await signatureObjectNumber(input);
+
+      expect(rawSignatureContents(pending, objectNumber)).toBe(rawSignatureContents(input, objectNumber));
+    });
+  }
 });

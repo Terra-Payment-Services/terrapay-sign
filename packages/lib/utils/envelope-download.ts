@@ -63,22 +63,8 @@ export const getDocumentDataUrl = (options: DocumentDataUrlOptions) => {
     return `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/token/${token}/${partialUrl}`;
   }
 
-  // Endpoint authenticated by session, or by a presign token sent with
-  // `getPresignRequestHeaders`.
+  // Endpoint authenticated by session.
   return `${NEXT_PUBLIC_WEBAPP_URL()}/api/files/${partialUrl}`;
-};
-
-/**
- * Headers that carry a presign token to the file routes. The token is a bearer
- * credential, so it travels in `Authorization` and never in the URL, where it
- * would be written to access logs and browser history.
- */
-export const getPresignRequestHeaders = (presignToken: string | undefined): Record<string, string> => {
-  if (!presignToken) {
-    return {};
-  }
-
-  return { Authorization: `Bearer ${presignToken}` };
 };
 
 /**

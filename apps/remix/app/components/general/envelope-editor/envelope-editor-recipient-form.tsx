@@ -43,7 +43,7 @@ import { useCurrentTeam } from '~/providers/team';
 import { useCspNonce } from '~/utils/nonce';
 
 export const EnvelopeEditorRecipientForm = () => {
-  const { envelope, setRecipientsDebounced, updateEnvelope, editorRecipients, isEmbedded, editorConfig } =
+  const { envelope, setRecipientsDebounced, updateEnvelope, editorRecipients, editorConfig } =
     useCurrentEnvelopeEditor();
 
   const organisation = useCurrentOrganisation();
@@ -70,7 +70,7 @@ export const EnvelopeEditorRecipientForm = () => {
       query: debouncedRecipientSearchQuery,
     },
     {
-      enabled: debouncedRecipientSearchQuery.length > 1 && !isEmbedded,
+      enabled: debouncedRecipientSearchQuery.length > 1,
       retry: false,
     },
   );
@@ -129,11 +129,9 @@ export const EnvelopeEditorRecipientForm = () => {
       !signer.name && !signer.email && envelope.fields.filter((field) => field.recipientId === signer.id).length === 0,
   );
 
-  const currentEditorEmail = isEmbedded ? editorConfig.embedded?.user?.email : user?.email;
+  const currentEditorEmail = user?.email;
 
-  const currentEditorName = isEmbedded ? editorConfig.embedded?.user?.name : user?.name;
-
-  const hasCurrentEditorInfo = Boolean(currentEditorEmail || currentEditorName);
+  const currentEditorName = user?.name;
 
   const isUserAlreadyARecipient = watchedSigners.some(
     (signer) => signer.email.toLowerCase() === currentEditorEmail?.toLowerCase(),
@@ -490,17 +488,15 @@ export const EnvelopeEditorRecipientForm = () => {
         </div>
 
         <div className="flex flex-row items-center space-x-2">
-          {(!isEmbedded || hasCurrentEditorInfo) && (
-            <Button
-              variant="outline"
-              className="flex flex-row items-center"
-              size="sm"
-              disabled={isSubmitting || isUserAlreadyARecipient}
-              onClick={() => onAddSelfSigner()}
-            >
-              <Trans>Add Myself</Trans>
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            className="flex flex-row items-center"
+            size="sm"
+            disabled={isSubmitting || isUserAlreadyARecipient}
+            onClick={() => onAddSelfSigner()}
+          >
+            <Trans>Add Myself</Trans>
+          </Button>
 
           <Button
             variant="outline"

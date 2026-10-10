@@ -52,6 +52,7 @@ import { assertDocumentDataAccess } from '../document-data/assert-document-data-
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId } from '../envelope/increment-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
+import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
 import { getTeamSettings } from '../team/get-team-settings';
@@ -478,6 +479,10 @@ export const createDocumentFromTemplate = async ({
       }
 
       let buffer = await getFileServerSide(documentDataToDuplicate);
+
+      if (template.internalVersion === 1) {
+        await assertLegacyEnvelopeAcceptsPdf(buffer);
+      }
 
       const titleToUse = item.title || finalEnvelopeTitle;
 

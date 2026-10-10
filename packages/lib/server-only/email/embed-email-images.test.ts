@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { embedEmailImages } from './embed-email-images';
 import { buildGraphMessage } from './microsoft-graph-mail';
 
-const BASE = 'https://sign.terrapay.com';
+const BASE = 'https://sign.example.com';
 const png = (name: string) => Buffer.from(`png:${name}`);
 const files = (name: string) => (['logo.png', 'completed.png', 'download.png'].includes(name) ? png(name) : null);
 

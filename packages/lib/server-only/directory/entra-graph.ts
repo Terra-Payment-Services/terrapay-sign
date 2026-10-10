@@ -1,13 +1,9 @@
 import { z } from 'zod';
 
+import { NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL, NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL } from '../../constants/app';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { GraphFetchFn, MicrosoftGraphCredentials } from '../microsoft-graph/graph-auth';
-import {
-  clearGraphTokenCache,
-  GRAPH_BASE_URL,
-  getGraphAccessToken,
-  readGraphErrorCode,
-} from '../microsoft-graph/graph-auth';
+import { clearGraphTokenCache, getGraphAccessToken, readGraphErrorCode } from '../microsoft-graph/graph-auth';
 
 /**
  * Microsoft Graph client used by the Entra ID access reconciliation job.
@@ -37,7 +33,46 @@ const GRAPH_PAGE_SIZE = 999;
  */
 const GRAPH_MAX_PAGES = 500;
 
+/**
+ * How long one page request may take before the read is abandoned. Without it
+ * a page that never answers holds the run for as long as the HTTP client's own
+ * limit allows, which in the e2e run outlasted three attempts in eight minutes,
+ * and the run looks hung rather than failed.
+ */
+const GRAPH_REQUEST_TIMEOUT_MS = 60_000;
+
 export type EntraCredentials = MicrosoftGraphCredentials;
+
+/**
+ * The next page to read, from a page's `@odata.nextLink`, or null when there is
+ * none. A link is followed only if it is an HTTPS URL on the Graph origin in
+ * use, because the request carries the bearer token. Any other link, an empty
+ * one included, throws before anything is sent to it, and the error carries no
+ * part of the link, which can hold a continuation token or worse.
+ */
+const nextPageUrl = (nextLink: string | null | undefined, graphOrigin: string): string | null => {
+  if (nextLink === null || nextLink === undefined) {
+    return null;
+  }
+
+  let parsed: URL | null = null;
+
+  try {
+    parsed = new URL(nextLink);
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed || parsed.protocol !== 'https:' || parsed.origin !== graphOrigin) {
+    throw new AppError(AppErrorCode.SCHEMA_FAILED, {
+      message:
+        'Microsoft Graph returned a continuation link that is not an HTTPS URL on the Graph origin in use. ' +
+        'Refusing to follow it or to reconcile against a partial directory read.',
+    });
+  }
+
+  return nextLink;
+};
 
 export type EntraDirectoryMember = {
   id: string;
@@ -100,14 +135,22 @@ export const fetchEntraGroupMembers = async ({
   fetchFn = fetch,
   now = () => Date.now(),
 }: FetchEntraGroupMembersOptions): Promise<EntraDirectoryMember[]> => {
-  const accessToken = await getEntraAccessToken({ credentials, fetchFn, now });
+  const accessToken = await getEntraAccessToken({
+    credentials,
+    loginBaseUrl: NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL(),
+    fetchFn,
+    now,
+  });
+
+  const graphBaseUrl = `${NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL()}/v1.0`;
+  const graphOrigin = new URL(graphBaseUrl).origin;
 
   const members: EntraDirectoryMember[] = [];
 
   const select = ['id', 'mail', 'userPrincipalName', 'accountEnabled'].join(',');
 
   let url: string | null =
-    `${GRAPH_BASE_URL}/groups/${encodeURIComponent(groupId)}/transitiveMembers` +
+    `${graphBaseUrl}/groups/${encodeURIComponent(groupId)}/transitiveMembers` +
     `?$select=${select}&$top=${GRAPH_PAGE_SIZE}`;
 
   let pagesRead = 0;
@@ -125,6 +168,7 @@ export const fetchEntraGroupMembers = async ({
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json',
       },
+      signal: AbortSignal.timeout(GRAPH_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -182,17 +226,16 @@ export const fetchEntraGroupMembers = async ({
         id: member.id,
         mail: member.mail ?? null,
         userPrincipalName: member.userPrincipalName ?? null,
-        // Treat an absent `accountEnabled` as enabled. The safe direction for
-        // an unreadable field is to leave the Documenso account alone, since
-        // the cost of a missed disable is far lower than the cost of locking
-        // out a current employee on a field Graph declined to return.
-        accountEnabled: member.accountEnabled ?? true,
+        // Only an explicit `true` is enabled. A null or absent `accountEnabled`
+        // vouches for nobody, so such a member keeps no account and does not
+        // count toward the minimum, as on the users read.
+        accountEnabled: member.accountEnabled === true,
       });
     }
 
     pagesRead += 1;
 
-    url = parsed.data['@odata.nextLink'] ?? null;
+    url = nextPageUrl(parsed.data['@odata.nextLink'], graphOrigin);
   }
 
   return members;
@@ -234,13 +277,21 @@ export const fetchEntraTenantUsers = async ({
   fetchFn = fetch,
   now = () => Date.now(),
 }: FetchEntraTenantUsersOptions): Promise<EntraDirectoryMember[]> => {
-  const accessToken = await getEntraAccessToken({ credentials, fetchFn, now });
+  const accessToken = await getEntraAccessToken({
+    credentials,
+    loginBaseUrl: NEXT_PRIVATE_ENTRA_LOGIN_BASE_URL(),
+    fetchFn,
+    now,
+  });
+
+  const graphBaseUrl = `${NEXT_PRIVATE_ENTRA_GRAPH_BASE_URL()}/v1.0`;
+  const graphOrigin = new URL(graphBaseUrl).origin;
 
   const members: EntraDirectoryMember[] = [];
 
   const select = ['id', 'mail', 'userPrincipalName', 'accountEnabled', 'userType'].join(',');
 
-  let url: string | null = `${GRAPH_BASE_URL}/users?$select=${select}&$top=${GRAPH_PAGE_SIZE}`;
+  let url: string | null = `${graphBaseUrl}/users?$select=${select}&$top=${GRAPH_PAGE_SIZE}`;
 
   let pagesRead = 0;
 
@@ -257,6 +308,7 @@ export const fetchEntraTenantUsers = async ({
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json',
       },
+      signal: AbortSignal.timeout(GRAPH_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -286,18 +338,6 @@ export const fetchEntraTenantUsers = async ({
         });
       }
 
-      // Here a user is present only when Graph says the account is enabled, so
-      // an absent field cannot default either way. Defaulting to disabled would
-      // lock out everybody the moment Graph stopped returning it, and
-      // defaulting to enabled would keep leavers in. Refuse the run instead.
-      if (user.accountEnabled === null || user.accountEnabled === undefined) {
-        throw new AppError(AppErrorCode.SCHEMA_FAILED, {
-          message:
-            `Microsoft Graph returned user ${user.id} without accountEnabled. ` +
-            'Refusing to reconcile, because the application may lack User.Read.All.',
-        });
-      }
-
       // Only an explicit `Guest` is excluded. An absent `userType` is read as
       // a member, because reading it as a guest would disable somebody on a
       // field Graph did not fill in, and leaving an account alone is the safe
@@ -310,13 +350,18 @@ export const fetchEntraTenantUsers = async ({
         id: user.id,
         mail: user.mail ?? null,
         userPrincipalName: user.userPrincipalName ?? null,
-        accountEnabled: user.accountEnabled,
+        // Only an explicit `true` is enabled. A null or absent `accountEnabled`
+        // vouches for nobody: such a user keeps no account and does not count
+        // toward the minimum, so a Graph that stopped returning the field
+        // trips the floor rather than either locking everybody out or keeping
+        // leavers in.
+        accountEnabled: user.accountEnabled === true,
       });
     }
 
     pagesRead += 1;
 
-    url = parsed.data['@odata.nextLink'] ?? null;
+    url = nextPageUrl(parsed.data['@odata.nextLink'], graphOrigin);
   }
 
   return members;

@@ -14,6 +14,8 @@ The Envelope Editor V2 E2E test suite lives in `packages/app-tests/e2e/envelope-
 3. **Embedded Create** (`/embed/v2/authoring/envelope/create`) - Embedded editor creating a new envelope
 4. **Embedded Edit** (`/embed/v2/authoring/envelope/edit/<id>`) - Embedded editor updating an existing envelope
 
+**TerraPay Sign has no embedded surfaces.** Embedded authoring and its presign tokens were removed (GitLab issue 8), and with them the `/embed/v2/authoring` routes, `openEmbeddedEnvelopeEditor` and `persistEmbeddedEnvelope`. Test the document and template surfaces only, with two `test.describe` blocks, and ignore what this page says below about the embedded ones. `isEmbedded` is still on the surface type and is always `false`.
+
 ## Project Structure
 
 ```

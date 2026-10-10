@@ -22,10 +22,13 @@ import { jobs } from '../../jobs/client';
 import type { TRecipientAccessAuth } from '../../types/document-auth';
 import { DocumentAuth } from '../../types/document-auth';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
+import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
+import { logger } from '../../utils/logger';
 import { assertRecipientNotExpired } from '../../utils/recipients';
+import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 import { assertAccessAuth2FAAttemptAllowed } from './assert-access-auth-2fa-attempt-allowed';
@@ -59,6 +62,15 @@ export type CompleteDocumentWithTokenOptions = {
   };
 };
 
+/**
+ * Records a recipient's completion and, in a sequential order, invites the
+ * next signer.
+ *
+ * For a V1 document the next signer is invited only when the stored PDF passes
+ * `assertLegacyEnvelopeAcceptsPdf`, the send path's check. A PDF that fails
+ * does not undo the completion: the signature is recorded, and the next signer
+ * is left unsent and unemailed.
+ */
 export const completeDocumentWithToken = async ({
   token,
   id,
@@ -83,6 +95,18 @@ export const completeDocumentWithToken = async ({
       recipients: {
         where: {
           token,
+        },
+      },
+      envelopeItems: {
+        select: {
+          documentData: {
+            select: {
+              type: true,
+              id: true,
+              data: true,
+              initialData: true,
+            },
+          },
         },
       },
     },
@@ -468,7 +492,10 @@ export const completeDocumentWithToken = async ({
       },
     });
 
-    if (envelope.documentMeta?.signingOrder === DocumentSigningOrder.SEQUENTIAL) {
+    if (
+      envelope.documentMeta?.signingOrder === DocumentSigningOrder.SEQUENTIAL &&
+      (await isLegacyPdfAcceptedForInvitation(envelope))
+    ) {
       const [nextRecipient] = pendingRecipients;
 
       await prisma.$transaction(async (tx) => {
@@ -569,4 +596,41 @@ export const completeDocumentWithToken = async ({
     userId: updatedDocument.userId,
     teamId: updatedDocument.teamId ?? undefined,
   });
+};
+
+/**
+ * Whether the next signer of this envelope may be invited. A V1 envelope's
+ * stored PDF may have changed since the send (a two-step upload URL still
+ * accepts a new file), so it is checked again here. A refusal is logged rather
+ * than thrown, so the completion that triggered the invitation still stands.
+ * Errors fetching the file are not refusals and propagate.
+ */
+const isLegacyPdfAcceptedForInvitation = async (envelope: {
+  id: string;
+  internalVersion: number;
+  envelopeItems: Array<{ documentData: Parameters<typeof getFileServerSide>[0] }>;
+}) => {
+  if (envelope.internalVersion !== 1) {
+    return true;
+  }
+
+  for (const envelopeItem of envelope.envelopeItems) {
+    const pdf = await getFileServerSide(envelopeItem.documentData);
+    const refusal = await assertLegacyEnvelopeAcceptsPdf(pdf).then(
+      () => null,
+      (err: unknown) => AppError.parseError(err),
+    );
+
+    if (refusal) {
+      logger.warn({
+        msg: 'Next signer not invited: the document PDF fails the send check',
+        envelopeId: envelope.id,
+        code: refusal.code,
+      });
+
+      return false;
+    }
+  }
+
+  return true;
 };

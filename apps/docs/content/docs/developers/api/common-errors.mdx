@@ -25,6 +25,8 @@ This guide provides a comprehensive troubleshooting matrix for the standard erro
 | `RETRY_EXCEPTION` | The operation failed temporarily but can be retried. | Implement an automatic retry logic in your integration, ideally using an exponential backoff strategy. |
 | `SCHEMA_FAILED` | Strict data schema validation failed. | Verify that the data types sent (string, number, boolean) exactly match the OpenAPI specification. |
 | `TOO_MANY_REQUESTS` | Rate limit exceeded (429). | Reduce the frequency of your API calls. Implement rate-limiting handling based on the response headers. |
+| `PASSWORD_PROTECTED_DOCUMENT` | The uploaded PDF needs a password to open (400). | Remove the password and upload it again. A PDF that opens without a password but restricts editing is accepted. |
+| `SIGNATURE_ALREADY_INVALID` | The uploaded PDF carries a signature that already fails to verify, because the file was changed after it was signed, or a signature in a format Sign cannot verify (400). | Ask the sender for a copy whose signature still verifies. Protection or editing applied after signing breaks the signature. |
 | `TWO_FACTOR_AUTH_FAILED` | Two-factor authentication (2FA) failed. | Verify the provided 2FA code. Ensure it was entered correctly and has not expired. |
 | `WEBHOOK_INVALID_REQUEST` | The webhook-related request is invalid. | Check your receiving endpoint configuration. Ensure the URL is correct and that your server accepts `POST` requests from Documenso. |
 
@@ -37,7 +39,8 @@ The following errors occur when attempting to perform actions on an envelope tha
 | `ENVELOPE_DRAFT` | The action cannot be performed because the envelope is still in a draft state. | Finalize the envelope configuration and transition it to the `PENDING` (sent) state before attempting this operation. |
 | `ENVELOPE_COMPLETED` | The action cannot be performed because the envelope is already completed. | No further modifications (e.g., adding signers, modifying documents) can be made to an envelope once the signing process is finished. |
 | `ENVELOPE_REJECTED` | The action cannot be performed because the envelope was rejected by a recipient. | The signing flow is permanently halted. Create a new envelope if you wish to resubmit the document. |
-| `ENVELOPE_LEGACY` | The action cannot be performed because the envelope uses an obsolete format. | This envelope was created with a legacy version of the system. Recreate the envelope using the current API version to interact with it. |
+| `ENVELOPE_LEGACY` | The action cannot be performed because the envelope uses an obsolete format. | This envelope was created with a legacy version of the system. Recreate the envelope using the current API version to interact with it. Also returned when a legacy document is created from a PDF that restricts editing, which only a current envelope can keep. |
+| `ENVELOPE_ITEM_REVISION_CONFLICT` | Other requests kept changing the same document while placeholder fields were being placed, and this request gave up after several attempts (409). Nothing was saved. Also returned, on API v1 as well, when another request sent the same draft document at the same moment; that request sent it. | Send the request again, ideally after a short delay. Placing fields on one document from several requests at once makes this more likely. |
 
 ## See Also
 

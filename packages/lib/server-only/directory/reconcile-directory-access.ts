@@ -28,6 +28,13 @@ export type ReconcilableUser = {
   name: string | null;
   roles: Role[];
   disabled: boolean;
+
+  /**
+   * Entra object ids of the directory users this account has signed in as,
+   * read from its stored Microsoft ID tokens by `readDirectoryObjectId`. Empty
+   * for an account that has never signed in with Microsoft.
+   */
+  directoryObjectIds: string[];
 };
 
 export type ReconcileDirectoryAccessConfig = {
@@ -49,6 +56,12 @@ export type ReconcileDirectoryAccessConfig = {
    * it considered, expressed as a fraction between 0 and 1.
    */
   maximumDisableRatio: number;
+
+  /**
+   * Addresses never disabled, compared without regard to case: service and
+   * shared accounts that are not people in the directory.
+   */
+  exemptEmails: string[];
 };
 
 export type ReconcileDirectoryAccessLogger = {
@@ -89,6 +102,7 @@ export type ReconcileDirectoryAccessResult = {
   entitledEmailCount: number;
   consideredUserCount: number;
   skippedAdminCount: number;
+  exemptUserCount: number;
   candidateUserIds: number[];
   disabledUserIds: number[];
   failedUserIds: number[];
@@ -132,6 +146,72 @@ const buildEntitledEmailSet = (members: EntraDirectoryMember[]): Set<string> => 
   return entitled;
 };
 
+/**
+ * Reduce an Entra GUID, an object id or a tenant id, to the form it is compared
+ * in. GUIDs are case-insensitive and may be written with surrounding braces and
+ * whitespace, so ` {6F1C...} ` and `6f1c...` are the same. Returns null for an
+ * empty id, which identifies nothing.
+ */
+const normaliseObjectId = (value: string): string | null => {
+  const id = value
+    .trim()
+    .replace(/^\{(.*)\}$/, '$1')
+    .trim()
+    .toLowerCase();
+
+  return id ? id : null;
+};
+
+/**
+ * Read the Entra object id (`oid`) from a Microsoft ID token stored on an
+ * `Account` row, or null when the token cannot vouch for one.
+ *
+ * The account's `providerAccountId` cannot serve, because it holds `sub`, which
+ * Entra issues pairwise per application and which therefore never equals the
+ * Graph `id`. `oid` does, and it survives a rename of the mailbox or the user
+ * principal name.
+ *
+ * The signature is not checked here, for the reason `readIssuerFromIdToken`
+ * gives: the token was verified against the authority's keys when the row was
+ * written, and those keys have rotated since. An object id is accepted only from
+ * a token whose `tid` is the tenant being reconciled, so a token from any other
+ * directory leaves the account to the email match.
+ */
+export const readDirectoryObjectId = (idToken: string | null | undefined, tenantId: string): string | null => {
+  const segments = typeof idToken === 'string' ? idToken.split('.') : [];
+
+  if (segments.length !== 3) {
+    return null;
+  }
+
+  let payload: unknown;
+
+  try {
+    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  if (typeof payload !== 'object' || payload === null) {
+    return null;
+  }
+
+  const { oid, tid } = payload as Record<string, unknown>;
+
+  // Tenant ids are GUIDs too, so both sides are normalised the same way.
+  if (
+    typeof oid !== 'string' ||
+    oid.trim().length === 0 ||
+    typeof tid !== 'string' ||
+    normaliseObjectId(tid) === null ||
+    normaliseObjectId(tid) !== normaliseObjectId(tenantId)
+  ) {
+    return null;
+  }
+
+  return oid;
+};
+
 export const reconcileDirectoryAccess = async ({
   config,
   logger,
@@ -162,10 +242,19 @@ export const reconcileDirectoryAccess = async ({
 
   const entitledEmails = buildEntitledEmailSet(members);
 
-  if (members.length < config.minimumMemberCount) {
+  const enabledMembers = members.filter((member) => member.accountEnabled);
+
+  const entitledObjectIds = new Set(
+    enabledMembers.map((member) => normaliseObjectId(member.id)).filter((id): id is string => id !== null),
+  );
+
+  // Only enabled members count toward the floor, each once however many rows
+  // Graph returned for them. A directory that lost its people but kept their
+  // disabled accounts is exactly the answer the floor exists to refuse.
+  if (entitledObjectIds.size < config.minimumMemberCount) {
     logger.error(
-      `[entra-reconcile] Aborting run: the directory returned ${members.length} members, below the configured ` +
-        `floor of ${config.minimumMemberCount}. No account was disabled. This usually means the group id is wrong, ` +
+      `[entra-reconcile] Aborting run: counting distinct enabled users only, the directory returned ${entitledObjectIds.size} ` +
+        `members, below the configured floor of ${config.minimumMemberCount}. No account was disabled. This usually means the group id is wrong, ` +
         'the application permission was revoked, or the directory read was partial.',
     );
 
@@ -177,6 +266,7 @@ export const reconcileDirectoryAccess = async ({
       entitledEmailCount: entitledEmails.size,
       consideredUserCount: 0,
       skippedAdminCount: 0,
+      exemptUserCount: 0,
       candidateUserIds: [],
       disabledUserIds: [],
       failedUserIds: [],
@@ -190,19 +280,37 @@ export const reconcileDirectoryAccess = async ({
   // somebody later changing the query.
   const admins = users.filter((user) => isAdmin(user));
 
-  const consideredUsers = users.filter((user) => !user.disabled && !isAdmin(user));
+  const exemptEmails = new Set(config.exemptEmails.map((email) => normaliseEmail(email)));
 
-  // Accounts are matched to the directory by email address rather than by the
-  // Entra object id, because the Documenso `User` table has no column to hold
-  // an external identity and adding one is a schema change beyond the scope of
-  // this job. Storing the object id would survive a mailbox rename, which email
-  // matching does not; a rename here presents as a departure and gets the
-  // account disabled until a human re-enables it. That is the safe direction of
-  // failure, but it is still worth fixing.
+  const isExempt = (user: ReconcilableUser) => {
+    const email = normaliseEmail(user.email);
+
+    return email !== null && exemptEmails.has(email);
+  };
+
+  const exemptUsers = users.filter((user) => !isAdmin(user) && isExempt(user));
+
+  const consideredUsers = users.filter((user) => !user.disabled && !isAdmin(user) && !isExempt(user));
+
+  // An account with an Entra object id is matched on that alone, which
+  // survives a rename. Its email address is not consulted, because an address
+  // can be reassigned: a leaver whose old address now belongs to somebody else
+  // would otherwise keep their account, and their API tokens, indefinitely.
+  // Only an account that has never signed in with Microsoft falls back to its
+  // email address.
   //
-  // Follow-up: add an `externalDirectoryId` column to `User`, populate it on
-  // OIDC sign-in from the `oid` claim, and prefer it over email here.
+  // The cost is a person deleted and recreated in Entra: the new object id is
+  // one their account has never seen, so it is disabled until somebody
+  // re-enables it. That is the safe direction of failure.
   const candidates = consideredUsers.filter((user) => {
+    if (user.directoryObjectIds.length > 0) {
+      return !user.directoryObjectIds.some((id) => {
+        const normalised = normaliseObjectId(id);
+
+        return normalised !== null && entitledObjectIds.has(normalised);
+      });
+    }
+
     const email = normaliseEmail(user.email);
 
     return !email || !entitledEmails.has(email);
@@ -211,7 +319,7 @@ export const reconcileDirectoryAccess = async ({
   logger.info(
     `[entra-reconcile] Directory returned ${members.length} members (${entitledEmails.size} entitled email ` +
       `addresses). Considered ${consideredUsers.length} enabled non-admin accounts, skipped ${admins.length} ` +
-      `admin accounts, matched ${consideredUsers.length - candidates.length}, found ${candidates.length} without ` +
+      `admin accounts and ${exemptUsers.length} exempt accounts, matched ${consideredUsers.length - candidates.length}, found ${candidates.length} without ` +
       'directory access.',
   );
 
@@ -233,6 +341,7 @@ export const reconcileDirectoryAccess = async ({
       entitledEmailCount: entitledEmails.size,
       consideredUserCount: consideredUsers.length,
       skippedAdminCount: admins.length,
+      exemptUserCount: exemptUsers.length,
       candidateUserIds: candidates.map((user) => user.id),
       disabledUserIds: [],
       failedUserIds: [],
@@ -286,6 +395,7 @@ export const reconcileDirectoryAccess = async ({
     entitledEmailCount: entitledEmails.size,
     consideredUserCount: consideredUsers.length,
     skippedAdminCount: admins.length,
+    exemptUserCount: exemptUsers.length,
     candidateUserIds: candidates.map((user) => user.id),
     disabledUserIds,
     failedUserIds,

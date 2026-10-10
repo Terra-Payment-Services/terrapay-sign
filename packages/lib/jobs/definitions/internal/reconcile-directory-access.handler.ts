@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 
 import {
   ENTRA_RECONCILE_DRY_RUN,
+  ENTRA_RECONCILE_EXEMPT_EMAILS,
   ENTRA_RECONCILE_MAX_DISABLE_RATIO,
   ENTRA_RECONCILE_MINIMUM_MEMBERS,
   NEXT_PRIVATE_ENTRA_ACCESS_GROUP_ID,
@@ -12,7 +13,10 @@ import {
 } from '../../../constants/app';
 import { AppError, AppErrorCode } from '../../../errors/app-error';
 import { fetchEntraGroupMembers, fetchEntraTenantUsers } from '../../../server-only/directory/entra-graph';
-import { reconcileDirectoryAccess } from '../../../server-only/directory/reconcile-directory-access';
+import {
+  readDirectoryObjectId,
+  reconcileDirectoryAccess,
+} from '../../../server-only/directory/reconcile-directory-access';
 import { disableUser } from '../../../server-only/user/disable-user';
 import { deletedServiceAccountEmail } from '../../../server-only/user/service-accounts/deleted-account';
 import { legacyServiceAccountEmail } from '../../../server-only/user/service-accounts/legacy-service-account';
@@ -50,12 +54,13 @@ export const run = async ({ io }: { payload: TReconcileDirectoryAccessJobDefinit
       dryRun: ENTRA_RECONCILE_DRY_RUN(),
       minimumMemberCount: ENTRA_RECONCILE_MINIMUM_MEMBERS(),
       maximumDisableRatio: ENTRA_RECONCILE_MAX_DISABLE_RATIO(),
+      exemptEmails: ENTRA_RECONCILE_EXEMPT_EMAILS(),
     },
     logger: io.logger,
     getDirectoryMembers: async () =>
       groupId ? await fetchEntraGroupMembers({ groupId, credentials }) : await fetchEntraTenantUsers({ credentials }),
-    getReconcilableUsers: async () =>
-      await prisma.user.findMany({
+    getReconcilableUsers: async () => {
+      const users = await prisma.user.findMany({
         where: {
           disabled: false,
           // The two system accounts that hold orphaned documents are in no
@@ -75,8 +80,22 @@ export const run = async ({ io }: { payload: TReconcileDirectoryAccessJobDefinit
           name: true,
           roles: true,
           disabled: true,
+          // The stored Microsoft ID tokens carry the Entra object id each
+          // sign-in was made as, which is what lets a renamed person match.
+          accounts: {
+            where: { provider: 'microsoft' },
+            select: { id_token: true },
+          },
         },
-      }),
+      });
+
+      return users.map(({ accounts, ...user }) => ({
+        ...user,
+        directoryObjectIds: accounts
+          .map((account) => readDirectoryObjectId(account.id_token, tenantId))
+          .filter((id): id is string => id !== null),
+      }));
+    },
     disableUserAccount: async ({ id }) => await disableUser({ id }),
   });
 

@@ -382,6 +382,7 @@ export const templateRouter = router({
       const createdTemplate = await createEnvelope({
         userId: user.id,
         teamId,
+        isPdfUploadPending: true,
         internalVersion: 1,
         data: {
           type: EnvelopeType.TEMPLATE,

@@ -59,10 +59,6 @@ type EnvelopeRenderProviderValue = {
   envelopeType: TEnvelope['type'];
   currentEnvelopeItem: EnvelopeRenderItem | null;
 
-  /**
-   * Sent as a bearer header when the PDF viewer fetches an item's URL.
-   */
-  presignToken: string | undefined;
   setCurrentEnvelopeItem: (envelopeItemId: string) => void;
   fields: Field[];
   signatures: EnvelopeRenderFieldSignature[];
@@ -130,13 +126,6 @@ interface EnvelopeRenderProviderProps {
   token: string | undefined;
 
   /**
-   * The presign token to access the envelope.
-   *
-   * If not provided, it will be assumed that the current user can access the document.
-   */
-  presignToken?: string | undefined;
-
-  /**
    * Custom override settings for generic page renderers.
    */
   overrideSettings?: EnvelopeRenderOverrideSettings;
@@ -164,7 +153,6 @@ export const EnvelopeRenderProvider = ({
   fields,
   signatures,
   token,
-  presignToken,
   recipients = [],
   version,
   overrideSettings,
@@ -232,7 +220,6 @@ export const EnvelopeRenderProvider = ({
         envelopeStatus: envelope.status,
         envelopeType: envelope.type,
         currentEnvelopeItem: currentItem,
-        presignToken,
         setCurrentEnvelopeItem,
         fields: fields ?? [],
         signatures: signatures ?? [],

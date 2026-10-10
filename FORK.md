@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 4 October 2026. This file is the notice that section
+program, and this version is dated 9 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -43,6 +43,18 @@ whole tenant, so a person who leaves loses access without a manual step. Disable
 deleted and guest accounts count as gone, and disabling a user ends the sessions they
 already hold. The deployment's own system accounts are left out of the count.
 
+The reconcile is guarded before it is allowed to disable anyone. An account is matched to
+the directory on the immutable Entra object id carried in the ID token stored at sign-in,
+accepted only when the token's tenant is the configured one, so a renamed user keeps their
+account and a reassigned address cannot keep a leaver's. An account with no such id is
+matched on its address alone. Addresses can be exempted from disabling by configuration.
+The minimum-membership floor and the largest share of users one run may disable must parse
+as valid numbers, and a bad value stops the job rather than falling back to a default.
+A directory user whose enabled state is missing is read as not enabled, and only enabled
+users count toward the floor. A production server refuses to start while the reconcile
+would do nothing, or while a setting points the job at another Graph or login address. Each Graph request gives up if it is not answered within a
+minute, and a continuation link is followed only when it is HTTPS on the Graph origin.
+
 ## Roles and authorisation
 
 Several ways for an organisation manager to raise their own role are closed. Setting the
@@ -61,6 +73,24 @@ that the original bytes survive unchanged at the start of the output. Upstream's
 development certificate is replaced, and the PDF library is patched so that a signature
 uses the digest algorithm it declares. Signatures are made to PAdES B-LTA, with an RFC
 3161 timestamp and embedded validation data, once a timestamp authority is configured.
+
+A PDF that opens without a password but carries owner restrictions, which signing tools
+such as Adobe Acrobat often produce, is accepted, where upstream refused every encrypted
+file. The restrictions are kept, and a signature already on the file is kept with them.
+A PDF that needs a password to open is refused with its own error and message. The PDF
+library decrypts an object by rebuilding it and marking it changed, so an incremental save
+rewrote every encrypted object that had merely been read, including an existing signature's
+contents, and the signature no longer verified in other readers. The library patch now also clears
+that mark after decryption. A signature already broken on arrival, or one
+in a format the program cannot check, is refused at upload, and each signer's signature is
+verified rather than only its digest. The same checks run on the bytes as received, before
+form values are filled, and the pending download is flattened around existing signatures
+and appended to, so the original bytes stay a prefix of the output. A legacy (V1) document
+cannot keep owner restrictions, because its sealing path drops them, so a restricted PDF is
+refused there, whether it is sent directly, copied or made from a template, with a message
+that names the cause. An uploaded PDF is parsed once in each stage and the parsed document
+is handed on, where it was parsed again in every stage. The messages shown when a protected
+or broken PDF is refused are in the translation catalogs.
 
 Validation data is not trusted until it is checked. Revocation responses are verified,
 and the certificate that issued them is proved before it is believed. Timestamp tokens
@@ -104,6 +134,22 @@ go to the team that owns the document. A retried completion job does not send th
 completion emails and webhooks twice, and a retried seal job does not seal a finished
 envelope again.
 
+A legacy (V1) document's PDF is checked again whenever the document is about to notify
+someone: before the next signer in a sequential order is invited, on resend, and when a
+signing email or a reminder is sent. A refusal is logged and the notification skipped, and
+a signer who has already signed keeps that signature. A document created in two steps through
+API v1 names an object that the upload URL can write for an hour. At send, the checked PDF is
+therefore copied to a key that was never offered for upload and the document's record is
+pointed at the copy, so a later upload to the URL changes nothing the document reads. Two
+sends of the same draft at once leave one stored copy, and the one that loses is refused
+with a conflict error.
+
+Placeholder fields placed on an envelope item no longer hold database row locks while the PDF
+is downloaded and stored. Each request reads the item's current revision, does the PDF and
+storage work, and commits only if the item has not moved, so concurrent requests on one item
+keep each other's changes or are refused with a conflict error. Objects stored by a failed
+attempt are deleted. A field that names no item goes to the first item in order.
+
 ## Recipient and server security
 
 The client address that audit rows record and rate limits count is read from the
@@ -122,11 +168,15 @@ the address it has just validated, fails closed when the address cannot be resol
 caps the response it stores. Every outbound request, to a webhook or to an identity
 provider, connects only to the addresses checked when it was validated, so a second DNS
 answer cannot redirect it, and the lookup counts against the request's deadline. Request
-bodies are capped before anything reads them. A presign token is accepted only in the
-`Authorization` header, never in a URL, cannot reach another team's documents, and when it
-names one document opens no other. Document files are sent as private and uncacheable, so
-no shared cache keeps a copy of a contract. Signing tokens are kept out of logs,
+bodies are capped before anything reads them, and a request refused for its size is answered
+with 413 reliably: the server reads and discards a bounded part of the body, limited by
+rate and by how many run at once, so the refusal does not reset the connection and slow
+senders cannot hold connections open. Document files are sent as private and
+uncacheable, so no shared cache keeps a copy of a contract. Signing tokens are kept out of logs,
 only embedded pages may be framed, and the health endpoint does not publish error detail.
+Runtime dependencies with reachable advisories (postcss-selector-parser, proxy-addr,
+compression and source-map-js) are patched, and a test shows that a branding stylesheet
+selector built to stall the parser no longer does.
 
 ## Signing pages and staff screens
 
@@ -164,6 +214,18 @@ attachments, because mail clients block images fetched from a server until the r
 allows them. A send is recorded only when Graph returns the response it documents
 for a successful send, and no Graph request follows a redirect.
 
+## Removal of embedded authoring
+
+Upstream lets an integrator embed its document editor in another site, authorised by a
+short-lived presign token minted from an API token. That capability is removed: the embedded
+authoring pages and playground, the procedures and API endpoint that mint and verify
+presign tokens, and the presign branches of the file routes, which now authenticate by
+session alone. Embedded signing for a recipient is kept, and
+the version 2 embedded signing page shows the completed state after signing and sends its
+completion event to the host page once. The documentation pages for
+embedded authoring now say this version does not support it, and the administrator claim
+screen lists only the flags an administrator can set.
+
 ## Removal of features that sent data outside
 
 Every upstream feature that called a third party is removed. An optional feature sent an
@@ -193,10 +255,15 @@ own.
 
 ## Testing
 
-Unit tests accompany each change, in `packages/lib`, `packages/auth` and
+The seal job's behaviours are covered by end-to-end specifications. Unit tests accompany each change, in `packages/lib`, `packages/auth` and
 `packages/signing`. The end-to-end suite covers the changed flows, and a subset of it can
 run against a deployed instance, including a test that creates, signs and seals a document
-through the public API.
+through the public API. Every Playwright run leaves a manifest of the commit, command and
+environment with JUnit and JSON results, and an artifact is kept only after a scan finds no
+credential in it. The specifications for protected PDFs, the directory reconcile and the
+removed embedded authoring are end-to-end tests written before the code. A signing test
+that cut a certificate at its trailing zero bytes, and so failed at random, now cuts it at
+its declared length.
 
 ## Upstream
 

@@ -489,6 +489,16 @@ const decorateAndSignPdf = async ({
       );
     }
 
+    if (pdfDoc.isEncrypted) {
+      // pdf-lib drops /Encrypt when it decrypts, so an owner-protected file
+      // would come out of this path with its protection silently removed.
+      // Creation refuses these for V1; this catches anything that predates it.
+      throw new Error(
+        `Envelope ${envelope.id} carries owner restrictions, which the V1 field insertion ` +
+          'path cannot keep. Recreate it as a V2 envelope.',
+      );
+    }
+
     const legacy_pdfLibDoc = await PDFDocument.load(await pdfDoc.save({ useXRefStream: true }));
 
     for (const field of envelopeItemFields) {

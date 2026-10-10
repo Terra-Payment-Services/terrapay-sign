@@ -37,7 +37,7 @@ const exchange = async (
     tokenEndpoint,
     clientId: CLIENT_ID,
     clientSecret: CLIENT_SECRET,
-    redirectUri: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+    redirectUri: 'https://sign.example.com/api/auth/callback/microsoft',
     code: 'the-code',
     codeVerifier: 'the-verifier',
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
@@ -70,7 +70,7 @@ describe('exchangeAuthorizationCode', () => {
       tokenEndpoint: TOKEN_ENDPOINT,
       clientId: CLIENT_ID,
       clientSecret: CLIENT_SECRET,
-      redirectUri: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+      redirectUri: 'https://sign.example.com/api/auth/callback/microsoft',
       code: 'the-code',
       codeVerifier: 'the-verifier',
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
@@ -238,7 +238,7 @@ describe('exchangeAuthorizationCode without an injected fetch', () => {
         tokenEndpoint: TOKEN_ENDPOINT,
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
-        redirectUri: 'https://sign.terrapay.com/api/auth/callback/microsoft',
+        redirectUri: 'https://sign.example.com/api/auth/callback/microsoft',
         code: 'the-code',
         codeVerifier: 'the-verifier',
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions

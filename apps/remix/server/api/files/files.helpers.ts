@@ -1,6 +1,5 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
 import { generatePartialSignedPdf } from '@documenso/lib/server-only/pdf/generate-partial-signed-pdf';
 import { sha256 } from '@documenso/lib/universal/crypto';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
@@ -18,35 +17,10 @@ type DocumentDataInput = {
   initialData: string;
 };
 
-/**
- * Reads a presign token from the `Authorization: Bearer` header. The file
- * routes take it from nowhere else, because a token in the query string is
- * written to the load balancer's access logs and the browser's history.
- */
-export const getPresignBearerToken = <E extends HonoEnv>(c: Context<E>): string | undefined => {
-  const authorizationHeader = c.req.header('authorization');
-
-  const [bearerToken] = (authorizationHeader || '').split('Bearer ').filter((part) => part.length > 0);
-
-  return bearerToken;
-};
-
 export const resolveFileUploadUserId = async <E extends HonoEnv>(c: Context<E>): Promise<number | null> => {
   const session = await getOptionalSession(c);
 
-  if (session.user?.id) {
-    return session.user.id;
-  }
-
-  const presignToken = getPresignBearerToken(c);
-
-  if (!presignToken) {
-    return null;
-  }
-
-  const verifiedToken = await verifyEmbeddingPresignToken({ token: presignToken }).catch(() => undefined);
-
-  return verifiedToken?.userId ?? null;
+  return session.user?.id ?? null;
 };
 
 type EnvelopeForPendingDownload = {

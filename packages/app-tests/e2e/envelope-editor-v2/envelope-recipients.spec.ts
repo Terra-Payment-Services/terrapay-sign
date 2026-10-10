@@ -4,7 +4,6 @@ import { expect, type Page, test } from '@playwright/test';
 import { DocumentSigningOrder, RecipientRole } from '@prisma/client';
 
 import {
-  addEnvelopeItemPdf,
   assertRecipientRole,
   clickAddMyselfButton,
   clickAddSignerButton,
@@ -15,9 +14,7 @@ import {
   getRecipientRemoveButtons,
   getSigningOrderInputs,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   setRecipientEmail,
   setRecipientName,
   setRecipientRole,
@@ -221,43 +218,6 @@ test.describe('template editor', () => {
   test('add myself, CRUD, roles, signing order and dictate signers', async ({ page }) => {
     const surface = await openTemplateEnvelopeEditor(page);
     const result = await runRecipientFlow(surface);
-
-    await assertRecipientsPersistedInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded create', () => {
-  test('CRUD, roles, signing order and dictate signers', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-embed-recipients',
-    });
-
-    await addEnvelopeItemPdf(surface.root, 'embedded-document-recipients.pdf');
-
-    const result = await runRecipientFlow(surface);
-    await persistEmbeddedEnvelope(surface);
-
-    await assertRecipientsPersistedInDatabase({
-      surface,
-      ...result,
-    });
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('CRUD, roles, signing order and dictate signers', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-embed-recipients',
-    });
-
-    const result = await runRecipientFlow(surface);
-    await persistEmbeddedEnvelope(surface);
 
     await assertRecipientsPersistedInDatabase({
       surface,

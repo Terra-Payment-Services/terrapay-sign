@@ -15,10 +15,6 @@ The following items have been deprecated and will be removed on the <strong>1st 
 - <strong>API V1</strong>
 - <strong>A subset of SDK/API V2 endpoints</strong>
 - <strong>Legacy documents and templates</strong>
-- <strong>EmbedCreateDocumentV1</strong>
-- <strong>EmbedCreateTemplateV1</strong>
-- <strong>EmbedUpdateDocumentV1</strong>
-- <strong>EmbedUpdateTemplateV1</strong>
 
 The beta endpoint `/api/v2-beta` will also be removed. Use `/api/v2` instead, which is a drop-in replacement.
 
@@ -197,14 +193,7 @@ Full reference in the [V2 OpenAPI reference](https://openapi.documenso.com).
 
 ### Embedding components
 
-| Deprecated component    | Replacement           |
-| ----------------------- | --------------------- |
-| `EmbedCreateDocumentV1` | `EmbedCreateEnvelope` |
-| `EmbedCreateTemplateV1` | `EmbedCreateEnvelope` |
-| `EmbedUpdateDocumentV1` | `EmbedUpdateEnvelope` |
-| `EmbedUpdateTemplateV1` | `EmbedUpdateEnvelope` |
-
-See the [embedding guide](/docs/developers/embedding) for the envelope components.
+TerraPay Sign does not support embedded authoring, so the editor components, V1 and envelope alike, are not available. Embedded signing is unaffected; see the [embedding guide](/docs/developers/embedding).
 
 ## FAQ
 

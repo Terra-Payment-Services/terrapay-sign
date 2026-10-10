@@ -1,6 +1,6 @@
 import { useUpdateSearchParams } from '@documenso/lib/client-only/hooks/use-update-search-params';
 import { ZUrlSearchParamsSchema } from '@documenso/lib/types/search-params';
-import { SUBSCRIPTION_CLAIM_FEATURE_FLAGS } from '@documenso/lib/types/subscription';
+import { ADMIN_CLAIM_FEATURE_FLAGS } from '@documenso/lib/types/subscription';
 import { trpc } from '@documenso/trpc/react';
 import { CopyTextButton } from '@documenso/ui/components/common/copy-text-button';
 import type { DataTableColumnDef } from '@documenso/ui/primitives/data-table';
@@ -82,7 +82,7 @@ export const AdminClaimsTable = () => {
       {
         header: t`Feature Flags`,
         cell: ({ row }) => {
-          const flags = Object.values(SUBSCRIPTION_CLAIM_FEATURE_FLAGS).filter(({ key }) => row.original.flags[key]);
+          const flags = ADMIN_CLAIM_FEATURE_FLAGS.filter(({ key }) => row.original.flags[key]);
 
           if (flags.length === 0) {
             return <p className="text-muted-foreground text-xs">{t`None`}</p>;

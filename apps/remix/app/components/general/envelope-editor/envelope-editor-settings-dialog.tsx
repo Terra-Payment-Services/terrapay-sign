@@ -163,7 +163,7 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
   const { t } = useLingui();
   const { toast } = useToast();
 
-  const { envelope, updateEnvelopeAsync, editorConfig, isEmbedded } = useCurrentEnvelopeEditor();
+  const { envelope, updateEnvelopeAsync, editorConfig } = useCurrentEnvelopeEditor();
 
   const { settings } = editorConfig;
 
@@ -266,13 +266,11 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
 
       setOpen(false);
 
-      if (!isEmbedded) {
-        toast({
-          title: t`Success`,
-          description: t`Envelope updated`,
-          duration: 5000,
-        });
-      }
+      toast({
+        title: t`Success`,
+        description: t`Envelope updated`,
+        duration: 5000,
+      });
     } catch (err) {
       const error = AppError.parseError(err);
 
@@ -866,29 +864,27 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
                         )}
                       />
 
-                      {!isEmbedded && (
-                        <FormField
-                          control={form.control}
-                          name="visibility"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="flex flex-row items-center">
-                                <Trans>Document visibility</Trans>
-                                <DocumentVisibilityTooltip />
-                              </FormLabel>
+                      <FormField
+                        control={form.control}
+                        name="visibility"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex flex-row items-center">
+                              <Trans>Document visibility</Trans>
+                              <DocumentVisibilityTooltip />
+                            </FormLabel>
 
-                              <FormControl>
-                                <DocumentVisibilitySelect
-                                  canUpdateVisibility={canUpdateVisibility}
-                                  currentTeamMemberRole={team.currentTeamRole}
-                                  {...field}
-                                  onValueChange={field.onChange}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      )}
+                            <FormControl>
+                              <DocumentVisibilitySelect
+                                canUpdateVisibility={canUpdateVisibility}
+                                currentTeamMemberRole={team.currentTeamRole}
+                                {...field}
+                                onValueChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
                     </>
                   ))
                   .otherwise(() => null)}

@@ -196,6 +196,7 @@ export const ApiContractV1 = c.router(
         400: ZUnsuccessfulResponseSchema,
         401: ZUnsuccessfulResponseSchema,
         404: ZUnsuccessfulResponseSchema,
+        409: ZUnsuccessfulResponseSchema,
         500: ZUnsuccessfulResponseSchema,
       },
       summary: 'Send a document for signing',

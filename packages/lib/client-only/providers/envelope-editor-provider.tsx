@@ -6,14 +6,13 @@ import {
   type TEditorEnvelope,
 } from '@documenso/lib/types/envelope-editor';
 import { trpc } from '@documenso/trpc/react';
-import type { TSetEnvelopeFieldsResponse } from '@documenso/trpc/server/envelope-router/set-envelope-fields.types';
 import type { TSetEnvelopeRecipientsRequest } from '@documenso/trpc/server/envelope-router/set-envelope-recipients.types';
 import type { TUpdateEnvelopeRequest } from '@documenso/trpc/server/envelope-router/update-envelope.types';
 import type { TRecipientColor } from '@documenso/ui/lib/recipient-colors';
 import { getRecipientColor } from '@documenso/ui/lib/recipient-colors';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { useLingui } from '@lingui/react/macro';
-import { EnvelopeType, Prisma, ReadStatus, SendStatus, SigningStatus } from '@prisma/client';
+import { EnvelopeType } from '@prisma/client';
 import type React from 'react';
 import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from 'react-router';
@@ -35,7 +34,6 @@ type EnvelopeEditorProviderValue = {
 
   envelope: TEditorEnvelope;
 
-  isEmbedded: boolean;
   isDocument: boolean;
   isTemplate: boolean;
   /**
@@ -188,8 +186,6 @@ export const EnvelopeEditorProvider = ({
     });
   }, []);
 
-  const isEmbedded = editorConfig.embedded !== undefined;
-
   const editorFields = useEditorFields({
     envelope,
     handleFieldsUpdate: (fields) => setFieldsDebounced(fields),
@@ -215,21 +211,13 @@ export const EnvelopeEditorProvider = ({
     isPending: isRecipientsMutationPending,
   } = useEnvelopeAutosave(async (localRecipients: TSetEnvelopeRecipientsRequest['recipients']) => {
     try {
-      let recipients: TEditorEnvelope['recipients'] = [];
-
       const currentEnvelope = getEnvelope();
 
-      if (!isEmbedded) {
-        const response = await setRecipientsMutation.mutateAsync({
-          envelopeId: currentEnvelope.id,
-          envelopeType: currentEnvelope.type,
-          recipients: localRecipients,
-        });
-
-        recipients = response.data;
-      } else {
-        recipients = mapLocalRecipientsToRecipients({ envelope: currentEnvelope, localRecipients });
-      }
+      const { data: recipients } = await setRecipientsMutation.mutateAsync({
+        envelopeId: currentEnvelope.id,
+        envelopeType: currentEnvelope.type,
+        recipients: localRecipients,
+      });
 
       setEnvelope((prev) => ({
         ...prev,
@@ -252,7 +240,7 @@ export const EnvelopeEditorProvider = ({
       console.error(err);
 
       analytics.captureException(err, {
-        source: isEmbedded ? 'embed' : 'editor',
+        source: 'editor',
         location: 'autosave_recipients',
         envelopeId: envelope.id,
       });
@@ -285,21 +273,13 @@ export const EnvelopeEditorProvider = ({
     isPending: isFieldsMutationPending,
   } = useEnvelopeAutosave(async (localFields: TLocalField[]) => {
     try {
-      let fields: TSetEnvelopeFieldsResponse['data'] = [];
-
       const currentEnvelope = getEnvelope();
 
-      if (!isEmbedded) {
-        const response = await setFieldsMutation.mutateAsync({
-          envelopeId: currentEnvelope.id,
-          envelopeType: currentEnvelope.type,
-          fields: localFields,
-        });
-
-        fields = response.data;
-      } else {
-        fields = mapLocalFieldsToFields({ envelope: currentEnvelope, localFields });
-      }
+      const { data: fields } = await setFieldsMutation.mutateAsync({
+        envelopeId: currentEnvelope.id,
+        envelopeType: currentEnvelope.type,
+        fields: localFields,
+      });
 
       setEnvelope((prev) => ({
         ...prev,
@@ -329,7 +309,7 @@ export const EnvelopeEditorProvider = ({
       console.error(err);
 
       analytics.captureException(err, {
-        source: isEmbedded ? 'embed' : 'editor',
+        source: 'editor',
         location: 'autosave_fields',
         envelopeId: envelope.id,
       });
@@ -362,21 +342,16 @@ export const EnvelopeEditorProvider = ({
     isPending: isEnvelopeMutationPending,
   } = useEnvelopeAutosave(async ({ data, meta }: UpdateEnvelopePayload) => {
     try {
-      const response = !isEmbedded
-        ? await updateEnvelopeMutation.mutateAsync({
-            envelopeId: getEnvelope().id,
-            data,
-            meta,
-          })
-        : {};
+      const response = await updateEnvelopeMutation.mutateAsync({
+        envelopeId: getEnvelope().id,
+        data,
+        meta,
+      });
 
       setEnvelope((prev) => ({
         ...prev,
         ...data,
-        authOptions: {
-          globalAccessAuth: data?.globalAccessAuth || [],
-          globalActionAuth: data?.globalActionAuth || [],
-        },
+        // The response carries the saved authOptions.
         ...response,
         documentMeta: {
           ...prev.documentMeta,
@@ -398,7 +373,7 @@ export const EnvelopeEditorProvider = ({
       console.error(err);
 
       analytics.captureException(err, {
-        source: isEmbedded ? 'embed' : 'editor',
+        source: 'editor',
         location: 'autosave_meta',
         envelopeId: envelope.id,
       });
@@ -448,7 +423,6 @@ export const EnvelopeEditorProvider = ({
       envelopeId: envelope.id,
     },
     {
-      enabled: !isEmbedded,
       gcTime: 0,
       ...DO_NOT_INVALIDATE_QUERY_ON_MUTATION,
     },
@@ -461,11 +435,6 @@ export const EnvelopeEditorProvider = ({
    */
   const syncEnvelope = async () => {
     await flushAutosave();
-
-    // Bypass syncing for embedded mode.
-    if (isEmbedded) {
-      return;
-    }
 
     const fetchedEnvelopeData = await reloadEnvelope();
 
@@ -490,26 +459,12 @@ export const EnvelopeEditorProvider = ({
   }, [isFieldsMutationPending, isRecipientsMutationPending, isEnvelopeMutationPending]);
 
   const relativePath = useMemo(() => {
-    let documentRootPath = formatDocumentsPath(envelope.team.url);
-    let templateRootPath = formatTemplatesPath(envelope.team.url);
+    const documentRootPath = formatDocumentsPath(envelope.team.url);
+    const templateRootPath = formatTemplatesPath(envelope.team.url);
 
     const basePath = envelope.type === EnvelopeType.DOCUMENT ? documentRootPath : templateRootPath;
-    let envelopePath = `${basePath}/${envelope.id}`;
-    let editorPath = `${basePath}/${envelope.id}/edit`;
-
-    if (editorConfig.embedded) {
-      let embeddedEditorPath =
-        editorConfig.embedded.mode === 'edit'
-          ? `/embed/v2/authoring/envelope/edit/${envelope.id}`
-          : `/embed/v2/authoring/envelope/create`;
-
-      embeddedEditorPath += `?token=${editorConfig.embedded.presignToken}`;
-
-      envelopePath = embeddedEditorPath;
-      editorPath = embeddedEditorPath;
-      documentRootPath = embeddedEditorPath;
-      templateRootPath = embeddedEditorPath;
-    }
+    const envelopePath = `${basePath}/${envelope.id}`;
+    const editorPath = `${basePath}/${envelope.id}/edit`;
 
     return {
       basePath,
@@ -585,7 +540,6 @@ export const EnvelopeEditorProvider = ({
       value={{
         editorConfig,
         envelope,
-        isEmbedded,
         isDocument: envelope.type === EnvelopeType.DOCUMENT,
         isTemplate: envelope.type === EnvelopeType.TEMPLATE,
         isCscMode,
@@ -612,100 +566,4 @@ export const EnvelopeEditorProvider = ({
       {children}
     </EnvelopeEditorContext.Provider>
   );
-};
-
-type MapLocalRecipientsToRecipientsOptions = {
-  envelope: TEditorEnvelope;
-  localRecipients: TSetEnvelopeRecipientsRequest['recipients'];
-};
-
-const mapLocalRecipientsToRecipients = ({
-  envelope,
-  localRecipients,
-}: MapLocalRecipientsToRecipientsOptions): TEditorEnvelope['recipients'] => {
-  let smallestRecipientId = localRecipients.reduce((min, recipient) => {
-    if (recipient.id && recipient.id < min) {
-      return recipient.id;
-    }
-
-    return min;
-  }, -1);
-
-  return localRecipients.map((recipient) => {
-    const foundRecipient = envelope.recipients.find((r) => r.id === recipient.id);
-
-    let recipientId = recipient.id;
-
-    if (recipientId === undefined) {
-      recipientId = smallestRecipientId;
-      smallestRecipientId--;
-    }
-
-    return {
-      id: recipientId,
-      envelopeId: envelope.id,
-      email: recipient.email,
-      name: recipient.name,
-      token: foundRecipient?.token || '',
-      documentDeletedAt: foundRecipient?.documentDeletedAt || null,
-      expired: foundRecipient?.expired || null,
-      signedAt: foundRecipient?.signedAt || null,
-      authOptions: recipient.actionAuth.length > 0 ? { actionAuth: recipient.actionAuth, accessAuth: [] } : null,
-      signingOrder: recipient.signingOrder ?? null,
-      rejectionReason: foundRecipient?.rejectionReason || null,
-      role: recipient.role,
-      readStatus: foundRecipient?.readStatus || ReadStatus.NOT_OPENED,
-      signingStatus: foundRecipient?.signingStatus || SigningStatus.NOT_SIGNED,
-      sendStatus: foundRecipient?.sendStatus || SendStatus.NOT_SENT,
-      expiresAt: foundRecipient?.expiresAt || null,
-      expirationNotifiedAt: foundRecipient?.expirationNotifiedAt || null,
-    };
-  });
-};
-
-type MapLocalFieldsToFieldsOptions = {
-  localFields: TLocalField[];
-  envelope: TEditorEnvelope;
-};
-
-const mapLocalFieldsToFields = ({
-  envelope,
-  localFields,
-}: MapLocalFieldsToFieldsOptions): TSetEnvelopeFieldsResponse['data'] => {
-  let smallestFieldId = localFields.reduce((min, field) => {
-    if (field.id && field.id < min) {
-      return field.id;
-    }
-
-    return min;
-  }, -1);
-
-  return localFields.map((field) => {
-    const foundField = envelope.fields.find((envelopeField) => envelopeField.id === field.id);
-
-    let fieldId = field.id;
-
-    if (fieldId === undefined) {
-      fieldId = smallestFieldId;
-      smallestFieldId--;
-    }
-
-    return {
-      ...field,
-      formId: field.formId,
-      id: fieldId,
-      envelopeId: envelope.id,
-      envelopeItemId: field.envelopeItemId,
-      type: field.type,
-      recipientId: field.recipientId,
-      positionX: new Prisma.Decimal(field.positionX),
-      positionY: new Prisma.Decimal(field.positionY),
-      width: new Prisma.Decimal(field.width),
-      height: new Prisma.Decimal(field.height),
-      secondaryId: foundField?.secondaryId || '',
-      inserted: foundField?.inserted || false,
-      customText: foundField?.customText || '',
-      fieldMeta: field.fieldMeta || null,
-    };
-  });
 };

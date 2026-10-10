@@ -5,7 +5,7 @@ import { tsr } from '@ts-rest/serverless/fetch';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { deleteDocument } from '@documenso/lib/server-only/document/delete-document';
 import { findDocuments } from '@documenso/lib/server-only/document/find-documents';
 import { resendDocument } from '@documenso/lib/server-only/document/resend-document';
@@ -400,6 +400,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       const envelope = await createEnvelope({
         userId: user.id,
         teamId: team.id,
+        isPdfUploadPending: true,
         internalVersion: 1,
         data: {
           title: body.title,
@@ -538,6 +539,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       const createdTemplate = await createEnvelope({
         userId: user.id,
         teamId: team.id,
+        isPdfUploadPending: true,
         internalVersion: 1,
         data: {
           type: EnvelopeType.TEMPLATE,
@@ -1012,7 +1014,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
-      return AppError.toRestAPIError(err);
+      return toLegacyPdfRefusal(err) ?? AppError.toRestAPIError(err);
     }
   }),
 
@@ -1045,6 +1047,12 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      const refusal = toLegacyPdfRefusal(err);
+
+      if (refusal) {
+        return refusal;
+      }
+
       return {
         status: 500,
         body: {
@@ -1638,3 +1646,25 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     };
   }),
 });
+
+/**
+ * The API v1 answer for a PDF the V1 send check (`assertLegacyEnvelopeAcceptsPdf`)
+ * refuses, or null for any other error. Send and resend both use it, so the same
+ * PDF is refused with the same 400 on either route.
+ *
+ * A two-step file is first examined at send, so a broken signature or a file
+ * that is not a PDF names its code for a client that has no other way to tell.
+ */
+const toLegacyPdfRefusal = (err: unknown) => {
+  const error = AppError.parseError(err);
+
+  if (error.code === AppErrorCode.SIGNATURE_ALREADY_INVALID || error.code === 'INVALID_DOCUMENT_FILE') {
+    return { status: 400 as const, body: { message: error.message, code: error.code } };
+  }
+
+  if (error.code === AppErrorCode.ENVELOPE_LEGACY || error.code === AppErrorCode.PASSWORD_PROTECTED_DOCUMENT) {
+    return { status: 400 as const, body: { message: error.message } };
+  }
+
+  return null;
+};

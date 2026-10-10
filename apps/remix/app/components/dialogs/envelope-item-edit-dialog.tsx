@@ -54,7 +54,7 @@ export const EnvelopeItemEditDialog = ({
   const { t, i18n } = useLingui();
   const { toast } = useToast();
 
-  const { envelope, editorFields, setLocalEnvelope, isEmbedded } = useCurrentEnvelopeEditor();
+  const { envelope, editorFields, setLocalEnvelope } = useCurrentEnvelopeEditor();
 
   const [isOpen, setIsOpen] = useState(false);
   const [replacementFile, setReplacementFile] = useState<{ file: File; pageCount: number } | null>(null);
@@ -145,37 +145,19 @@ export const EnvelopeItemEditDialog = ({
     }
 
     try {
-      const { file, pageCount } = replacementFile;
+      const { file } = replacementFile;
 
-      if (isEmbedded) {
-        const arrayBuffer = await file.arrayBuffer();
-        const fileData = new Uint8Array(arrayBuffer.slice(0));
+      const payload = {
+        envelopeId: envelope.id,
+        envelopeItemId: envelopeItem.id,
+        title: data.title,
+      } satisfies TReplaceEnvelopeItemPdfPayload;
 
-        const remainingFields = envelope.fields.filter(
-          (field) => field.envelopeItemId !== envelopeItem.id || field.page <= pageCount,
-        );
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify(payload));
+      formData.append('file', file);
 
-        setLocalEnvelope({
-          envelopeItems: envelope.envelopeItems.map((item) =>
-            item.id === envelopeItem.id ? { ...item, title: data.title, data: fileData } : item,
-          ),
-          fields: remainingFields,
-        });
-
-        editorFields.resetForm(remainingFields);
-      } else {
-        const payload = {
-          envelopeId: envelope.id,
-          envelopeItemId: envelopeItem.id,
-          title: data.title,
-        } satisfies TReplaceEnvelopeItemPdfPayload;
-
-        const formData = new FormData();
-        formData.append('payload', JSON.stringify(payload));
-        formData.append('file', file);
-
-        await replaceEnvelopeItemPdf(formData);
-      }
+      await replaceEnvelopeItemPdf(formData);
 
       setIsOpen(false);
     } catch {

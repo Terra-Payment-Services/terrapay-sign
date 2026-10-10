@@ -4,8 +4,9 @@ import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-reques
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
 import { checkboxValidationSigns } from '@documenso/ui/primitives/document-flow/field-items-advanced-settings/constants';
-import type { DocumentData, Envelope, EnvelopeItem, Field, Recipient } from '@prisma/client';
+import type { DocumentData, Envelope, EnvelopeItem, Field, Prisma, Recipient } from '@prisma/client';
 import {
+  DocumentDataType,
   DocumentSigningOrder,
   DocumentStatus,
   EnvelopeType,
@@ -31,8 +32,9 @@ import {
 } from '../../types/field-meta';
 import { SignatureLevel } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
+import { deleteFile } from '../../universal/upload/delete-file';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
-import { putNormalizedPdfFileServerSide } from '../../universal/upload/put-file.server';
+import { putFileServerSide, putNormalizedPdfFileServerSide } from '../../universal/upload/put-file.server';
 import { isDocumentCompleted } from '../../utils/document';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { type EnvelopeIdOptions, mapSecondaryIdToDocumentId } from '../../utils/envelope';
@@ -45,6 +47,7 @@ import {
 } from '../../utils/recipients';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
+import { assertLegacyEnvelopeAcceptsPdf, normalizePdf } from '../pdf/normalize-pdf';
 import { assertUserNotDisabledById } from '../user/assert-user-not-disabled';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
@@ -56,6 +59,13 @@ export type SendDocumentOptions = {
   requestMetadata: ApiRequestMetadata;
 };
 
+/**
+ * Sends a document for signing, or sends it again while it is PENDING.
+ *
+ * A V1 document's PDF is checked with `assertLegacyEnvelopeAcceptsPdf` on every
+ * call, whatever the status, and a PDF that fails is refused before any
+ * recipient is notified.
+ */
 export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetadata }: SendDocumentOptions) => {
   // Refuse to send on behalf of a disabled account. Guards distribute /
   // redistribute / template-use routes, the bulk-send job, and direct
@@ -162,12 +172,27 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     throw new Error('Missing envelope items');
   }
 
-  if (envelope.formValues && envelope.status === DocumentStatus.DRAFT) {
-    await Promise.all(
-      envelope.envelopeItems.map(async (envelopeItem) => {
-        await injectFormValuesIntoDocument(envelope, envelopeItem);
-      }),
-    );
+  // Two-step creation stores a V1 document before its file is uploaded, so the
+  // check made at creation proves nothing about the bytes stored now. Make it on
+  // every send, a repeat send of a PENDING document included, before anyone is
+  // emailed. Every item is checked before anything is written, and the bytes
+  // checked are the ones stored at the send below, never a second read.
+  const checkedPdfs: Array<{ envelopeItem: (typeof envelope.envelopeItems)[number]; pdf: Uint8Array }> = [];
+
+  const isPdfStoredAtSend = envelope.status === DocumentStatus.DRAFT && Boolean(envelope.formValues);
+
+  for (const envelopeItem of envelope.envelopeItems) {
+    if (envelope.internalVersion !== 1 && !isPdfStoredAtSend) {
+      continue;
+    }
+
+    const pdf = await getFileServerSide(envelopeItem.documentData);
+
+    if (envelope.internalVersion === 1) {
+      await assertLegacyEnvelopeAcceptsPdf(pdf);
+    }
+
+    checkedPdfs.push({ envelopeItem, pdf });
   }
 
   // Validate that recipients with auth requirements have a valid email.
@@ -201,11 +226,25 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     });
   }
 
+  // Stored only once every refusal above has been made, so a refused send
+  // leaves the upload where its owner can replace it.
+  const stagedPdfs = envelope.status === DocumentStatus.DRAFT ? await stagePdfsForSend(envelope, checkedPdfs) : [];
+
   const allRecipientsHaveNoActionToTake = envelope.recipients.every(
     (recipient) => recipient.role === RecipientRole.CC || recipient.signingStatus === SigningStatus.SIGNED,
   );
 
   if (allRecipientsHaveNoActionToTake) {
+    if (stagedPdfs.length > 0) {
+      await prisma
+        .$transaction(async (tx) => commitStagedPdfs(tx, envelope.id, stagedPdfs))
+        .catch(async (error) => {
+          await deleteStagedPdfs(stagedPdfs);
+
+          throw error;
+        });
+    }
+
     await jobs.triggerJob({
       name: 'internal.seal-document',
       payload: {
@@ -248,85 +287,93 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     }
   }
 
-  const updatedEnvelope = await prisma.$transaction(async (tx) => {
-    if (envelope.status === DocumentStatus.DRAFT) {
-      await tx.documentAuditLog.create({
-        data: createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT,
-          envelopeId: envelope.id,
-          metadata: requestMetadata,
-          data: {},
-        }),
-      });
-    }
+  const updatedEnvelope = await prisma
+    .$transaction(async (tx) => {
+      await commitStagedPdfs(tx, envelope.id, stagedPdfs);
 
-    if (envelope.internalVersion === 2) {
-      const autoInsertedFields = await Promise.all(
-        fieldsToAutoInsert.map(async (field) => {
-          // Warning: Only auto-insert fields if the recipient has not been sent the document yet.
-          return await tx.field.update({
-            where: {
-              id: field.fieldId,
-            },
+      if (envelope.status === DocumentStatus.DRAFT) {
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT,
+            envelopeId: envelope.id,
+            metadata: requestMetadata,
+            data: {},
+          }),
+        });
+      }
+
+      if (envelope.internalVersion === 2) {
+        const autoInsertedFields = await Promise.all(
+          fieldsToAutoInsert.map(async (field) => {
+            // Warning: Only auto-insert fields if the recipient has not been sent the document yet.
+            return await tx.field.update({
+              where: {
+                id: field.fieldId,
+              },
+              data: {
+                customText: field.customText,
+                inserted: true,
+              },
+            });
+          }),
+        );
+
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELDS_AUTO_INSERTED,
+            envelopeId: envelope.id,
             data: {
-              customText: field.customText,
-              inserted: true,
+              fields: autoInsertedFields.map((field) => ({
+                fieldId: field.id,
+                fieldType: field.type,
+                recipientId: field.recipientId,
+              })),
             },
-          });
-        }),
-      );
+            // Don't put metadata or user here since it's a system event.
+          }),
+        });
+      }
 
-      await tx.documentAuditLog.create({
-        data: createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELDS_AUTO_INSERTED,
-          envelopeId: envelope.id,
+      const expiresAt = resolveExpiresAt(envelope.documentMeta?.envelopeExpirationPeriod ?? null);
+
+      // Set expiresAt on each recipient that hasn't already signed/rejected.
+      // Exclude CC recipients since they don't sign and shouldn't be subject to expiry.
+      if (expiresAt) {
+        await tx.recipient.updateMany({
+          where: {
+            envelopeId: envelope.id,
+            signingStatus: {
+              notIn: [SigningStatus.SIGNED, SigningStatus.REJECTED],
+            },
+            role: {
+              not: RecipientRole.CC,
+            },
+          },
           data: {
-            fields: autoInsertedFields.map((field) => ({
-              fieldId: field.id,
-              fieldType: field.type,
-              recipientId: field.recipientId,
-            })),
+            expiresAt,
+            expirationNotifiedAt: null,
           },
-          // Don't put metadata or user here since it's a system event.
-        }),
-      });
-    }
+        });
+      }
 
-    const expiresAt = resolveExpiresAt(envelope.documentMeta?.envelopeExpirationPeriod ?? null);
-
-    // Set expiresAt on each recipient that hasn't already signed/rejected.
-    // Exclude CC recipients since they don't sign and shouldn't be subject to expiry.
-    if (expiresAt) {
-      await tx.recipient.updateMany({
+      return await tx.envelope.update({
         where: {
-          envelopeId: envelope.id,
-          signingStatus: {
-            notIn: [SigningStatus.SIGNED, SigningStatus.REJECTED],
-          },
-          role: {
-            not: RecipientRole.CC,
-          },
+          id: envelope.id,
         },
         data: {
-          expiresAt,
-          expirationNotifiedAt: null,
+          status: DocumentStatus.PENDING,
+        },
+        include: {
+          documentMeta: true,
+          recipients: true,
         },
       });
-    }
+    })
+    .catch(async (error) => {
+      await deleteStagedPdfs(stagedPdfs);
 
-    return await tx.envelope.update({
-      where: {
-        id: envelope.id,
-      },
-      data: {
-        status: DocumentStatus.PENDING,
-      },
-      include: {
-        documentMeta: true,
-        recipients: true,
-      },
+      throw error;
     });
-  });
 
   const isRecipientSigningRequestEmailEnabled = extractDerivedDocumentEmailSettings(
     envelope.documentMeta,
@@ -365,41 +412,183 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   return updatedEnvelope;
 };
 
-const injectFormValuesIntoDocument = async (
+type SendEnvelopeItem = Pick<EnvelopeItem, 'id'> & {
+  documentData: Pick<DocumentData, 'id' | 'type' | 'data' | 'initialData'>;
+};
+
+/** A PDF written to a fresh key at send, not yet named by any row. */
+type StagedPdf = {
+  envelopeItemId: string;
+  documentDataId: string;
+  previousData: string;
+  previousInitialData: string;
+  data: string;
+  initialData: string;
+};
+
+/**
+ * Writes the PDFs a DRAFT document is sent with, from the bytes the send checked.
+ *
+ * A V1 document in object storage may name the key of a presigned upload URL,
+ * which accepts a new file for an hour whatever the document's status.
+ * Its checked bytes, prefilled when it has form values, are written to a key
+ * that was never presigned and returned as staged; `commitStagedPdfs` points
+ * the existing row at them inside the send's transaction. The uploaded object
+ * itself is not deleted here: other rows (a duplicate, a template, a sealed
+ * version) can name the same key, and deleting it safely needs the
+ * reference-aware cleanup planned separately. Once no row names it nothing reads it, so a
+ * late PUT has no effect.
+ *
+ * Any other document keeps the existing behaviour: only form values are
+ * written, to a new row the item is pointed at.
+ *
+ * @param envelope the envelope being sent
+ * @param checkedPdfs each item with the bytes the send read and checked for it
+ * @returns the staged PDFs, empty when nothing was staged
+ */
+const stagePdfsForSend = async (
   envelope: Envelope,
-  envelopeItem: Pick<EnvelopeItem, 'id'> & { documentData: Pick<DocumentData, 'id' | 'type' | 'data'> },
+  checkedPdfs: Array<{ envelopeItem: SendEnvelopeItem; pdf: Uint8Array }>,
 ) => {
-  const file = await getFileServerSide(envelopeItem.documentData);
+  const staged: StagedPdf[] = [];
 
-  const prefilled = await insertFormValuesInPdf({
-    pdf: Buffer.from(file),
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    formValues: envelope.formValues as Record<string, string | number | boolean>,
-  });
+  try {
+    for (const { envelopeItem, pdf } of checkedPdfs) {
+      const { documentData } = envelopeItem;
+      const isUploadKeyReplaced = envelope.internalVersion === 1 && documentData.type === DocumentDataType.S3_PATH;
 
-  let fileName = envelope.title;
+      if (!envelope.formValues && !isUploadKeyReplaced) {
+        continue;
+      }
 
-  if (!envelope.title.endsWith('.pdf')) {
-    fileName = `${envelope.title}.pdf`;
+      const fileName = envelope.title.endsWith('.pdf') ? envelope.title : `${envelope.title}.pdf`;
+
+      let stored = Buffer.from(pdf);
+
+      if (envelope.formValues) {
+        stored = await insertFormValuesInPdf({
+          pdf: stored,
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          formValues: envelope.formValues as Record<string, string | number | boolean>,
+        });
+      }
+
+      if (!isUploadKeyReplaced) {
+        const newDocumentData = await putNormalizedPdfFileServerSide(
+          { name: fileName, type: 'application/pdf', arrayBuffer: async () => Promise.resolve(stored) },
+          { owner: { userId: envelope.userId, teamId: envelope.teamId } },
+        );
+
+        await prisma.envelopeItem.update({
+          where: { id: envelopeItem.id },
+          data: { documentDataId: newDocumentData.id },
+        });
+
+        continue;
+      }
+
+      const bytes = envelope.formValues ? await normalizePdf(stored) : stored;
+
+      const { data } = await putFileServerSide({
+        name: fileName,
+        type: 'application/pdf',
+        arrayBuffer: async () => Promise.resolve(bytes),
+      });
+
+      // Prefilled bytes replace both versions, as the new row did before.
+      // Otherwise an initialData that differs from data (a document made from a
+      // template) is left as it is.
+      const initialData =
+        envelope.formValues || documentData.initialData === documentData.data ? data : documentData.initialData;
+
+      staged.push({
+        envelopeItemId: envelopeItem.id,
+        documentDataId: documentData.id,
+        previousData: documentData.data,
+        previousInitialData: documentData.initialData,
+        data,
+        initialData,
+      });
+    }
+
+    return staged;
+  } catch (error) {
+    await deleteStagedPdfs(staged);
+
+    throw error;
+  }
+};
+
+/**
+ * Points each staged item's existing DocumentData row at its staged key, in
+ * the caller's transaction.
+ *
+ * The envelope row is taken first while it is still DRAFT, so a concurrent
+ * send of the same document waits here and then finds it sent. Each item and
+ * row must still be the revision the send checked; anything else is a
+ * conflict, and the transaction rolls back.
+ *
+ * @param tx the send's transaction
+ * @param envelopeId the envelope being sent
+ * @param staged the PDFs staged by `stagePdfsForSend`
+ */
+const commitStagedPdfs = async (tx: Prisma.TransactionClient, envelopeId: string, staged: StagedPdf[]) => {
+  if (staged.length === 0) {
+    return;
   }
 
-  const newDocumentData = await putNormalizedPdfFileServerSide(
-    {
-      name: fileName,
-      type: 'application/pdf',
-      arrayBuffer: async () => Promise.resolve(prefilled),
-    },
-    { owner: { userId: envelope.userId, teamId: envelope.teamId } },
-  );
+  const conflict = () =>
+    new AppError(AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT, {
+      message: 'The document changed while it was being sent. Send it again.',
+    });
 
-  await prisma.envelopeItem.update({
-    where: {
-      id: envelopeItem.id,
-    },
-    data: {
-      documentDataId: newDocumentData.id,
-    },
+  const { count: envelopes } = await tx.envelope.updateMany({
+    where: { id: envelopeId, status: DocumentStatus.DRAFT },
+    data: { status: DocumentStatus.DRAFT },
   });
+
+  if (envelopes === 0) {
+    throw conflict();
+  }
+
+  for (const pdf of [...staged].sort((a, b) => (a.envelopeItemId < b.envelopeItemId ? -1 : 1))) {
+    const { count: items } = await tx.envelopeItem.updateMany({
+      where: { id: pdf.envelopeItemId, documentDataId: pdf.documentDataId },
+      data: { documentDataId: pdf.documentDataId },
+    });
+
+    const { count: rows } = await tx.documentData.updateMany({
+      where: { id: pdf.documentDataId, data: pdf.previousData, initialData: pdf.previousInitialData },
+      data: { data: pdf.data, initialData: pdf.initialData },
+    });
+
+    if (items === 0 || rows === 0) {
+      throw conflict();
+    }
+  }
+};
+
+/**
+ * Deletes every staged object that no row names, after a failed send.
+ *
+ * Best effort: a failed delete is logged and never replaces the error that
+ * caused the cleanup. A commit whose acknowledgement was lost leaves a row
+ * naming the object, which is then live and stays.
+ *
+ * @param staged the PDFs staged by `stagePdfsForSend`
+ */
+const deleteStagedPdfs = async (staged: StagedPdf[]) => {
+  for (const { data } of staged) {
+    try {
+      const rowsNamingKey = await prisma.documentData.count({ where: { OR: [{ data }, { initialData: data }] } });
+
+      if (rowsNamingKey === 0) {
+        await deleteFile({ type: DocumentDataType.S3_PATH, data });
+      }
+    } catch (error) {
+      logger.error({ msg: 'Failed to delete a PDF staged for send', key: data, error });
+    }
+  }
 };
 
 /**

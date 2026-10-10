@@ -7,9 +7,11 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import { ZSignatureLevelSchema } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { nanoid, prefixedId } from '../../universal/id';
+import { getFileServerSide } from '../../universal/upload/get-file.server';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
+import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -83,6 +85,17 @@ export const duplicateEnvelope = async ({ id, userId, teamId, overrides }: Dupli
     throw new AppError(AppErrorCode.INVALID_REQUEST, {
       message: 'Only documents can be saved as templates',
     });
+  }
+
+  // A V1 copy could not keep owner restrictions either, so refuse before
+  // anything is created. The copy is made from `initialData`, so that is the
+  // file checked.
+  if (envelope.internalVersion === 1) {
+    for (const item of envelope.envelopeItems) {
+      const { type, initialData } = item.documentData;
+
+      await assertLegacyEnvelopeAcceptsPdf(await getFileServerSide({ type, data: initialData }));
+    }
   }
 
   const targetType = duplicateAsTemplate ? EnvelopeType.TEMPLATE : envelope.type;

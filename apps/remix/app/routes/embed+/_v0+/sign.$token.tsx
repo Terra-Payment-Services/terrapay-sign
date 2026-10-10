@@ -459,6 +459,7 @@ const EmbedSignDocumentPageV2 = ({ data }: { data: Awaited<ReturnType<typeof han
 
   return (
     <EnvelopeSigningProvider
+      key={String(envelopeForSigning.isCompleted)}
       envelopeData={envelopeForSigning}
       email={recipient.email}
       fullName={user?.email === recipient.email ? user?.name : recipient.name}

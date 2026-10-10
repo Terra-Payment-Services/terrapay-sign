@@ -85,3 +85,11 @@ apps/remix/signing/*.p12
 # session overwriting this file. Kept out of the tree because every file we
 # track is one more thing to reconcile when upstream is merged.
 HANDOVER.md
+
+# Playwright MCP session captures. They hold whatever the browser showed,
+# which has included mailbox content, so they never enter the tree.
+.playwright-mcp/
+
+# Stryker mutation testing (packages/lib/stryker.config.json)
+packages/lib/reports/mutation/
+packages/lib/.stryker-tmp/

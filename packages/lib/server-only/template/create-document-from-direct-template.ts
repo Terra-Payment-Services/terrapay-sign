@@ -44,6 +44,7 @@ import { getRecipientsWithMissingFields } from '../../utils/recipients';
 import { sendDocument } from '../document/send-document';
 import { validateFieldAuth } from '../document/validate-field-auth';
 import { incrementDocumentId } from '../envelope/increment-id';
+import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
 import { getTeamSettings } from '../team/get-team-settings';
@@ -339,6 +340,10 @@ export const createDocumentFromDirectTemplate = async ({
   const envelopeItemsToCreate = await Promise.all(
     directTemplateEnvelope.envelopeItems.map(async (item, i) => {
       const buffer = await getFileServerSide(item.documentData);
+
+      if (directTemplateEnvelope.internalVersion === 1) {
+        await assertLegacyEnvelopeAcceptsPdf(buffer);
+      }
 
       const titleToUse = item.title || directTemplateEnvelope.title;
 

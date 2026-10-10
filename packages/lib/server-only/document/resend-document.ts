@@ -23,6 +23,7 @@ import { getI18nInstance } from '../../client-only/providers/i18n-server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
+import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { isDocumentCompleted } from '../../utils/document';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { assertNoPlaceholderRecipients, isRecipientEmailValidForSending } from '../../utils/recipients';
@@ -30,6 +31,7 @@ import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { buildEnvelopeEmailHeaders } from '../email/build-envelope-email-headers';
 import { getEmailContext } from '../email/get-email-context';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { updateRecipientNextReminder } from '../recipient/update-recipient-next-reminder';
 import { assertUserNotDisabled } from '../user/assert-user-not-disabled';
@@ -43,6 +45,13 @@ export type ResendDocumentOptions = {
   requestMetadata: ApiRequestMetadata;
 };
 
+/**
+ * Reminds the given recipients of a PENDING document by email.
+ *
+ * A V1 document's PDF is checked with `assertLegacyEnvelopeAcceptsPdf`, as the
+ * send path does, and a PDF that fails is refused before any recipient is
+ * touched or emailed.
+ */
 export const resendDocument = async ({ id, userId, recipients, teamId, requestMetadata }: ResendDocumentOptions) => {
   const user = await prisma.user.findFirstOrThrow({
     where: {
@@ -72,6 +81,18 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
     include: {
       recipients: true,
       documentMeta: true,
+      envelopeItems: {
+        select: {
+          documentData: {
+            select: {
+              type: true,
+              id: true,
+              data: true,
+              initialData: true,
+            },
+          },
+        },
+      },
       team: {
         select: {
           teamEmail: true,
@@ -119,6 +140,15 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
       message: `You cannot send a document with more than ${maximumRecipientCount} recipients`,
       statusCode: 400,
     });
+  }
+
+  // The PDF may have changed since the send (a two-step upload URL still
+  // accepts a new file), so check the bytes stored now, before the reminder
+  // cycle is reset or anyone is emailed.
+  if (envelope.internalVersion === 1) {
+    for (const envelopeItem of envelope.envelopeItems) {
+      await assertLegacyEnvelopeAcceptsPdf(await getFileServerSide(envelopeItem.documentData));
+    }
   }
 
   const expiresAt = resolveExpiresAt(envelope.documentMeta?.envelopeExpirationPeriod ?? null);

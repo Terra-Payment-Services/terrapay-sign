@@ -10,9 +10,7 @@ import {
   clickEnvelopeEditorStep,
   getEnvelopeEditorSettingsTrigger,
   openDocumentEnvelopeEditor,
-  openEmbeddedEnvelopeEditor,
   openTemplateEnvelopeEditor,
-  persistEmbeddedEnvelope,
   setRecipientEmail,
   setRecipientName,
   type TEnvelopeEditorSurface,
@@ -263,48 +261,6 @@ test.describe('template editor', () => {
   test('should rename an envelope item from the fields page', async ({ page }) => {
     const surface = await openTemplateEnvelopeEditor(page);
     const result = await runRenameFlow(surface);
-
-    await assertRenamePersistedInDatabase({ surface, ...result });
-  });
-});
-
-test.describe('embedded create', () => {
-  test('should rename an envelope item from the fields page', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-edit-dialog-create',
-    });
-
-    const result = await runRenameFlow(surface);
-
-    await clickEnvelopeEditorStep(surface.root, 'upload');
-    await persistEmbeddedEnvelope(surface);
-
-    await assertRenamePersistedInDatabase({ surface, ...result });
-  });
-
-  test('should replace a PDF from the fields page', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'DOCUMENT',
-      tokenNamePrefix: 'e2e-edit-dialog-replace',
-    });
-
-    await runReplacePdfFlow(surface);
-  });
-});
-
-test.describe('embedded edit', () => {
-  test('should rename an envelope item from the fields page', async ({ page }) => {
-    const surface = await openEmbeddedEnvelopeEditor(page, {
-      envelopeType: 'TEMPLATE',
-      mode: 'edit',
-      tokenNamePrefix: 'e2e-edit-dialog-edit',
-    });
-
-    const result = await runRenameFlow(surface);
-
-    await clickEnvelopeEditorStep(surface.root, 'upload');
-    await persistEmbeddedEnvelope(surface);
 
     await assertRenamePersistedInDatabase({ surface, ...result });
   });

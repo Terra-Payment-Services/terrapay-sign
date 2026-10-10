@@ -15,14 +15,17 @@ import { createElement } from 'react';
 import { getI18nInstance } from '../../../client-only/providers/i18n-server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../../constants/app';
 import { RECIPIENT_ROLES_DESCRIPTION } from '../../../constants/recipient-roles';
+import { AppError } from '../../../errors/app-error';
 import { buildEnvelopeEmailHeaders } from '../../../server-only/email/build-envelope-email-headers';
 import { getEmailContext } from '../../../server-only/email/get-email-context';
+import { assertLegacyEnvelopeAcceptsPdf } from '../../../server-only/pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../../../server-only/rate-limit/assert-organisation-rates-and-limits';
 import { updateRecipientNextReminder } from '../../../server-only/recipient/update-recipient-next-reminder';
 import { triggerTeamWebhook } from '../../../server-only/webhooks/trigger/trigger-webhook';
 import { DOCUMENT_AUDIT_LOG_TYPE, DOCUMENT_EMAIL_TYPE } from '../../../types/document-audit-logs';
 import { extractDerivedDocumentEmailSettings } from '../../../types/document-email';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../../types/webhook-payload';
+import { getFileServerSide } from '../../../universal/upload/get-file.server';
 import { createDocumentAuditLogData } from '../../../utils/document-audit-logs';
 import { isRecipientEmailValidForSending } from '../../../utils/recipients';
 import { renderCustomEmailTemplate } from '../../../utils/render-custom-email-template';
@@ -30,6 +33,13 @@ import { renderEmailWithI18N } from '../../../utils/render-email-with-i18n';
 import type { JobRunIO } from '../../client/_internal/job';
 import type { TProcessSigningReminderJobDefinition } from './process-signing-reminder';
 
+/**
+ * Sends one recipient's scheduled signing reminder.
+ *
+ * A V1 document whose PDF fails `assertLegacyEnvelopeAcceptsPdf`, the send
+ * path's check, gets no reminder: sealing would refuse it after the recipient
+ * signed.
+ */
 export const run = async ({ payload, io }: { payload: TProcessSigningReminderJobDefinition; io: JobRunIO }) => {
   const { recipientId } = payload;
   const now = new Date();
@@ -70,6 +80,18 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
           documentMeta: true,
           user: true,
           recipients: true,
+          envelopeItems: {
+            select: {
+              documentData: {
+                select: {
+                  type: true,
+                  id: true,
+                  data: true,
+                  initialData: true,
+                },
+              },
+            },
+          },
           team: {
             select: {
               name: true,
@@ -138,6 +160,31 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
   if (envelope.user.disabled || emailsDisabled) {
     io.logger.info(`Envelope ${envelope.id} skipping reminder: owner disabled or organisation emails disabled`);
     return;
+  }
+
+  // The PDF may have changed since the send (a two-step upload URL still
+  // accepts a new file), so check the bytes stored now. A refusal ends the
+  // reminder chain, as the other skips here do: the claim above already
+  // cleared nextReminderAt.
+  if (envelope.internalVersion === 1) {
+    for (const envelopeItem of envelope.envelopeItems) {
+      const pdf = await getFileServerSide(envelopeItem.documentData);
+      const refusal = await assertLegacyEnvelopeAcceptsPdf(pdf).then(
+        () => null,
+        (err: unknown) => AppError.parseError(err),
+      );
+
+      if (refusal) {
+        io.logger.warn({
+          msg: 'Signing reminder dropped: the document PDF fails the send check',
+          envelopeId: envelope.id,
+          recipientId: recipient.id,
+          code: refusal.code,
+        });
+
+        return;
+      }
+    }
   }
 
   const i18n = await getI18nInstance(emailLanguage);

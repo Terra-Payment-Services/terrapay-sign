@@ -8,7 +8,7 @@ import { DocumentDataType } from '@prisma/client';
 import { base64 } from '@scure/base';
 import { match } from 'ts-pattern';
 
-import { AppError } from '../../errors/app-error';
+import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { DocumentDataOwner } from '../../server-only/document-data/create-document-data';
 import { createDocumentData } from '../../server-only/document-data/create-document-data';
 import { normalizePdf } from '../../server-only/pdf/normalize-pdf';
@@ -29,10 +29,10 @@ type PutPdfOptions = {
 /**
  * Uploads a document file to the appropriate storage location and creates
  * a document data record.
+ *
+ * The file is parsed once; the storage signature check reuses that parse.
  */
 export const putPdfFileServerSide = async (file: File, { owner, initialData }: PutPdfOptions) => {
-  const isEncryptedDocumentsAllowed = false; // Was feature flag.
-
   const arrayBuffer = await file.arrayBuffer();
 
   const pdf = await PDF.load(new Uint8Array(arrayBuffer)).catch((e) => {
@@ -41,15 +41,23 @@ export const putPdfFileServerSide = async (file: File, { owner, initialData }: P
     throw new AppError('INVALID_DOCUMENT_FILE');
   });
 
-  if (!isEncryptedDocumentsAllowed && pdf.isEncrypted) {
-    throw new AppError('INVALID_DOCUMENT_FILE');
+  // Owner-protected files open without a password and are accepted, as in
+  // `normalizePdf`. Sealing stores through here, so refusing them would leave a
+  // signed envelope that can never be sealed.
+  if (pdf.isEncrypted && !pdf.isAuthenticated) {
+    throw new AppError(AppErrorCode.PASSWORD_PROTECTED_DOCUMENT);
   }
 
   if (!file.name.endsWith('.pdf')) {
     file.name = `${file.name}.pdf`;
   }
 
-  const { type, data } = await putFileServerSide(file);
+  // The bytes read above are the ones parsed, so they are also the ones checked
+  // and stored, rather than whatever a second read of `file` returns.
+  const { type, data } = await putFileServerSide(
+    { name: file.name, type: file.type, arrayBuffer: async () => Promise.resolve(arrayBuffer) },
+    pdf,
+  );
 
   const createdData = await createDocumentData({ type, data, initialData, owner });
 
@@ -93,11 +101,16 @@ export const putNormalizedPdfFileServerSide = async (
  * were found reaching storage having rewritten a signed PDF, and each was a
  * step somebody added without knowing this mattered. Guarding the callers
  * means guarding the ones that exist today.
+ *
+ * @param file the file to store.
+ * @param loaded optionally, the file's bytes already parsed and not modified
+ *   since, so a caller that has loaded the PDF does not have it parsed again.
+ *   `file.arrayBuffer()` must return those same bytes on every call.
  */
-export const putFileServerSide = async (file: File) => {
+export const putFileServerSide = async (file: File, loaded?: PDF) => {
   const NEXT_PUBLIC_UPLOAD_TRANSPORT = env('NEXT_PUBLIC_UPLOAD_TRANSPORT');
 
-  await assertNoSignatureWasBroken(file);
+  await assertNoSignatureWasBroken(file, loaded);
 
   return await match(NEXT_PUBLIC_UPLOAD_TRANSPORT)
     .with('s3', async () => putFileInObjectStorage(file))
@@ -111,8 +124,9 @@ export const putFileServerSide = async (file: File) => {
  * Only PDFs are examined, by their header rather than by their declared type,
  * so a branding logo or anything else passes straight through. A file that
  * does not parse is not this function's problem and is rejected elsewhere.
+ * `loaded`, when given, is the file's bytes already parsed and is reused.
  */
-const assertNoSignatureWasBroken = async (file: File) => {
+const assertNoSignatureWasBroken = async (file: File, loaded?: PDF) => {
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   if (bytes.length < 5 || String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') {
@@ -120,7 +134,7 @@ const assertNoSignatureWasBroken = async (file: File) => {
   }
 
   try {
-    await assertEmbeddedSignaturesIntact(bytes);
+    await assertEmbeddedSignaturesIntact(bytes, loaded);
   } catch (error) {
     if (!(error instanceof EmbeddedSignatureBrokenError)) {
       throw error;
