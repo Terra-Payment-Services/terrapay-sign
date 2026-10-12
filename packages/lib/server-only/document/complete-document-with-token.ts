@@ -28,6 +28,7 @@ import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
 import { logger } from '../../utils/logger';
 import { assertRecipientNotExpired } from '../../utils/recipients';
+import { assertCompanySealApplicable } from '../company-seal/company-seal-field';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -353,6 +354,18 @@ export const completeDocumentWithToken = async ({
       message: `Recipient ${recipient.id} has unsigned fields`,
       statusCode: 400,
     });
+  }
+
+  // An applied seal is checked again: the recipient must still be signed in as
+  // themselves and still be a member of the seal's organisation.
+  const appliedCompanySealFields = fields.filter((field) => field.type === FieldType.COMPANY_SEAL && field.inserted);
+
+  if (appliedCompanySealFields.length > 0) {
+    const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+
+    for (const field of appliedCompanySealFields) {
+      await assertCompanySealApplicable({ envelope, field, recipient, user });
+    }
   }
 
   await prisma.$transaction(async (tx) => {

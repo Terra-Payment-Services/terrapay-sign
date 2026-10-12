@@ -1,10 +1,11 @@
 import { nanoid, prefixedId } from '@documenso/lib/universal/id';
 import { prisma } from '@documenso/prisma';
-import type { DocumentDistributionMethod, DocumentSigningOrder } from '@prisma/client';
+import type { DocumentData, DocumentDistributionMethod, DocumentSigningOrder } from '@prisma/client';
 import {
   DocumentSource,
   EnvelopeType,
   type Field,
+  FieldType,
   FolderType,
   type Recipient,
   RecipientRole,
@@ -37,7 +38,7 @@ import { ZSignatureLevelSchema } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import type { ApiRequestMetadata } from '../../universal/extract-request-metadata';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
-import { putNormalizedPdfFileServerSide } from '../../universal/upload/put-file.server';
+import { putFileServerSide, putNormalizedPdfFileServerSide } from '../../universal/upload/put-file.server';
 import { extractDerivedDocumentMeta } from '../../utils/document';
 import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
 import {
@@ -48,11 +49,12 @@ import {
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToTemplateId } from '../../utils/envelope';
 import { buildTeamWhereQuery } from '../../utils/teams';
+import { refuseCompanySeal } from '../company-seal/company-seal-field';
 import { assertDocumentDataAccess } from '../document-data/assert-document-data-access';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId } from '../envelope/increment-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
-import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
+import { assertLegacyEnvelopeAcceptsPdf, normalizePdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
 import { getTeamSettings } from '../team/get-team-settings';
@@ -119,6 +121,8 @@ export type CreateDocumentFromTemplateOptions = {
 
   formValues?: TDocumentFormValues;
   requestMetadata: ApiRequestMetadata;
+  /** Set by API v1, which cannot copy a template that carries a company seal field. */
+  refuseCompanySeals?: boolean;
 };
 
 const getUpdatedFieldMeta = (field: Field, prefillField?: TFieldMetaPrefillFieldsSchema) => {
@@ -305,6 +309,7 @@ export const createDocumentFromTemplate = async ({
   prefillFields,
   attachments,
   formValues,
+  refuseCompanySeals = false,
 }: CreateDocumentFromTemplateOptions) => {
   const templateInclude = {
     recipients: {
@@ -348,6 +353,14 @@ export const createDocumentFromTemplate = async ({
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Template not found',
     });
+  }
+
+  // Checked on the same read the copy is made from.
+  if (
+    refuseCompanySeals &&
+    template.recipients.some((recipient) => recipient.fields.some((field) => field.type === FieldType.COMPANY_SEAL))
+  ) {
+    throw refuseCompanySeal();
   }
 
   // Only the override IDs come from the client. The template's own item IDs are
@@ -447,6 +460,12 @@ export const createDocumentFromTemplate = async ({
   // Value = duplicated envelope item ID.
   const oldEnvelopeItemToNewEnvelopeItemIdMap: Record<string, string> = {};
 
+  // A custom upload no item holds is attached to the first item that uses it,
+  // so it is not left behind and its id stays usable. Its initialData keeps the
+  // uploaded file, which is what any later use reads.
+  const attachedCustomDocumentDataIds = new Set<string>();
+  const customDocumentDataToAttach: Array<Pick<DocumentData, 'id' | 'type' | 'data' | 'initialData'>> = [];
+
   // Duplicate the envelope item data.
   // Note: This is duplicated in createDocumentFromDirectTemplate
   const envelopeItemsToCreate = await Promise.all(
@@ -470,6 +489,11 @@ export const createDocumentFromTemplate = async ({
         where: {
           id: documentDataIdToDuplicate,
         },
+        include: {
+          envelopeItem: {
+            select: { id: true },
+          },
+        },
       });
 
       if (!documentDataToDuplicate) {
@@ -478,7 +502,19 @@ export const createDocumentFromTemplate = async ({
         });
       }
 
-      let buffer = await getFileServerSide(documentDataToDuplicate);
+      // Decided before the next await, so two items cannot both attach one upload.
+      const isCustomUploadAttached =
+        Boolean(foundCustomDocumentData) &&
+        documentDataToDuplicate.envelopeItem === null &&
+        !attachedCustomDocumentDataIds.has(documentDataToDuplicate.id);
+
+      if (isCustomUploadAttached) {
+        attachedCustomDocumentDataIds.add(documentDataToDuplicate.id);
+      }
+
+      const sourceData = foundCustomDocumentData ? documentDataToDuplicate.initialData : documentDataToDuplicate.data;
+
+      let buffer = await getFileServerSide({ type: documentDataToDuplicate.type, data: sourceData });
 
       if (template.internalVersion === 1) {
         await assertLegacyEnvelopeAcceptsPdf(buffer);
@@ -494,24 +530,32 @@ export const createDocumentFromTemplate = async ({
         });
       }
 
-      const duplicatedFile = await putNormalizedPdfFileServerSide(
-        {
-          name: titleToUse,
-          type: 'application/pdf',
-          arrayBuffer: async () => Promise.resolve(buffer),
-        },
-        { owner: { userId, teamId } },
-      );
+      let documentDataId: string;
 
-      const newDocumentData = await prisma.documentData.create({
-        data: {
-          type: duplicatedFile.type,
-          data: duplicatedFile.data,
-          initialData: documentDataToDuplicate.data,
-          userId,
-          teamId,
-        },
-      });
+      if (isCustomUploadAttached) {
+        const normalized = await normalizePdf(Buffer.from(buffer));
+
+        const { type, data } = await putFileServerSide({
+          name: titleToUse.endsWith('.pdf') ? titleToUse : `${titleToUse}.pdf`,
+          type: 'application/pdf',
+          arrayBuffer: async () => Promise.resolve(normalized),
+        });
+
+        customDocumentDataToAttach.push({ id: documentDataToDuplicate.id, type, data, initialData: sourceData });
+
+        documentDataId = documentDataToDuplicate.id;
+      } else {
+        const newDocumentData = await putNormalizedPdfFileServerSide(
+          {
+            name: titleToUse,
+            type: 'application/pdf',
+            arrayBuffer: async () => Promise.resolve(buffer),
+          },
+          { owner: { userId, teamId }, initialData: sourceData },
+        );
+
+        documentDataId = newDocumentData.id;
+      }
 
       const newEnvelopeItemId = prefixedId('envelope_item');
 
@@ -520,7 +564,7 @@ export const createDocumentFromTemplate = async ({
       return {
         id: newEnvelopeItemId,
         title: titleToUse.endsWith('.pdf') ? titleToUse.slice(0, -4) : titleToUse,
-        documentDataId: newDocumentData.id,
+        documentDataId,
         order: item.order !== undefined ? item.order : i + 1,
       };
     }),
@@ -568,6 +612,19 @@ export const createDocumentFromTemplate = async ({
   });
 
   const { envelope, createdEnvelope } = await prisma.$transaction(async (tx) => {
+    for (const upload of customDocumentDataToAttach) {
+      const { count } = await tx.documentData.updateMany({
+        where: { id: upload.id, envelopeItem: null },
+        data: { type: upload.type, data: upload.data, initialData: upload.initialData },
+      });
+
+      if (count === 0) {
+        throw new AppError(AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT, {
+          message: 'The uploaded file was used by another request at the same time. Send the request again.',
+        });
+      }
+    }
+
     const envelope = await tx.envelope.create({
       data: {
         id: prefixedId('envelope'),

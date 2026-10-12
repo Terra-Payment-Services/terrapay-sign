@@ -1,11 +1,12 @@
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
-import { DocumentDataType, DocumentStatus, EnvelopeType, SigningStatus } from '@prisma/client';
+import { DocumentDataType, DocumentStatus, EnvelopeType, FieldType, SigningStatus } from '@prisma/client';
 import { tsr } from '@ts-rest/serverless/fetch';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { isCompanySealRefusal } from '@documenso/lib/server-only/company-seal/company-seal-field';
 import { deleteDocument } from '@documenso/lib/server-only/document/delete-document';
 import { findDocuments } from '@documenso/lib/server-only/document/find-documents';
 import { resendDocument } from '@documenso/lib/server-only/document/resend-document';
@@ -16,7 +17,6 @@ import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envel
 import { getEnvelopeById, getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { deleteDocumentField } from '@documenso/lib/server-only/field/delete-document-field';
 import { updateEnvelopeFields } from '@documenso/lib/server-only/field/update-envelope-fields';
-import { insertFormValuesInPdf } from '@documenso/lib/server-only/pdf/insert-form-values-in-pdf';
 import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
 import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/get-recipients-for-document';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
@@ -28,6 +28,7 @@ import { getTemplateById } from '@documenso/lib/server-only/template/get-templat
 import { ZRecipientAuthOptionsSchema } from '@documenso/lib/types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '@documenso/lib/types/document-email';
 import {
+  COMPANY_SEAL_V2_ONLY_MESSAGE,
   ZCheckboxFieldMeta,
   ZDropdownFieldMeta,
   ZFieldMetaSchema,
@@ -35,8 +36,6 @@ import {
   ZRadioFieldMeta,
   ZTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
-import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
-import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { getPresignGetUrl, getPresignPostUrl } from '@documenso/lib/universal/upload/server-actions';
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
@@ -728,8 +727,6 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     // body.authOptions is written straight onto the new envelope below, past createEnvelope's check.
     assertAccountAccessAuthNotAdded({ requested: body.authOptions?.globalAccessAuth });
 
-    const fileName = body.title.endsWith('.pdf') ? body.title : `${body.title}.pdf`;
-
     const template = await getEnvelopeById({
       id: {
         type: 'templateId',
@@ -742,6 +739,13 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
     if (template.envelopeItems.length !== 1) {
       throw new Error('API V1 does not support templates with multiple documents');
+    }
+
+    if (template.fields.some((field) => field.type === FieldType.COMPANY_SEAL)) {
+      return {
+        status: 400,
+        body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+      };
     }
 
     // V1 API request schema uses indices for recipients
@@ -762,67 +766,39 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     });
 
-    const createdEnvelope = await createDocumentFromTemplate({
-      id: {
-        type: 'templateId',
-        id: templateId,
-      },
-      externalId: body.externalId || null,
-      userId: user.id,
-      teamId: team.id,
-      recipients: mappedRecipients,
-      override: {
-        ...body.meta,
-        title: body.title,
-      },
-      attachments: body.attachments,
-      formValues: body.formValues,
-      requestMetadata: metadata,
-    });
+    let createdEnvelope: Awaited<ReturnType<typeof createDocumentFromTemplate>>;
 
-    const envelopeItems = await prisma.envelopeItem.findMany({
-      where: {
-        envelopeId: createdEnvelope.id,
-      },
-      include: {
-        documentData: true,
-      },
-    });
-
-    const firstEnvelopeItemData = envelopeItems[0].documentData;
-
-    if (!firstEnvelopeItemData) {
-      throw new Error('Document data not found.');
-    }
-
-    if (body.formValues) {
-      const pdf = await getFileServerSide(firstEnvelopeItemData);
-
-      const prefilled = await insertFormValuesInPdf({
-        pdf: Buffer.from(pdf),
+    try {
+      createdEnvelope = await createDocumentFromTemplate({
+        id: {
+          type: 'templateId',
+          id: templateId,
+        },
+        externalId: body.externalId || null,
+        userId: user.id,
+        teamId: team.id,
+        recipients: mappedRecipients,
+        override: {
+          ...body.meta,
+          title: body.title,
+        },
+        attachments: body.attachments,
         formValues: body.formValues,
+        requestMetadata: metadata,
+        refuseCompanySeals: true,
       });
+    } catch (err) {
+      if (isCompanySealRefusal(err)) {
+        return {
+          status: 400,
+          body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+        };
+      }
 
-      const newDocumentData = await putNormalizedPdfFileServerSide(
-        {
-          name: fileName,
-          type: 'application/pdf',
-          arrayBuffer: async () => Promise.resolve(prefilled),
-        },
-        { owner: { userId: createdEnvelope.userId, teamId: createdEnvelope.teamId } },
-      );
-
-      await prisma.envelopeItem.update({
-        where: {
-          id: firstEnvelopeItemData.id,
-        },
-        data: {
-          title: body.title || fileName,
-          documentDataId: newDocumentData.id,
-        },
-      });
+      throw err;
     }
 
+    // createDocumentFromTemplate has already written the form values into each item's PDF.
     if (body.authOptions || body.formValues) {
       await prisma.envelope.update({
         where: {
@@ -870,6 +846,23 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       // body.authOptions is written straight onto the new envelope below, past createEnvelope's check.
       assertAccountAccessAuthNotAdded({ requested: body.authOptions?.globalAccessAuth });
 
+      const template = await getEnvelopeById({
+        id: {
+          type: 'templateId',
+          id: templateId,
+        },
+        type: EnvelopeType.TEMPLATE,
+        userId: user.id,
+        teamId: team.id,
+      });
+
+      if (template.fields.some((field) => field.type === FieldType.COMPANY_SEAL)) {
+        return {
+          status: 400,
+          body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+        };
+      }
+
       envelope = await createDocumentFromTemplate({
         id: {
           type: 'templateId',
@@ -887,8 +880,16 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
         formValues: body.formValues,
         requestMetadata: metadata,
+        refuseCompanySeals: true,
       });
     } catch (err) {
+      if (isCompanySealRefusal(err)) {
+        return {
+          status: 400,
+          body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+        };
+      }
+
       return AppError.toRestAPIError(err);
     }
 
@@ -1299,6 +1300,13 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
     const fields = Array.isArray(args.body) ? args.body : [args.body];
 
+    if (fields.some((field) => field.type === FieldType.COMPANY_SEAL)) {
+      return {
+        status: 400,
+        body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+      };
+    }
+
     const { envelopeWhereInput } = await getEnvelopeWhereInput({
       id: {
         type: 'documentId',
@@ -1397,6 +1405,11 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
                 error: 'FREE_SIGNATURE is not supported',
                 data: undefined,
               }))
+              .with('COMPANY_SEAL', () => ({
+                success: false,
+                error: COMPANY_SEAL_V2_ONLY_MESSAGE,
+                data: undefined,
+              }))
               .exhaustive();
 
             if (!result.success) {
@@ -1483,6 +1496,13 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       },
     });
 
+    if (type === FieldType.COMPANY_SEAL) {
+      return {
+        status: 400,
+        body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+      };
+    }
+
     const envelope = await getEnvelopeById({
       id: {
         type: 'documentId',
@@ -1499,6 +1519,14 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         body: {
           message: 'Document not found',
         },
+      };
+    }
+
+    // An existing seal field is refused whatever the request sets, a position-only change included.
+    if (envelope.fields.some((field) => field.id === Number(fieldId) && field.type === FieldType.COMPANY_SEAL)) {
+      return {
+        status: 400,
+        body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
       };
     }
 
@@ -1548,36 +1576,50 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
-    const { fields } = await updateEnvelopeFields({
-      userId: user.id,
-      teamId: team.id,
-      id: {
-        type: 'documentId',
-        id: legacyDocumentId,
-      },
-      fields: [
-        {
-          id: Number(fieldId),
-          type,
-          pageNumber,
-          pageX,
-          pageY,
-          width: pageWidth,
-          height: pageHeight,
-          fieldMeta: fieldMeta ? ZFieldMetaSchema.parse(fieldMeta) : undefined,
+    let fields: Awaited<ReturnType<typeof updateEnvelopeFields>>['fields'];
+
+    try {
+      ({ fields } = await updateEnvelopeFields({
+        userId: user.id,
+        teamId: team.id,
+        id: {
+          type: 'documentId',
+          id: legacyDocumentId,
         },
-      ],
-      requestMetadata: {
-        requestMetadata: metadata.requestMetadata,
-        source: 'apiV1',
-        auth: 'api',
-        auditUser: {
-          id: team.id,
-          email: team.name,
-          name: team.name,
+        fields: [
+          {
+            id: Number(fieldId),
+            type,
+            pageNumber,
+            pageX,
+            pageY,
+            width: pageWidth,
+            height: pageHeight,
+            fieldMeta: fieldMeta ? ZFieldMetaSchema.parse(fieldMeta) : undefined,
+          },
+        ],
+        requestMetadata: {
+          requestMetadata: metadata.requestMetadata,
+          source: 'apiV1',
+          auth: 'api',
+          auditUser: {
+            id: team.id,
+            email: team.name,
+            name: team.name,
+          },
         },
-      },
-    });
+        protectCompanySeals: true,
+      }));
+    } catch (err) {
+      if (isCompanySealRefusal(err)) {
+        return {
+          status: 400,
+          body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+        };
+      }
+
+      throw err;
+    }
 
     const updatedField = fields[0];
 
@@ -1610,21 +1652,36 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       },
     });
 
-    const deletedField = await deleteDocumentField({
-      fieldId: Number(fieldId),
-      userId: user.id,
-      teamId: team.id,
-      requestMetadata: {
-        requestMetadata: metadata.requestMetadata,
-        source: 'apiV1',
-        auth: 'api',
-        auditUser: {
-          id: team.id,
-          email: team.name,
-          name: team.name,
+    // deleteDocumentField refuses a seal only after authorising the document, so a
+    // hidden seal id answers exactly as a hidden ordinary id does.
+    let deletedField: Awaited<ReturnType<typeof deleteDocumentField>>;
+
+    try {
+      deletedField = await deleteDocumentField({
+        fieldId: Number(fieldId),
+        userId: user.id,
+        teamId: team.id,
+        requestMetadata: {
+          requestMetadata: metadata.requestMetadata,
+          source: 'apiV1',
+          auth: 'api',
+          auditUser: {
+            id: team.id,
+            email: team.name,
+            name: team.name,
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      if (isCompanySealRefusal(err)) {
+        return {
+          status: 400,
+          body: { message: `${COMPANY_SEAL_V2_ONLY_MESSAGE} and API v2` },
+        };
+      }
+
+      throw err;
+    }
 
     const remappedField = {
       id: deletedField.id,

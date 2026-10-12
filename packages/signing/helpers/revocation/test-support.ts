@@ -31,6 +31,7 @@ export type TestIdentity = {
   certificate: pkijs.Certificate;
   der: Uint8Array;
   privateKey: CryptoKey;
+  publicKey: CryptoKey;
 };
 
 export type CreateCertificateOptions = {
@@ -44,6 +45,15 @@ export type CreateCertificateOptions = {
   crlUrl?: string;
   notBefore?: Date;
   notAfter?: Date;
+  /** Reuse this key pair, to build a second certificate for the same key. */
+  keyPair?: CryptoKeyPair;
+  /**
+   * Names this issuer in the certificate without it being the signer, and
+   * signs with `signingKey`. Together they build a forgery: a certificate that
+   * claims an issuer which never signed it.
+   */
+  claimedIssuerCommonName?: string;
+  signingKey?: CryptoKey;
 };
 
 const name = (commonName: string): pkijs.RelativeDistinguishedNames =>
@@ -69,15 +79,22 @@ export const createIdentity = async ({
   crlUrl,
   notBefore = new Date(Date.now() - 86_400_000),
   notAfter = new Date(Date.now() + 86_400_000),
+  keyPair,
+  claimedIssuerCommonName,
+  signingKey,
 }: CreateCertificateOptions): Promise<TestIdentity> => {
   const crypto = engine();
-  const keys = await crypto.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const keys = keyPair ?? (await crypto.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']));
 
   const certificate = new pkijs.Certificate();
   certificate.version = 2;
   certificate.serialNumber = new asn1js.Integer({ value: serialNumber });
   certificate.subject = name(commonName);
-  certificate.issuer = issuer ? issuer.certificate.subject : name(commonName);
+  certificate.issuer = claimedIssuerCommonName
+    ? name(claimedIssuerCommonName)
+    : issuer
+      ? issuer.certificate.subject
+      : name(commonName);
   certificate.notBefore.value = notBefore;
   certificate.notAfter.value = notAfter;
   certificate.extensions = [];
@@ -126,12 +143,87 @@ export const createIdentity = async ({
   }
 
   await certificate.subjectPublicKeyInfo.importKey(keys.publicKey, crypto);
-  await certificate.sign(issuer ? issuer.privateKey : keys.privateKey, 'SHA-256', crypto);
+  await certificate.sign(signingKey ?? (issuer ? issuer.privateKey : keys.privateKey), 'SHA-256', crypto);
 
   const der = new Uint8Array(certificate.toSchema(true).toBER(false));
 
-  return { certificate: pkijs.Certificate.fromBER(der), der, privateKey: keys.privateKey };
+  return {
+    certificate: pkijs.Certificate.fromBER(der),
+    der,
+    privateKey: keys.privateKey,
+    publicKey: keys.publicKey,
+  };
 };
+
+export type CrossSignedRoot = {
+  /** The root as a trust anchor: self-signed. */
+  selfSigned: TestIdentity;
+  /** The same name and key, issued by another root, as Sectigo R46 is by USERTrust. */
+  crossSigned: TestIdentity;
+};
+
+/**
+ * One key pair, two certificates. The cross-signed copy carries a CRL
+ * distribution point and an OCSP URL and, like the production R46, no
+ * caIssuers, so nothing in it leads a chain builder to its issuer.
+ */
+export const createCrossSignedRoot = async ({
+  commonName,
+  issuer,
+  crlUrl,
+  ocspUrl,
+}: {
+  commonName: string;
+  issuer: TestIdentity;
+  crlUrl: string;
+  ocspUrl: string;
+}): Promise<CrossSignedRoot> => {
+  const keyPair = await engine().generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+
+  const selfSigned = await createIdentity({ commonName, serialNumber: 50, isCa: true, keyPair });
+  const crossSigned = await createIdentity({
+    commonName,
+    serialNumber: 51,
+    isCa: true,
+    keyPair,
+    issuer,
+    crlUrl,
+    ocspUrl,
+  });
+
+  return { selfSigned, crossSigned };
+};
+
+/**
+ * A certificate that names `claimedIssuer` as its issuer, carries a CRL
+ * distribution point, and is signed by a key that is not the issuer's.
+ */
+export const createForgedCertificate = ({
+  commonName,
+  claimedIssuer,
+  crlUrl,
+  ocspUrl,
+}: {
+  commonName: string;
+  claimedIssuer: TestIdentity;
+  crlUrl: string;
+  ocspUrl?: string;
+}): Promise<TestIdentity> =>
+  engine()
+    .generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    .then((forgerKeys) =>
+      createIdentity({
+        commonName,
+        serialNumber: 77,
+        claimedIssuerCommonName: describeCommonName(claimedIssuer),
+        signingKey: forgerKeys.privateKey,
+        crlUrl,
+        ocspUrl,
+      }),
+    );
+
+const describeCommonName = (identity: TestIdentity): string =>
+  (identity.certificate.subject.typesAndValues[0].value.valueBlock.value as string) ?? '';
 
 export type TestPki = {
   /** Self-signed root, issuer of everything else. */

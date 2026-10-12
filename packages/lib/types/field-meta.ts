@@ -185,6 +185,20 @@ export const ZSignatureFieldMeta = ZBaseFieldMeta.extend({
 
 export type TSignatureFieldMeta = z.infer<typeof ZSignatureFieldMeta>;
 
+/**
+ * A company seal field. `sealLabel` is display text the server rewrites
+ * from the seal on every field write; a client-supplied value is discarded.
+ */
+export const ZCompanySealFieldMeta = ZBaseFieldMeta.extend({
+  type: z.literal('company_seal'),
+  sealId: z.string().min(1),
+  sealLabel: z.string().optional(),
+});
+
+export type TCompanySealFieldMeta = z.infer<typeof ZCompanySealFieldMeta>;
+
+export const COMPANY_SEAL_V2_ONLY_MESSAGE = 'Company seals need a V2 document';
+
 export const ZFieldMetaNotOptionalSchema = z.discriminatedUnion('type', [
   ZSignatureFieldMeta,
   ZInitialsFieldMeta,
@@ -196,6 +210,7 @@ export const ZFieldMetaNotOptionalSchema = z.discriminatedUnion('type', [
   ZRadioFieldMeta,
   ZCheckboxFieldMeta,
   ZDropdownFieldMeta,
+  ZCompanySealFieldMeta,
 ]);
 
 export type TFieldMetaNotOptionalSchema = z.infer<typeof ZFieldMetaNotOptionalSchema>;
@@ -255,54 +270,72 @@ export const ZFieldMetaSchema = z
 
 export type TFieldMetaSchema = z.infer<typeof ZFieldMetaSchema>;
 
-export const ZFieldAndMetaSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal(FieldType.SIGNATURE),
-    fieldMeta: ZSignatureFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.FREE_SIGNATURE),
-    fieldMeta: z.undefined(),
-  }),
-  z.object({
-    type: z.literal(FieldType.INITIALS),
-    fieldMeta: ZInitialsFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.NAME),
-    fieldMeta: ZNameFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.EMAIL),
-    fieldMeta: ZEmailFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.DATE),
-    fieldMeta: ZDateFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.TEXT),
-    fieldMeta: ZTextFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.NUMBER),
-    fieldMeta: ZNumberFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.RADIO),
-    fieldMeta: ZRadioFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.CHECKBOX),
-    fieldMeta: ZCheckboxFieldMeta.optional(),
-  }),
-  z.object({
-    type: z.literal(FieldType.DROPDOWN),
-    fieldMeta: ZDropdownFieldMeta.optional(),
-  }),
-]);
+// The V1 union. COMPANY_SEAL is deliberately absent: it is refused here with a message naming V2.
+export const ZFieldAndMetaSchema = z.discriminatedUnion(
+  'type',
+  [
+    z.object({
+      type: z.literal(FieldType.SIGNATURE),
+      fieldMeta: ZSignatureFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.FREE_SIGNATURE),
+      fieldMeta: z.undefined(),
+    }),
+    z.object({
+      type: z.literal(FieldType.INITIALS),
+      fieldMeta: ZInitialsFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.NAME),
+      fieldMeta: ZNameFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.EMAIL),
+      fieldMeta: ZEmailFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.DATE),
+      fieldMeta: ZDateFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.TEXT),
+      fieldMeta: ZTextFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.NUMBER),
+      fieldMeta: ZNumberFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.RADIO),
+      fieldMeta: ZRadioFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.CHECKBOX),
+      fieldMeta: ZCheckboxFieldMeta.optional(),
+    }),
+    z.object({
+      type: z.literal(FieldType.DROPDOWN),
+      fieldMeta: ZDropdownFieldMeta.optional(),
+    }),
+  ],
+  {
+    errorMap: (issue, ctx) => {
+      const isCompanySeal =
+        issue.code === 'invalid_union_discriminator' &&
+        (ctx.data as { type?: unknown } | undefined)?.type === FieldType.COMPANY_SEAL;
+
+      return { message: isCompanySeal ? COMPANY_SEAL_V2_ONLY_MESSAGE : ctx.defaultError };
+    },
+  },
+);
 
 export type TFieldAndMeta = z.infer<typeof ZFieldAndMetaSchema>;
+
+/** What the shared field writers accept: the V1 union plus the seal type, which they allow on V2 envelopes only. */
+export type TFieldAndMetaWithCompanySeal =
+  | TFieldAndMeta
+  | { type: typeof FieldType.COMPANY_SEAL; fieldMeta: TCompanySealFieldMeta };
 
 export const FIELD_DATE_META_DEFAULT_VALUES: TDateFieldMeta = {
   type: 'date',
@@ -398,6 +431,8 @@ export const FIELD_META_DEFAULT_VALUES: Record<FieldType, TFieldMetaSchema> = {
   [FieldType.RADIO]: FIELD_RADIO_META_DEFAULT_VALUES,
   [FieldType.CHECKBOX]: FIELD_CHECKBOX_META_DEFAULT_VALUES,
   [FieldType.DROPDOWN]: FIELD_DROPDOWN_META_DEFAULT_VALUES,
+  // A seal field has no default: it needs the seal chosen for it.
+  [FieldType.COMPANY_SEAL]: undefined,
 } as const;
 
 export const ZEnvelopeFieldAndMetaSchema = z.discriminatedUnion('type', [
@@ -444,6 +479,10 @@ export const ZEnvelopeFieldAndMetaSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(FieldType.DROPDOWN),
     fieldMeta: ZDropdownFieldMeta.optional().default(FIELD_DROPDOWN_META_DEFAULT_VALUES),
+  }),
+  z.object({
+    type: z.literal(FieldType.COMPANY_SEAL),
+    fieldMeta: ZCompanySealFieldMeta,
   }),
 ]);
 

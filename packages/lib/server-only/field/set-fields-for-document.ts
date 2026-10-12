@@ -24,6 +24,11 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
+import {
+  assertLegacySetFieldsSparesSeals,
+  lockFieldsSparingSeals,
+  resolveCompanySealFieldMeta,
+} from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
 export interface SetFieldsForDocumentOptions {
@@ -32,6 +37,8 @@ export interface SetFieldsForDocumentOptions {
   id: EnvelopeIdOptions;
   fields: FieldData[];
   requestMetadata: ApiRequestMetadata;
+  /** Set by the V1 routes, which may only keep each stored company seal as it is. */
+  protectCompanySeals?: boolean;
 }
 
 export const setFieldsForDocument = async ({
@@ -40,6 +47,7 @@ export const setFieldsForDocument = async ({
   id,
   fields,
   requestMetadata,
+  protectCompanySeals = false,
 }: SetFieldsForDocumentOptions) => {
   const { envelopeWhereInput } = await getEnvelopeWhereInput({
     id,
@@ -78,6 +86,10 @@ export const setFieldsForDocument = async ({
   }
 
   const existingFields = envelope.fields;
+
+  if (protectCompanySeals) {
+    assertLegacySetFieldsSparesSeals(existingFields, fields);
+  }
 
   const removedFields = existingFields.filter(
     (existingField) => !fields.find((field) => field.id === existingField.id),
@@ -137,8 +149,25 @@ export const setFieldsForDocument = async ({
     };
   });
 
+  for (const field of linkedFields) {
+    if (field.type === FieldType.COMPANY_SEAL) {
+      field.fieldMeta = await resolveCompanySealFieldMeta({
+        envelope,
+        recipient: field._recipient,
+        fieldMeta: field.fieldMeta,
+      });
+    }
+  }
+
   const persistedFields = await prisma.$transaction(async (tx) => {
-    return await Promise.all(
+    if (protectCompanySeals) {
+      await lockFieldsSparingSeals(tx, [
+        ...linkedFields.flatMap((field) => (field._persisted ? [field._persisted] : [])),
+        ...removedFields,
+      ]);
+    }
+
+    const upsertedFields = await Promise.all(
       linkedFields.map(async (field) => {
         const fieldSignerEmail = field._recipient.email.toLowerCase();
 
@@ -301,10 +330,8 @@ export const setFieldsForDocument = async ({
         };
       }),
     );
-  });
 
-  if (removedFields.length > 0) {
-    await prisma.$transaction(async (tx) => {
+    if (removedFields.length > 0) {
       await tx.field.deleteMany({
         where: {
           id: {
@@ -328,8 +355,10 @@ export const setFieldsForDocument = async ({
           }),
         ),
       });
-    });
-  }
+    }
+
+    return upsertedFields;
+  });
 
   // Filter out fields that have been removed or have been updated.
   const mappedFilteredFields = existingFields

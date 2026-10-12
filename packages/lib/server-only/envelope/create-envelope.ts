@@ -16,6 +16,7 @@ import type { DocumentMeta, DocumentVisibility, TemplateType } from '@prisma/cli
 import {
   DocumentSource,
   EnvelopeType,
+  FieldType,
   FolderType,
   RecipientRole,
   SendStatus,
@@ -32,7 +33,7 @@ import type {
 } from '../../types/document-auth';
 import type { TDocumentFormValues } from '../../types/document-form-values';
 import type { TEnvelopeAttachmentType } from '../../types/envelope-attachment';
-import type { TFieldAndMeta } from '../../types/field-meta';
+import type { TFieldAndMetaWithCompanySeal } from '../../types/field-meta';
 import type { TSignatureLevel } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
@@ -44,6 +45,7 @@ import {
   createRecipientAuthOptions,
 } from '../../utils/document-auth';
 import { buildTeamWhereQuery } from '../../utils/teams';
+import { resolveCompanySealFieldMeta } from '../company-seal/company-seal-field';
 import { assertDocumentDataAccess } from '../document-data/assert-document-data-access';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
@@ -54,7 +56,7 @@ import { getTeamSettings } from '../team/get-team-settings';
 import { assertUserNotDisabledById } from '../user/assert-user-not-disabled';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
-type CreateEnvelopeRecipientFieldOptions = TFieldAndMeta & {
+type CreateEnvelopeRecipientFieldOptions = TFieldAndMetaWithCompanySeal & {
   documentDataId: string;
   page: number;
   positionX: number;
@@ -364,6 +366,19 @@ export const createEnvelope = async ({
 
     return delegatedOwner;
   };
+
+  // Seal fields are checked, and their label set from the seal, before anything is written.
+  for (const recipient of data.recipients ?? []) {
+    for (const field of recipient.fields ?? []) {
+      if (field.type === FieldType.COMPANY_SEAL) {
+        field.fieldMeta = await resolveCompanySealFieldMeta({
+          envelope: { internalVersion, teamId },
+          recipient,
+          fieldMeta: field.fieldMeta,
+        });
+      }
+    }
+  }
 
   const [documentMeta, secondaryId, delegatedOwner] = await Promise.all([
     prisma.documentMeta.create({

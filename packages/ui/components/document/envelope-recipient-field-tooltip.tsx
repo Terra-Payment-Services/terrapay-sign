@@ -13,6 +13,7 @@ import {
   HashIcon,
   LockIcon,
   MailIcon,
+  StampIcon,
   TypeIcon,
   UserIcon,
 } from 'lucide-react';
@@ -50,6 +51,7 @@ const FIELD_TYPE_ICONS: Record<FieldType, ElementType> = {
   [FieldType.RADIO]: DiscIcon,
   [FieldType.CHECKBOX]: CheckSquareIcon,
   [FieldType.DROPDOWN]: ChevronDownIcon,
+  [FieldType.COMPANY_SEAL]: StampIcon,
 };
 
 /**

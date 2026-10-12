@@ -1,4 +1,4 @@
-import { type TFieldAndMeta, ZEnvelopeFieldAndMetaSchema } from '@documenso/lib/types/field-meta';
+import { type TFieldAndMetaWithCompanySeal, ZEnvelopeFieldAndMetaSchema } from '@documenso/lib/types/field-meta';
 import { PDF, rgb } from '@libpdf/core';
 import type { FieldType, Recipient } from '@prisma/client';
 
@@ -61,7 +61,7 @@ export const savePdfWithWhiteouts = async (pdfDoc: PDF, original: Uint8Array) =>
 export type PlaceholderInfo = {
   placeholder: string;
   recipient: string;
-  fieldAndMeta: TFieldAndMeta;
+  fieldAndMeta: TFieldAndMetaWithCompanySeal;
   page: number;
   x: number;
   y: number;
@@ -71,7 +71,7 @@ export type PlaceholderInfo = {
   pageHeight: number;
 };
 
-export type FieldToCreate = TFieldAndMeta & {
+export type FieldToCreate = TFieldAndMetaWithCompanySeal & {
   envelopeItemId?: string;
   recipientId: number;
   page: number;
@@ -133,7 +133,7 @@ export const extractPlaceholdersFromPDF = async (pdf: Buffer): Promise<Placehold
 
       const parsedFieldMeta = parseFieldMetaFromPlaceholder(rawFieldMeta, fieldType);
 
-      const fieldAndMeta: TFieldAndMeta = ZEnvelopeFieldAndMetaSchema.parse({
+      const fieldAndMeta: TFieldAndMetaWithCompanySeal = ZEnvelopeFieldAndMetaSchema.parse({
         type: fieldType,
         fieldMeta: parsedFieldMeta,
       });

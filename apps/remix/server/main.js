@@ -11,7 +11,12 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import handle from 'hono-react-router-adapter/node';
 
 import { getLoadContext } from './hono/server/load-context.js';
-import server, { closeBackgroundJobs, createGracefulShutdown } from './hono/server/router.js';
+import server, {
+  closeBackgroundJobs,
+  createGracefulShutdown,
+  setWorkerWedgedHandler,
+  stopWorkerWatchdogs,
+} from './hono/server/router.js';
 import * as build from './index.js';
 
 // Sub-path the app is served under (e.g. "/ESign"). Empty = root.
@@ -55,8 +60,14 @@ const shutdown = createGracefulShutdown({
   closeServer: () => new Promise((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve()))),
   closeJobs: closeBackgroundJobs,
   exit: (code) => process.exit(code),
+  // The job provider stays open until the requests finish; nothing may report a wedge meanwhile.
+  onStart: stopWorkerWatchdogs,
   timeoutMs: 25_000,
 });
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
+
+// A wedged job worker shuts down the same way, so open requests finish,
+// and exits 1 so that ECS replaces the task.
+setWorkerWedgedHandler(() => void shutdown('worker wedged', 1));

@@ -69,10 +69,13 @@ export const putPdfFileServerSide = async (file: File, { owner, initialData }: P
 
 /**
  * Uploads a pdf file and normalizes it.
+ *
+ * `initialData`, when given, is stored as the row's initial version instead of
+ * the normalized bytes, so a caller that needs both versions gets one row.
  */
 export const putNormalizedPdfFileServerSide = async (
   file: File,
-  options: { owner: DocumentDataOwner; flattenForm?: boolean },
+  options: { owner: DocumentDataOwner; flattenForm?: boolean; initialData?: string },
 ) => {
   const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -89,6 +92,7 @@ export const putNormalizedPdfFileServerSide = async (
   return await createDocumentData({
     type: documentData.type,
     data: documentData.data,
+    initialData: options.initialData,
     owner: options.owner,
   });
 };

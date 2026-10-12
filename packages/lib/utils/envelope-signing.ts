@@ -249,5 +249,10 @@ export const extractFieldInsertionValues = ({
         inserted: true,
       };
     })
+    .with({ type: FieldType.COMPANY_SEAL }, (fieldValue) => ({
+      // The seal image and the legal entity text are set by the sign-field route from the seal itself.
+      customText: '',
+      inserted: fieldValue.value,
+    }))
     .exhaustive();
 };

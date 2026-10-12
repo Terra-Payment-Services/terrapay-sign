@@ -19,6 +19,7 @@ import { createRedisConnection, redisKeyPrefix } from '../../utils/redis-connect
 import type { JobDefinition, JobRunIO, SimpleTriggerJobOptions } from './_internal/job';
 import type { Json } from './_internal/json';
 import { BaseJobProvider } from './base';
+import { readWatchdogSettings, startWorkerWatchdog } from './bullmq-watchdog';
 
 const QUEUE_NAME = 'documenso-jobs';
 
@@ -36,6 +37,8 @@ export class BullMQJobProvider extends BaseJobProvider {
   private _worker: Worker;
   private _connection: IORedis | Cluster;
   private _jobDefinitions: Record<string, JobDefinition> = {};
+  private _heldJobs = 0;
+  private _watchdog: { stop: () => void };
 
   private constructor() {
     super();
@@ -45,6 +48,8 @@ export class BullMQJobProvider extends BaseJobProvider {
     if (!redisUrl) {
       throw new Error('[JOBS]: NEXT_PRIVATE_REDIS_URL is required when using the BullMQ jobs provider');
     }
+
+    const watchdogSettings = readWatchdogSettings();
 
     const prefix = redisKeyPrefix();
 
@@ -64,7 +69,13 @@ export class BullMQJobProvider extends BaseJobProvider {
     this._worker = new Worker(
       QUEUE_NAME,
       async (job: Job) => {
-        await this.processJob(job);
+        this._heldJobs++;
+
+        try {
+          await this.processJob(job);
+        } finally {
+          this._heldJobs--;
+        }
       },
       {
         connection: this._connection,
@@ -79,6 +90,14 @@ export class BullMQJobProvider extends BaseJobProvider {
 
     this._worker.on('error', (error) => {
       console.error('[JOBS]: Worker error', error);
+    });
+
+    this._watchdog = startWorkerWatchdog({
+      queue: this._queue,
+      worker: this._worker,
+      concurrency,
+      settings: watchdogSettings,
+      held: () => this._heldJobs,
     });
 
     console.log(`[JOBS]: BullMQ provider initialized (concurrency: ${concurrency})`);
@@ -176,6 +195,7 @@ export class BullMQJobProvider extends BaseJobProvider {
    * gives up on a job that stalls twice.
    */
   public override async close() {
+    this._watchdog.stop();
     await this._worker.close();
     await this._queue.close();
   }

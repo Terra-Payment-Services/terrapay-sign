@@ -45,6 +45,10 @@ export const ZSignEnvelopeFieldValue = z.discriminatedUnion('type', [
     type: z.literal(FieldType.SIGNATURE),
     value: z.string().nullable(),
   }),
+  z.object({
+    type: z.literal(FieldType.COMPANY_SEAL),
+    value: z.boolean().describe('True applies the seal, false removes it. The client never sends the image.'),
+  }),
 ]);
 
 export const ZSignEnvelopeFieldRequestSchema = z.object({

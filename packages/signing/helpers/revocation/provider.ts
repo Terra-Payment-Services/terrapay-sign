@@ -134,6 +134,11 @@ export type ValidatingRevocationProviderOptions = {
   clockSkewMs?: number;
   /** @default console.warn */
   warn?: (message: string) => void;
+  /**
+   * Issuer certificates for verifying a CRL when the chain stops short of the
+   * issuer (`known-issuers.ts`). Never trust anchors. @default []
+   */
+  knownIssuers?: Uint8Array[];
 };
 
 export type ValidatingRevocationProvider = Required<Pick<RevocationProvider, 'getOCSP' | 'getCRL'>> & {
@@ -224,6 +229,17 @@ export const createValidatingRevocationProvider = (
   const remember = (der: Uint8Array, certificate: pkijs.Certificate): void => {
     certificatesBySubject.set(bytesToHex(encodedSubject(certificate)), der);
   };
+
+  for (const der of options.knownIssuers ?? []) {
+    remember(der, parseCertificate(der, 'known issuer'));
+  }
+
+  /**
+   * CRLs that validated, by URL and issuer. One signing gathers revocation
+   * data twice, for the signature and for the document timestamp, so the
+   * same CRL would otherwise be fetched twice. Failures are not kept.
+   */
+  const crlCache = new Map<string, Uint8Array>();
 
   /**
    * `getCRL` is handed only the certificate, so the issuer needed to check the
@@ -434,21 +450,46 @@ export const createValidatingRevocationProvider = (
       return null;
     }
 
+    // As in getOCSP: a CRL signed by this issuer proves nothing about the
+    // certificate unless the issuer actually issued it. A name match alone
+    // can come from a known issuer or from another certificate in the chain.
+    try {
+      if (!(await certificate.verify(issuer))) {
+        throw new Error('signature does not verify under the issuer key');
+      }
+    } catch (error) {
+      record(key, {
+        status: 'unresolved',
+        subject,
+        serialNumber,
+        detail: `issuer certificate does not appear to have issued this certificate (${describeError(error)})`,
+      });
+
+      return null;
+    }
+
+    const issuerKey = bytesToHex(new Uint8Array(issuer.toSchema().toBER(false)));
+
     let lastFailure = 'no CRL distribution point could be reached';
 
     for (const url of urls) {
       try {
-        const crl = await guardedFetch({
-          url,
-          method: 'GET',
-          headers: { accept: 'application/pkix-crl, application/x-pkcs7-crl' },
-          timeoutMs,
-          maxResponseBytes: maxCrlResponseBytes,
-          fetchFn,
-          lookup,
-        });
+        const cacheKey = `${url} ${issuerKey}`;
+        const crl =
+          crlCache.get(cacheKey) ??
+          (await guardedFetch({
+            url,
+            method: 'GET',
+            headers: { accept: 'application/pkix-crl, application/x-pkcs7-crl' },
+            timeoutMs,
+            maxResponseBytes: maxCrlResponseBytes,
+            fetchFn,
+            lookup,
+          }));
 
         const result = await validateCrl({ crl, certificate, issuer, now: now(), clockSkewMs });
+
+        crlCache.set(cacheKey, crl);
 
         if (result.status === 'revoked') {
           const outcome: CertificateOutcome = {

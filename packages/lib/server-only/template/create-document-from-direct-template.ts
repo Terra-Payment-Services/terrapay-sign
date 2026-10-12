@@ -174,6 +174,13 @@ export const createDocumentFromDirectTemplate = async ({
     });
   }
 
+  // A direct-link recipient is created at use and need not be a member of the organisation.
+  if (recipients.some((recipient) => recipient.fields.some((field) => field.type === FieldType.COMPANY_SEAL))) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'A template carrying a company seal field cannot be used through a direct link',
+    });
+  }
+
   const recipientsWithMissingFields = getRecipientsWithMissingFields(
     recipients,
     recipients.flatMap((recipient) => recipient.fields),
@@ -653,6 +660,11 @@ export const createDocumentFromDirectTemplate = async ({
                   data: field.customText,
                 }),
               )
+              .with(FieldType.COMPANY_SEAL, () => {
+                throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                  message: 'A template carrying a company seal field cannot be used through a direct link',
+                });
+              })
               .exhaustive(),
             fieldSecurity: derivedRecipientActionAuth
               ? {

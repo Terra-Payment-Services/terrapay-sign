@@ -9,6 +9,7 @@ import type { DigestAlgorithm, PDF, Signer, SignWarning } from '@libpdf/core';
 import { match } from 'ts-pattern';
 
 import { assertSignerHonoursDigest } from './helpers/digest-guard';
+import { knownIssuerCertificates } from './helpers/revocation/known-issuers';
 import { createValidatingRevocationProvider } from './helpers/revocation/provider';
 import { getTimestampAuthority } from './helpers/tsa';
 import { createCscSigner } from './transports/csc';
@@ -62,12 +63,15 @@ const getSigner = async () => {
   return signer;
 };
 
+/** Lets the revocation check verify the CRL of Sectigo's cross-signed root. */
+export const revocationProviderOptions = () => ({ knownIssuers: knownIssuerCertificates() });
+
 export const signPdf = async ({ pdf }: SignOptions) => {
   const signer = await getSigner();
 
   const tsa = getTimestampAuthority();
 
-  const revocationProvider = createValidatingRevocationProvider();
+  const revocationProvider = createValidatingRevocationProvider(revocationProviderOptions());
 
   const { bytes, warnings } = await pdf.sign({
     signer,

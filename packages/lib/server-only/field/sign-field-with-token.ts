@@ -17,6 +17,7 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
 import type { TRecipientActionAuth } from '../../types/document-auth';
 import {
+  COMPANY_SEAL_V2_ONLY_MESSAGE,
   ZCheckboxFieldMeta,
   ZDropdownFieldMeta,
   ZNumberFieldMeta,
@@ -126,6 +127,11 @@ export const signFieldWithToken = async ({
 
   if (field.inserted) {
     throw new Error(`Field ${fieldId} has already been inserted`);
+  }
+
+  // The V1 signing path cannot apply a company seal. Seal fields exist only on V2 envelopes.
+  if (field.type === FieldType.COMPANY_SEAL) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, { message: COMPANY_SEAL_V2_ONLY_MESSAGE });
   }
 
   await assertRecipientAccessAuthorized({
@@ -331,6 +337,9 @@ export const signFieldWithToken = async ({
               type,
               data: updatedField.customText,
             }))
+            .with(FieldType.COMPANY_SEAL, () => {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: COMPANY_SEAL_V2_ONLY_MESSAGE });
+            })
             .exhaustive(),
           fieldSecurity: derivedRecipientActionAuth
             ? {

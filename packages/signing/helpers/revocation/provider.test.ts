@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { CertificateRevokedError, RevocationDataUnavailableError } from './errors';
@@ -5,6 +8,8 @@ import { createValidatingRevocationProvider } from './provider';
 import {
   buildCrl,
   buildOcspResponse,
+  createCrossSignedRoot,
+  createForgedCertificate,
   createIdentity,
   createTestPki,
   fixedLookup,
@@ -12,6 +17,7 @@ import {
   type TestIdentity,
   type TestPki,
 } from './test-support';
+import { parseCertificate } from './x509';
 
 const OCSP_URL = 'http://ocsp.example.test/';
 const CRL_URL = 'http://crl.example.test/ca.crl';
@@ -349,6 +355,374 @@ describe('createValidatingRevocationProvider', () => {
       expect(() => createProvider(router({})).assertComplete({ expectChecks: true })).toThrow(
         /no revocation check ran/,
       );
+    });
+  });
+});
+
+/**
+ * Known issuers: certificates the provider may use to verify a CRL signature
+ * when nothing else in the chain names the issuer. They are never anchors and
+ * never exempt anything. See the issue 48 specification.
+ */
+describe('known issuers', () => {
+  const KNOWN_CRL_URL = 'http://crl.known.test/known.crl';
+  const KNOWN_OCSP_URL = 'http://ocsp.known.test/';
+  const FIXTURES = path.join(__dirname, '__fixtures__');
+  const fixture = (name: string) => new Uint8Array(readFileSync(path.join(FIXTURES, name)));
+
+  /** Stands in for USERTrust: the issuer the chain never contains. */
+  let known: TestIdentity;
+  /** Stands in for R46: issued by `known`, with a CRL URL and an OCSP URL and no caIssuers. */
+  let cross: TestIdentity;
+  let knownCrl: Uint8Array;
+
+  beforeAll(async () => {
+    known = await createIdentity({ commonName: 'Known Root', serialNumber: 5, isCa: true });
+
+    ({ crossSigned: cross } = await createCrossSignedRoot({
+      commonName: 'Cross Signed Root',
+      issuer: known,
+      crlUrl: KNOWN_CRL_URL,
+      ocspUrl: KNOWN_OCSP_URL,
+    }));
+
+    knownCrl = await buildCrl({ issuer: known });
+  });
+
+  const crlFetch = (routes: Routes = {}) => router({ [KNOWN_CRL_URL]: derResponse(knownCrl), ...routes });
+
+  const crlRequests = (fetchFn: ReturnType<typeof router>, url: string) =>
+    fetchFn.mock.calls.filter(([requested]) => requested === url).length;
+
+  describe('resolving an issuer the chain does not contain', () => {
+    // F1, baseline: without a known issuer this is the production failure and
+    // must stay unresolved, so that the option is what changes the outcome.
+    it('leaves a cross-signed root unresolved when no known issuer is given', async () => {
+      const fetchFn = crlFetch();
+      const provider = createProvider(fetchFn);
+
+      await expect(provider.getCRL(cross.der)).resolves.toBeNull();
+
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved', detail: /no issuer certificate available/ }]);
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(() => provider.assertComplete()).toThrow(RevocationDataUnavailableError);
+    });
+
+    // F1
+    it('records a cross-signed root as good once its issuer is a known issuer', async () => {
+      const fetchFn = crlFetch();
+      const provider = createProvider(fetchFn, { knownIssuers: [known.der] });
+
+      await provider.getCRL(cross.der);
+
+      expect(provider.outcomes()).toMatchObject([{ status: 'good', subject: 'Cross Signed Root' }]);
+      expect(() => provider.assertComplete()).not.toThrow();
+    });
+
+    // F6
+    it('returns the validated CRL bytes so the library embeds them', async () => {
+      const provider = createProvider(crlFetch(), { knownIssuers: [known.der] });
+
+      const returned = await provider.getCRL(cross.der);
+
+      expect(returned).toEqual(knownCrl);
+    });
+
+    // F1, and the verdict still comes from the CRL, not from the issuer's mere presence
+    it('reports a certificate the known issuer revoked as revoked', async () => {
+      const revokedCrl = await buildCrl({ issuer: known, revokedSerialNumbers: [51] });
+      const provider = createProvider(crlFetch({ [KNOWN_CRL_URL]: derResponse(revokedCrl) }), {
+        knownIssuers: [known.der],
+      });
+
+      await expect(provider.getCRL(cross.der)).rejects.toThrow(CertificateRevokedError);
+      expect(() => provider.assertComplete()).toThrow(CertificateRevokedError);
+    });
+
+    // F1: a known issuer whose CRL is not valid gets no credit
+    it('stays unresolved when the CRL is not signed by the known issuer', async () => {
+      const forgedCrl = await buildCrl({ issuer: await createIdentity({ commonName: 'Known Root', serialNumber: 9 }) });
+      const provider = createProvider(crlFetch({ [KNOWN_CRL_URL]: derResponse(forgedCrl) }), {
+        knownIssuers: [known.der],
+      });
+
+      await expect(provider.getCRL(cross.der)).resolves.toBeNull();
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved' }]);
+    });
+
+    // F8: the real certificates. The bundled USERTrust root must verify the
+    // real Sectigo R46 cross-certificate, and the provider must then accept
+    // the real USERTrust CRL for it. "now" is fixed inside the CRL's window.
+    it('verifies the real Sectigo R46 cross-certificate under the real USERTrust root', async () => {
+      const usertrust = parseCertificate(fixture('usertrust-rsa-certification-authority.crt'), 'issuer');
+      const r46 = parseCertificate(fixture('sectigo-time-stamping-root-r46-cross.crt'), 'subject');
+
+      await expect(r46.verify(usertrust)).resolves.toBe(true);
+    });
+
+    // F8
+    it('records the real R46 as good from the real USERTrust CRL', async () => {
+      const realCrl = fixture('usertrust-rsa-certification-authority.crl');
+      const realUrl = 'http://crl.usertrust.com/USERTrustRSACertificationAuthority.crl';
+      const fetchFn = router({ [realUrl]: derResponse(realCrl) });
+
+      const provider = createProvider(fetchFn, {
+        knownIssuers: [fixture('usertrust-rsa-certification-authority.crt')],
+        now: () => new Date('2026-10-10T12:00:00Z'),
+      });
+
+      const returned = await provider.getCRL(fixture('sectigo-time-stamping-root-r46-cross.crt'));
+
+      expect(returned).toEqual(realCrl);
+      expect(provider.outcomes()).toMatchObject([{ status: 'good', subject: expect.stringContaining('R46') }]);
+    });
+  });
+
+  describe('the issuer must have signed the certificate', () => {
+    // F2: the certificate names the known issuer but another key signed it.
+    // The CRL it points at is a genuine one from the known issuer, which does
+    // not list it, so trusting the name alone would record it as good.
+    it('does not use a known issuer that did not sign the certificate', async () => {
+      const forged = await createForgedCertificate({
+        commonName: 'Forged Signer',
+        claimedIssuer: known,
+        crlUrl: KNOWN_CRL_URL,
+      });
+
+      const fetchFn = crlFetch();
+      const provider = createProvider(fetchFn, { knownIssuers: [known.der] });
+
+      await expect(provider.getCRL(forged.der)).resolves.toBeNull();
+
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved', subject: 'Forged Signer' }]);
+      expect(provider.outcomes()[0].detail).toMatch(/issue/i);
+      expect(provider.outcomes()[0].detail).not.toMatch(/no issuer certificate available/);
+      expect(() => provider.assertComplete()).toThrow(RevocationDataUnavailableError);
+    });
+
+    // F7: the issuer comes from the index of certificates seen so far
+    it('does not use a look-alike issuer found in the chain index', async () => {
+      // A certificate that carries the real CA's name and a key of its own.
+      const lookAlike = await createIdentity({ commonName: 'Example Signing CA', serialNumber: 99, isCa: true });
+      const lookAlikeCrl = await buildCrl({ issuer: lookAlike });
+
+      const fetchFn = router({ [CRL_URL]: derResponse(lookAlikeCrl) });
+      const provider = createProvider(fetchFn);
+
+      // The library asks about it first, which puts it in the index.
+      await provider.getCRL(lookAlike.der);
+
+      await expect(provider.getCRL(pki.leaf.der)).resolves.toBeNull();
+
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(provider.outcomes().find((outcome) => outcome.subject === 'Example Signer')).toMatchObject({
+        status: 'unresolved',
+      });
+      expect(() => provider.assertComplete()).toThrow(RevocationDataUnavailableError);
+    });
+
+    // F7: the issuer is the certificate itself, because it says it is self-issued
+    it('does not treat a certificate as its own issuer unless its signature verifies under its own key', async () => {
+      const other = await createIdentity({ commonName: 'Other Key Holder', serialNumber: 3 });
+      const selfNamed = await createIdentity({
+        commonName: 'Self Named',
+        serialNumber: 98,
+        isCa: true,
+        crlUrl: CRL_URL,
+        signingKey: other.privateKey,
+      });
+
+      const fetchFn = router({ [CRL_URL]: derResponse(await buildCrl({ issuer: selfNamed })) });
+      const provider = createProvider(fetchFn);
+
+      await expect(provider.getCRL(selfNamed.der)).resolves.toBeNull();
+
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved' }]);
+    });
+
+    // Regression guard for F7: the check must not reject honest issuers.
+    it('still uses a genuine issuer found in the chain index', async () => {
+      const crl = await buildCrl({ issuer: pki.ca });
+      const provider = createProvider(router({ [CRL_URL]: derResponse(crl) }));
+
+      await provider.getCRL(pki.ca.der);
+
+      await expect(provider.getCRL(pki.leaf.der)).resolves.toEqual(crl);
+      expect(provider.outcomes().find((outcome) => outcome.subject === 'Example Signer')).toMatchObject({
+        status: 'good',
+      });
+    });
+
+    // Regression guard for F7
+    it('still accepts a genuine self-signed certificate that publishes a CRL', async () => {
+      const root = await createIdentity({ commonName: 'Self Signed With CRL', serialNumber: 97, crlUrl: CRL_URL });
+      const crl = await buildCrl({ issuer: root });
+      const provider = createProvider(router({ [CRL_URL]: derResponse(crl) }));
+
+      await expect(provider.getCRL(root.der)).resolves.toEqual(crl);
+      expect(provider.outcomes()).toMatchObject([{ status: 'good' }]);
+    });
+
+    // F7: the issuer the library passed to getOCSP, reused by getCRL
+    it('still uses the issuer an earlier getOCSP call supplied', async () => {
+      const crl = await buildCrl({ issuer: pki.ca });
+      const fetchFn = router({
+        [OCSP_URL]: () => new Response('', { status: 500 }),
+        [CRL_URL]: derResponse(crl),
+      });
+      const provider = createProvider(fetchFn);
+
+      await asTheLibraryWould(provider.getOCSP(pki.leaf.der, pki.ca.der));
+
+      await expect(provider.getCRL(pki.leaf.der)).resolves.toEqual(crl);
+    });
+  });
+
+  describe('known issuers confer nothing by themselves', () => {
+    // F4
+    it('adds nothing to the outcomes when nothing asked about them', () => {
+      const provider = createProvider(crlFetch(), { knownIssuers: [known.der] });
+
+      expect(provider.outcomes()).toEqual([]);
+    });
+
+    // F4
+    it('does not make an empty ledger count as a completed check', () => {
+      const provider = createProvider(crlFetch(), { knownIssuers: [known.der] });
+
+      expect(() => provider.assertComplete({ expectChecks: true })).toThrow(RevocationDataUnavailableError);
+    });
+
+    // F4: a known issuer is not an exemption for a certificate that merely resembles it
+    it('does not exempt a certificate whose issuer is a known issuer', async () => {
+      const provider = createProvider(router({}), { knownIssuers: [known.der] });
+
+      await provider.getCRL(cross.der);
+
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved' }]);
+      expect(provider.outcomes()).not.toContainEqual(expect.objectContaining({ status: 'exempt' }));
+    });
+
+    // F4: the index entry serves getCRL only. getOCSP uses the issuer it is handed.
+    it('does not let getOCSP use a known issuer in place of the one it was handed', async () => {
+      const fetchFn = router({});
+      const provider = createProvider(fetchFn, { knownIssuers: [pki.ca.der] });
+
+      await expect(provider.getOCSP(pki.leaf.der, pki.otherCa.der)).resolves.toBeNull();
+
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved' }]);
+    });
+
+    // F4: names are not enough; a known issuer with a different name resolves nothing
+    it('ignores a known issuer whose name is not the certificate issuer', async () => {
+      const fetchFn = crlFetch();
+      const provider = createProvider(fetchFn, { knownIssuers: [pki.otherCa.der] });
+
+      await expect(provider.getCRL(cross.der)).resolves.toBeNull();
+
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(provider.outcomes()).toMatchObject([{ status: 'unresolved', detail: /no issuer certificate available/ }]);
+    });
+  });
+
+  describe('the CRL cache', () => {
+    // F9
+    it('fetches a CRL once for repeated requests about the same certificate', async () => {
+      const fetchFn = crlFetch();
+      const provider = createProvider(fetchFn, { knownIssuers: [known.der] });
+
+      const first = await provider.getCRL(cross.der);
+      const second = await provider.getCRL(cross.der);
+
+      expect(crlRequests(fetchFn, KNOWN_CRL_URL)).toBe(1);
+      expect(second).toEqual(first);
+    });
+
+    // F9: the cache holds the list, not the verdict
+    it('still checks each certificate against a cached CRL', async () => {
+      const second = await createIdentity({
+        commonName: 'Second Signer',
+        serialNumber: 1004,
+        issuer: pki.ca,
+        crlUrl: CRL_URL,
+      });
+
+      const crl = await buildCrl({ issuer: pki.ca, revokedSerialNumbers: [1004] });
+      const fetchFn = router({ [CRL_URL]: derResponse(crl) });
+      const provider = createProvider(fetchFn);
+
+      await asTheLibraryWould(provider.getOCSP(pki.leaf.der, pki.ca.der));
+      await expect(provider.getCRL(pki.leaf.der)).resolves.toEqual(crl);
+      await expect(provider.getCRL(second.der)).rejects.toThrow(CertificateRevokedError);
+
+      expect(crlRequests(fetchFn, CRL_URL)).toBe(1);
+    });
+
+    // F9, and F2: a cached list is keyed by issuer too, so a forgery cannot ride on it
+    it('does not serve a cached CRL to a certificate the issuer did not sign', async () => {
+      const forged = await createForgedCertificate({
+        commonName: 'Forged Signer',
+        claimedIssuer: pki.ca,
+        crlUrl: CRL_URL,
+      });
+
+      const crl = await buildCrl({ issuer: pki.ca });
+      const fetchFn = router({ [CRL_URL]: derResponse(crl) });
+      const provider = createProvider(fetchFn, { knownIssuers: [pki.ca.der] });
+
+      await expect(provider.getCRL(pki.leaf.der)).resolves.toEqual(crl);
+      await expect(provider.getCRL(forged.der)).resolves.toBeNull();
+
+      expect(crlRequests(fetchFn, CRL_URL)).toBe(1);
+      expect(provider.outcomes().find((outcome) => outcome.subject === 'Forged Signer')).toMatchObject({
+        status: 'unresolved',
+      });
+    });
+
+    // F9: a failure is not remembered
+    it('fetches again after a failed fetch', async () => {
+      let healthy = false;
+      const fetchFn = vi.fn((_url: string) =>
+        Promise.resolve(healthy ? derResponse(knownCrl)() : new Response('', { status: 503 })),
+      );
+      const provider = createProvider(fetchFn as unknown as ReturnType<typeof router>, { knownIssuers: [known.der] });
+
+      await expect(provider.getCRL(cross.der)).resolves.toBeNull();
+
+      healthy = true;
+
+      await expect(provider.getCRL(cross.der)).resolves.toEqual(knownCrl);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(provider.outcomes()).toMatchObject([{ status: 'good' }]);
+    });
+
+    // F9: a CRL that failed validation is not remembered either
+    it('fetches again after a CRL that failed validation', async () => {
+      const wrongSigner = await createIdentity({ commonName: 'Known Root', serialNumber: 9 });
+      const badCrl = await buildCrl({ issuer: wrongSigner });
+      let served = badCrl;
+      const fetchFn = vi.fn((_url: string) => Promise.resolve(derResponse(served)()));
+      const provider = createProvider(fetchFn as unknown as ReturnType<typeof router>, { knownIssuers: [known.der] });
+
+      await expect(provider.getCRL(cross.der)).resolves.toBeNull();
+
+      served = knownCrl;
+
+      await expect(provider.getCRL(cross.der)).resolves.toEqual(knownCrl);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    // F9: two providers share nothing
+    it('does not share a cache between providers', async () => {
+      const fetchFn = crlFetch();
+
+      await createProvider(fetchFn, { knownIssuers: [known.der] }).getCRL(cross.der);
+      await createProvider(fetchFn, { knownIssuers: [known.der] }).getCRL(cross.der);
+
+      expect(crlRequests(fetchFn, KNOWN_CRL_URL)).toBe(2);
     });
   });
 });

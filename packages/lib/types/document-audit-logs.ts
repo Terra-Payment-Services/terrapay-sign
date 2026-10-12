@@ -357,6 +357,16 @@ export const ZDocumentAuditLogEventDocumentFieldInsertedSchema = z.object({
         type: z.literal(FieldType.NUMBER),
         data: z.string(),
       }),
+      // The seal's identity and a hash of the applied image. The image itself is kept only in the Signature row.
+      z.object({
+        type: z.literal(FieldType.COMPANY_SEAL),
+        data: z.object({
+          sealId: z.string(),
+          sealName: z.string(),
+          legalEntityName: z.string(),
+          imageSha256: z.string(),
+        }),
+      }),
     ]),
     fieldSecurity: z.preprocess(
       (input) => {

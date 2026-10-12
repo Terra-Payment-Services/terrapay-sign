@@ -29,6 +29,7 @@ import { reportRecipientRoute } from './envelope-recipients/report-recipient';
 import { updateEnvelopeRecipientsRoute } from './envelope-recipients/update-envelope-recipients';
 import { findEnvelopeAuditLogsRoute } from './find-envelope-audit-logs';
 import { findEnvelopesRoute } from './find-envelopes';
+import { getCompanySealForFieldRoute } from './get-company-seal-for-field';
 import { getEditorEnvelopeRoute } from './get-editor-envelope';
 import { getEnvelopeRoute } from './get-envelope';
 import { getEnvelopeItemsRoute } from './get-envelope-items';
@@ -83,6 +84,9 @@ export const envelopeRouter = router({
     delete: deleteEnvelopeFieldRoute,
     set: setEnvelopeFieldsRoute,
     sign: signEnvelopeFieldRoute,
+  },
+  companySeal: {
+    getForField: getCompanySealForFieldRoute,
   },
   find: findEnvelopesRoute,
   auditLog: {

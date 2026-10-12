@@ -91,6 +91,30 @@ export enum AppErrorCode {
   SIGNATURE_ALREADY_INVALID = 'SIGNATURE_ALREADY_INVALID',
 
   /**
+   * Company seals. Applying a seal needs a Sign session for the
+   * recipient's own account; the signing link alone is not enough.
+   */
+  COMPANY_SEAL_LOGIN_REQUIRED = 'COMPANY_SEAL_LOGIN_REQUIRED',
+
+  /**
+   * The session is not the recipient's, or its user is not a current member of
+   * the seal's organisation.
+   */
+  COMPANY_SEAL_NOT_AUTHORISED = 'COMPANY_SEAL_NOT_AUTHORISED',
+
+  /**
+   * At send: a seal field's recipient is not a member of the seal's
+   * organisation, so nobody could apply it.
+   */
+  COMPANY_SEAL_RECIPIENT_NOT_AUTHORISED = 'COMPANY_SEAL_RECIPIENT_NOT_AUTHORISED',
+
+  /**
+   * A V1 field route or API v1 call would create, change, delete or copy a
+   * company seal field, which only V2 documents and API v2 support.
+   */
+  COMPANY_SEAL_V2_ONLY = 'COMPANY_SEAL_V2_ONLY',
+
+  /**
    * CSC (Cloud Signature Consortium) error codes. See the CSC QES V1 spec
    * for the recovery taxonomy.
    */
@@ -144,6 +168,10 @@ export const genericErrorCodeToTrpcErrorCodeMap: Record<string, { code: string; 
   [AppErrorCode.SIGNATURE_ALREADY_INVALID]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.RECIPIENT_HAS_UNSIGNED_FIELDS]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.RECIPIENT_OUT_OF_TURN]: { code: 'BAD_REQUEST', status: 400 },
+  [AppErrorCode.COMPANY_SEAL_LOGIN_REQUIRED]: { code: 'UNAUTHORIZED', status: 401 },
+  [AppErrorCode.COMPANY_SEAL_NOT_AUTHORISED]: { code: 'FORBIDDEN', status: 403 },
+  [AppErrorCode.COMPANY_SEAL_RECIPIENT_NOT_AUTHORISED]: { code: 'BAD_REQUEST', status: 400 },
+  [AppErrorCode.COMPANY_SEAL_V2_ONLY]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.CSC_INSTANCE_MODE_MISMATCH]: { code: 'BAD_REQUEST', status: 400 },
   [AppErrorCode.CSC_UNLICENSED]: { code: 'FORBIDDEN', status: 403 },
   [AppErrorCode.CSC_PROVIDER_INFO_FAILED]: { code: 'INTERNAL_SERVER_ERROR', status: 500 },
@@ -362,6 +390,7 @@ export class AppError extends Error {
         AppErrorCode.CSC_ALGORITHM_REFUSED,
         AppErrorCode.CSC_SAD_EXPIRED_PRE_SIGN,
         AppErrorCode.CSC_EMBED_FAILED,
+        AppErrorCode.COMPANY_SEAL_V2_ONLY,
         () => 400 as const,
       )
       .with(AppErrorCode.UNAUTHORIZED, () => 401 as const)

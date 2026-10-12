@@ -35,6 +35,7 @@ import { securityHeadersMiddleware } from './security-headers';
 import { openApiTrpcServerHandler } from './trpc/hono-trpc-open-api';
 import { reactRouterTrpcServer } from './trpc/hono-trpc-remix';
 
+export { setWorkerWedgedHandler, stopWorkerWatchdogs } from '@documenso/lib/jobs/client/bullmq-watchdog';
 // Re-exported so the rollup build (entry: server/router.ts) bundles them.
 // server/main.js imports these from the rolled-up output: getLoadContext to wire
 // into the React Router adapter, and the shutdown pair to answer SIGTERM.

@@ -4,6 +4,7 @@ import { useCurrentEnvelopeRender } from '@documenso/lib/client-only/providers/e
 import { PDF_VIEWER_ERROR_MESSAGES } from '@documenso/lib/constants/pdf-viewer-i18n';
 import type {
   TCheckboxFieldMeta,
+  TCompanySealFieldMeta,
   TDateFieldMeta,
   TDropdownFieldMeta,
   TEmailFieldMeta,
@@ -18,6 +19,7 @@ import type {
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
 import { getOverlappingFieldPairs } from '@documenso/lib/utils/fields-overlap';
 import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
+import { trpc } from '@documenso/trpc/react';
 import { AnimateGenericFadeInOut } from '@documenso/ui/components/animate/animate-generic-fade-in-out';
 import { cn } from '@documenso/ui/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
@@ -36,6 +38,7 @@ import { match } from 'ts-pattern';
 
 import { EnvelopeItemEditDialog } from '~/components/dialogs/envelope-item-edit-dialog';
 import { EditorFieldCheckboxForm } from '~/components/forms/editor/editor-field-checkbox-form';
+import { EditorFieldCompanySealForm } from '~/components/forms/editor/editor-field-company-seal-form';
 import { EditorFieldDateForm } from '~/components/forms/editor/editor-field-date-form';
 import { EditorFieldDropdownForm } from '~/components/forms/editor/editor-field-dropdown-form';
 import { EditorFieldEmailForm } from '~/components/forms/editor/editor-field-email-form';
@@ -66,6 +69,7 @@ const FieldSettingsTypeTranslations: Record<FieldType, MessageDescriptor> = {
   [FieldType.RADIO]: msg`Radio Settings`,
   [FieldType.CHECKBOX]: msg`Checkbox Settings`,
   [FieldType.DROPDOWN]: msg`Dropdown Settings`,
+  [FieldType.COMPANY_SEAL]: msg`Company Seal Settings`,
 };
 
 export const EnvelopeEditorFieldsPage = () => {
@@ -89,6 +93,8 @@ export const EnvelopeEditorFieldsPage = () => {
   );
 
   const selectedField = useMemo(() => structuredClone(editorFields.selectedField), [editorFields.selectedField]);
+
+  const { data: companySeals } = trpc.organisation.companySeal.findForEnvelope.useQuery({ envelopeId: envelope.id });
 
   /**
    * Debounce the fields used for overlap detection so we don't recompute on every
@@ -430,6 +436,16 @@ export const EnvelopeEditorFieldsPage = () => {
                     .with(FieldType.TEXT, () => (
                       <EditorFieldTextForm
                         value={selectedField?.fieldMeta as TTextFieldMeta | undefined}
+                        onValueChange={(value) => updateSelectedFieldMeta(value)}
+                      />
+                    ))
+                    .with(FieldType.COMPANY_SEAL, () => (
+                      <EditorFieldCompanySealForm
+                        value={selectedField?.fieldMeta as TCompanySealFieldMeta | undefined}
+                        seals={companySeals?.data ?? []}
+                        isRecipientNonMember={
+                          companySeals?.nonMemberRecipientIds.includes(selectedField.recipientId) ?? false
+                        }
                         onValueChange={(value) => updateSelectedFieldMeta(value)}
                       />
                     ))

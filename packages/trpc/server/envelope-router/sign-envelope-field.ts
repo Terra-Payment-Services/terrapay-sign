@@ -1,12 +1,19 @@
+import crypto from 'node:crypto';
+
 import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import {
   hasRecipientAccess2FACookie,
   isRecipientAccess2FARequired,
 } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import {
+  assertCompanySealApplicable,
+  getCompanySealImage,
+} from '@documenso/lib/server-only/company-seal/company-seal-field';
 import { assertRecipientAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
+import { DocumentAuth } from '@documenso/lib/types/document-auth';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
 import { assertRecipientNotExpired } from '@documenso/lib/utils/recipients';
@@ -86,12 +93,12 @@ export const signEnvelopeFieldRoute = procedure
     }
 
     if (
-      field.type === FieldType.SIGNATURE &&
+      (field.type === FieldType.SIGNATURE || field.type === FieldType.COMPANY_SEAL) &&
       recipient.id !== field.recipientId &&
       recipient.role === RecipientRole.ASSISTANT
     ) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Assistant recipients cannot sign signature fields`,
+        message: `Assistant recipients cannot sign signature or company seal fields`,
       });
     }
 
@@ -151,6 +158,12 @@ export const signEnvelopeFieldRoute = procedure
         statusCode: 401,
       });
     }
+
+    // Applying and removing a seal need the same session and membership as each other.
+    const companySeal =
+      field.type === FieldType.COMPANY_SEAL
+        ? await assertCompanySealApplicable({ envelope, field, recipient, user })
+        : null;
 
     const insertionValues = extractFieldInsertionValues({ fieldValue, field, documentMeta });
 
@@ -225,13 +238,28 @@ export const signEnvelopeFieldRoute = procedure
       }
     }
 
+    // The seal image is snapshotted onto the document now, so a reseal never reads the seal row again.
+    let companySealAuditData = null;
+
+    if (companySeal) {
+      const { bytes, dataUrl } = await getCompanySealImage(companySeal);
+
+      signatureImageAsBase64 = dataUrl;
+      companySealAuditData = {
+        sealId: companySeal.id,
+        sealName: companySeal.name,
+        legalEntityName: companySeal.legalEntityName,
+        imageSha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+      };
+    }
+
     return await prisma.$transaction(async (tx) => {
       const updatedField = await tx.field.update({
         where: {
           id: field.id,
         },
         data: {
-          customText: insertionValues.customText,
+          customText: companySeal ? companySeal.legalEntityName : insertionValues.customText,
           inserted: insertionValues.inserted,
         },
         include: {
@@ -239,7 +267,7 @@ export const signEnvelopeFieldRoute = procedure
         },
       });
 
-      if (field.type === FieldType.SIGNATURE) {
+      if (field.type === FieldType.SIGNATURE || field.type === FieldType.COMPANY_SEAL) {
         const signature = await tx.signature.upsert({
           where: {
             fieldId: field.id,
@@ -293,12 +321,21 @@ export const signEnvelopeFieldRoute = procedure
                 type,
                 data: updatedField.customText,
               }))
-              .exhaustive(),
-            fieldSecurity: derivedRecipientActionAuth
-              ? {
-                  type: derivedRecipientActionAuth,
+              .with(FieldType.COMPANY_SEAL, (type) => {
+                if (!companySealAuditData) {
+                  throw new AppError(AppErrorCode.INVALID_REQUEST, { message: 'The company seal was not loaded' });
                 }
-              : undefined,
+
+                return { type, data: companySealAuditData };
+              })
+              .exhaustive(),
+            fieldSecurity: companySeal
+              ? { type: DocumentAuth.ACCOUNT }
+              : derivedRecipientActionAuth
+                ? {
+                    type: derivedRecipientActionAuth,
+                  }
+                : undefined,
           },
         }),
       });

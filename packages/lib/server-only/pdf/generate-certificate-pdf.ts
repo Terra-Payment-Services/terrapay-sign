@@ -8,6 +8,7 @@ import { match } from 'ts-pattern';
 
 import { ZSupportedLanguageCodeSchema } from '../../constants/i18n';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
+import { getCompanySealCertificateEntries } from '../../utils/company-seal-certificate';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { getTranslations } from '../../utils/i18n';
 import { getDocumentCertificateAuditLogs } from '../document/get-document-certificate-audit-logs';
@@ -126,6 +127,7 @@ export const generateCertificatePdf = async (options: GenerateCertificatePdfOpti
         signatureField,
         rejectionReason: recipient.rejectionReason,
         authLevel,
+        companySeals: getCompanySealCertificateEntries(recipient.id, fields, auditLogs.DOCUMENT_FIELD_INSERTED),
         logs: {
           emailed: emailSent ?? null,
           sent: documentSent ?? null,

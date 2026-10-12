@@ -1,5 +1,6 @@
 import { router } from '../trpc';
 import { acceptOrganisationMemberInviteRoute } from './accept-organisation-member-invite';
+import { createCompanySealRoute } from './create-company-seal';
 import { createOrganisationRoute } from './create-organisation';
 import { createOrganisationGroupRoute } from './create-organisation-group';
 import { createOrganisationMemberInvitesRoute } from './create-organisation-member-invites';
@@ -9,6 +10,8 @@ import { deleteOrganisationGroupRoute } from './delete-organisation-group';
 import { deleteOrganisationMemberRoute } from './delete-organisation-member';
 import { deleteOrganisationMemberInvitesRoute } from './delete-organisation-member-invites';
 import { deleteOrganisationMembersRoute } from './delete-organisation-members';
+import { findCompanySealsRoute } from './find-company-seals';
+import { findCompanySealsForEnvelopeRoute } from './find-company-seals-for-envelope';
 import { findOrganisationGroupsRoute } from './find-organisation-groups';
 import { findOrganisationMemberInvitesRoute } from './find-organisation-member-invites';
 import { findOrganisationMembersRoute } from './find-organisation-members';
@@ -19,6 +22,7 @@ import { getOrganisationQuotaFlagsRoute } from './get-organisation-quota-flags';
 import { getOrganisationSessionRoute } from './get-organisation-session';
 import { getOrganisationsRoute } from './get-organisations';
 import { leaveOrganisationRoute } from './leave-organisation';
+import { processCompanySealImageRoute } from './process-company-seal-image';
 import { resendOrganisationMemberInviteRoute } from './resend-organisation-member-invite';
 import { updateOrganisationRoute } from './update-organisation';
 import { updateOrganisationBrandingLogoRoute } from './update-organisation-branding-logo';
@@ -55,6 +59,13 @@ export const organisationRouter = router({
     create: createOrganisationGroupRoute,
     update: updateOrganisationGroupRoute,
     delete: deleteOrganisationGroupRoute,
+  },
+  // Seals are created and listed only. There is deliberately no update or delete.
+  companySeal: {
+    create: createCompanySealRoute,
+    find: findCompanySealsRoute,
+    findForEnvelope: findCompanySealsForEnvelopeRoute,
+    process: processCompanySealImageRoute,
   },
   settings: {
     update: updateOrganisationSettingsRoute,

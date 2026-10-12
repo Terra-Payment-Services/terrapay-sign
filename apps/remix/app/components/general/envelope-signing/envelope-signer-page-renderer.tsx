@@ -7,6 +7,7 @@ import {
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
 import { isDirectTemplateRecipientEmail } from '@documenso/lib/constants/direct-templates';
 import { isBase64Image } from '@documenso/lib/constants/signatures';
+import { AppError } from '@documenso/lib/errors/app-error';
 import type { TRecipientActionAuth } from '@documenso/lib/types/document-auth';
 import type { TEnvelope } from '@documenso/lib/types/envelope';
 import { ZFullFieldSchema } from '@documenso/lib/types/field';
@@ -30,6 +31,7 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useEffect, useMemo, useRef } from 'react';
 import { match } from 'ts-pattern';
 
+import { SignFieldCompanySealDialog } from '~/components/dialogs/sign-field-company-seal-dialog';
 import { useEmbedSigningContext } from '~/components/embed/embed-signing-context';
 import { handleCheckboxFieldClick } from '~/utils/field-signing/checkbox-field';
 import { handleDropdownFieldClick } from '~/utils/field-signing/dropdown-field';
@@ -88,7 +90,9 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
   const cachedRenderFields = useRef<Map<number, Field & { signature?: Signature | null }>>(new Map());
   const prevShowPendingFieldTooltip = useRef(showPendingFieldTooltip);
 
-  const { onFieldSigned, onFieldUnsigned } = useEmbedSigningContext() || {};
+  const embedSigningContext = useEmbedSigningContext();
+
+  const { onFieldSigned, onFieldUnsigned } = embedSigningContext || {};
 
   const { stage, pageLayer, konvaContainer, unscaledViewport } = usePageRenderer(
     ({ stage, pageLayer }) => createPageCanvas(stage, pageLayer),
@@ -413,6 +417,37 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
               loadingSpinnerGroup.destroy();
             });
         })
+        /**
+         * COMPANY SEAL FIELD.
+         *
+         * The embed has no Sign session, so it applies directly and shows the
+         * server's refusal rather than opening a sign-in prompt over the canvas.
+         */
+        .with({ type: FieldType.COMPANY_SEAL }, (field) => {
+          const applySeal = async (value: boolean) => {
+            fieldGroup.add(loadingSpinnerGroup);
+
+            await signField(field.id, { type: FieldType.COMPANY_SEAL, value }).finally(() => {
+              loadingSpinnerGroup.destroy();
+            });
+          };
+
+          if (field.inserted || embedSigningContext) {
+            void applySeal(!field.inserted).catch(() => null);
+            return;
+          }
+
+          void executeActionAuthProcedure({
+            actionTarget: field.type,
+            onReauthFormSubmit: async () => {
+              const isConfirmed = await SignFieldCompanySealDialog.call({ token: recipient.token, fieldId: field.id });
+
+              if (isConfirmed) {
+                await applySeal(true).catch(() => null);
+              }
+            },
+          });
+        })
         .exhaustive();
     };
 
@@ -527,7 +562,10 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
 
       toast({
         title: t`Error`,
-        description: t`An error occurred while signing the field.`,
+        description:
+          payload.type === FieldType.COMPANY_SEAL
+            ? AppError.parseError(err).message
+            : t`An error occurred while signing the field.`,
         variant: 'destructive',
       });
 

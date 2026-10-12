@@ -98,13 +98,34 @@ const localProjects = [
   {
     name: 'api',
     testMatch: /e2e\/api\/.*\.spec\.ts/,
+    testIgnore: [/e2e\/api\/chunked-stall\/.*\.spec\.ts/, /e2e\/api\/orphan-document-data\/cleanup-script\.spec\.ts/],
     workers: 10, // Limited by DB connections before it gets flakey.
+  },
+  // The cleanup script spec counts whole tables and runs a delete over
+  // the whole database, so it runs alone: one test at a time, after every
+  // other project has finished. Playwright hands each dependency's worker
+  // environment on, so the spec imports fixtures/shared-database first to
+  // undo the directory-sync database switch. Pass --no-deps to run it by itself.
+  {
+    name: 'cleanup-script',
+    testMatch: /e2e\/api\/orphan-document-data\/cleanup-script\.spec\.ts/,
+    fullyParallel: false,
+    workers: 1,
+    dependencies: ['api', 'chunked-stall', 'ui', 'directory-sync', 'remote', 'worker-wedge'],
+  },
+  // The chunked-stall specs fill the server's process-wide pre-read
+  // budget and lingering-refusal cap, so its files run one at a time.
+  {
+    name: 'chunked-stall',
+    testMatch: /e2e\/api\/chunked-stall\/.*\.spec\.ts/,
+    fullyParallel: false,
+    workers: 1,
   },
   // Run UI Tests (excluding remote tests which have their own project)
   {
     name: 'ui',
     testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
-    testIgnore: [/e2e\/remote\/.*\.spec\.ts/, /e2e\/directory-sync\/.*\.spec\.ts/],
+    testIgnore: [/e2e\/remote\/.*\.spec\.ts/, /e2e\/directory-sync\/.*\.spec\.ts/, /e2e\/worker-wedge\/.*\.spec\.ts/],
     use: {
       ...devices['Desktop Chrome'],
       viewport: { width: 1920, height: 1200 },
@@ -120,6 +141,20 @@ const localProjects = [
     name: 'directory-sync',
     testMatch: /e2e\/directory-sync\/.*\.spec\.ts/,
     workers: 2,
+  },
+  // The job worker wedge specs start a Redis Cluster of their own in
+  // Docker per test and take its nodes down, so they run one at a time, with
+  // a timeout long enough for an outage and a drain. No retries: each test is
+  // built to be deterministic, and a retry would hide a flake while
+  // multiplying a red run's length. The project depends on nothing and sets
+  // no environment, so nothing passes through it to cleanup-script.
+  {
+    name: 'worker-wedge',
+    testMatch: /e2e\/worker-wedge\/.*\.spec\.ts/,
+    fullyParallel: false,
+    workers: 1,
+    retries: 0,
+    timeout: 300_000,
   },
   // The remote-capable specs run on the local path too, against the server
   // start-server-and-test boots. That keeps them exercised on every local run

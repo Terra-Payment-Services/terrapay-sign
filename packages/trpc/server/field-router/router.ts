@@ -207,6 +207,7 @@ export const fieldRouter = router({
         type: EnvelopeType.DOCUMENT,
         fields: [field],
         requestMetadata: ctx.metadata,
+        protectCompanySeals: true,
       });
 
       return updatedFields.fields[0];
@@ -249,6 +250,7 @@ export const fieldRouter = router({
         type: EnvelopeType.DOCUMENT,
         fields,
         requestMetadata: ctx.metadata,
+        protectCompanySeals: true,
       });
     }),
 
@@ -325,6 +327,7 @@ export const fieldRouter = router({
           fieldMeta: field.fieldMeta,
         })),
         requestMetadata: ctx.metadata,
+        protectCompanySeals: true,
       });
     }),
 
@@ -492,6 +495,7 @@ export const fieldRouter = router({
         type: EnvelopeType.TEMPLATE,
         fields: [field],
         requestMetadata: ctx.metadata,
+        protectCompanySeals: true,
       });
 
       return updatedFields.fields[0];
@@ -534,6 +538,7 @@ export const fieldRouter = router({
         type: EnvelopeType.TEMPLATE,
         fields,
         requestMetadata: ctx.metadata,
+        protectCompanySeals: true,
       });
     }),
 
@@ -608,6 +613,7 @@ export const fieldRouter = router({
           pageHeight: field.pageHeight,
           fieldMeta: field.fieldMeta,
         })),
+        protectCompanySeals: true,
       });
     }),
 

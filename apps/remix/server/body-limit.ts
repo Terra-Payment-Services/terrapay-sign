@@ -1,5 +1,8 @@
+import type { IncomingMessage } from 'node:http';
+
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
-import type { Context, MiddlewareHandler } from 'hono';
+import { getIpAddress } from '@documenso/lib/universal/get-ip-address';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createMiddleware } from 'hono/factory';
 
 import type { HonoEnv } from './router';
@@ -127,6 +130,297 @@ const discardBody = async (reader: ReadableStreamDefaultReader<Uint8Array>, maxB
 };
 
 /**
+ * Bounds on reading a chunked body into memory before the route sees it.
+ *
+ * The pre-read holds bodies that may be legitimate, so the drain bounds above
+ * would refuse real uploads on slow links. A request with no body byte after
+ * `PRE_READ_FIRST_BYTE_MS` (curl waits about 1 s for `100 Continue`), or that
+ * sends less than `MIN_PRE_READ_BYTES_PER_SECOND` over the trailing
+ * `PRE_READ_WINDOW_MS` (a trailing window, so a burst cannot buy minutes of
+ * trickling), or that has not ended after `MAX_PRE_READ_MS`, is answered 408
+ * with `Connection: close`. A 5 MB upload passes at any steady rate above the
+ * floor. The timed-out body is not drained, so it takes no drain slot.
+ */
+const PRE_READ_FIRST_BYTE_MS = 3000;
+const PRE_READ_WINDOW_MS = 10_000;
+const MIN_PRE_READ_BYTES_PER_SECOND = 32 * 1024;
+const MAX_PRE_READ_MS = 180_000;
+const PRE_READ_CHECK_MS = 100;
+const PRE_READ_WINDOW_SLOTS = PRE_READ_WINDOW_MS / PRE_READ_CHECK_MS;
+
+/**
+ * Bytes all chunked pre-reads may hold at once, about 6 % of the 4096 MiB
+ * task. Tricklers hold none of it. A chunk that would take the total past it
+ * is answered 503 with `Retry-After: 1` and `Connection: close`.
+ */
+const MAX_HELD_PRE_READ_BYTES = 256 * MEBIBYTE;
+
+let heldPreReadBytes = 0;
+
+/**
+ * Bytes one client may hold of that budget, so that filling it takes at least
+ * four clients. 64 MiB fits one full file upload with room for JSON beside it.
+ * The client is keyed as the rate limiter keys it (`getIpAddress`, trusting
+ * one proxy hop by default), and a request with no address shares `unknown`.
+ */
+const MAX_HELD_PRE_READ_BYTES_PER_CLIENT = 64 * MEBIBYTE;
+
+const heldPreReadBytesByClient = new Map<string, number>();
+
+const clientKey = (c: Context) => {
+  try {
+    return getIpAddress(c.req.raw);
+  } catch {
+    return 'unknown';
+  }
+};
+
+/** True when the body is read into memory before the route: no Content-Length, or a Transfer-Encoding. */
+const isChunked = (headers: Headers) => headers.has('transfer-encoding') || !headers.has('content-length');
+
+type PreReadResult =
+  | { kind: 'done'; chunks: Uint8Array[] }
+  | { kind: 'over-limit' }
+  | { kind: 'timeout' }
+  | { kind: 'busy' };
+
+/**
+ * The bounds above on one body, on a clock the caller keeps. The pre-read runs
+ * it on the wall clock; a Content-Length body runs it on the client's.
+ */
+const createPaceBounds = () => {
+  const window = new Array<number>(PRE_READ_WINDOW_SLOTS).fill(0);
+  let size = 0;
+  let tick = 0;
+  let windowBytes = 0;
+
+  // The window advances by elapsed time, every missed slot included, so a late timer cannot keep old bytes counted.
+  const advance = (elapsedMs: number) => {
+    const target = Math.floor(elapsedMs / PRE_READ_CHECK_MS);
+    const steps = Math.min(target - tick, PRE_READ_WINDOW_SLOTS);
+
+    for (let step = 1; step <= steps; step++) {
+      const next = (tick + step) % PRE_READ_WINDOW_SLOTS;
+
+      windowBytes -= window[next];
+      window[next] = 0;
+    }
+
+    tick = Math.max(tick, target);
+  };
+
+  return {
+    count: (elapsedMs: number, bytes: number) => {
+      advance(elapsedMs);
+      size += bytes;
+      window[tick % PRE_READ_WINDOW_SLOTS] += bytes;
+      windowBytes += bytes;
+    },
+    isCrossed: (elapsedMs: number) => {
+      advance(elapsedMs);
+
+      const isFirstByteLate = size === 0 && elapsedMs >= PRE_READ_FIRST_BYTE_MS;
+      const isTooSlow =
+        elapsedMs >= PRE_READ_WINDOW_MS && windowBytes < (PRE_READ_WINDOW_MS / 1000) * MIN_PRE_READ_BYTES_PER_SECOND;
+
+      return isFirstByteLate || isTooSlow || elapsedMs >= MAX_PRE_READ_MS;
+    },
+  };
+};
+
+/**
+ * Read a chunked body into memory within the bounds above. `hold` reports the
+ * bytes counted against the budget so far, which the caller releases.
+ */
+const preReadBody = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  maxSize: number,
+  client: string,
+  hold: (bytes: number) => void,
+): Promise<PreReadResult> => {
+  const startedAt = Date.now();
+  const pace = createPaceBounds();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+
+  // The timeout settles the race below and leaves the reader alive, so the 408's linger can still read and drop.
+  let onTimeout = () => {};
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    onTimeout = () => resolve('timeout');
+  });
+
+  const timer = setInterval(() => {
+    if (pace.isCrossed(Date.now() - startedAt)) {
+      onTimeout();
+    }
+  }, PRE_READ_CHECK_MS);
+
+  try {
+    for (;;) {
+      const result = await Promise.race([reader.read(), timedOut]);
+
+      if (result === 'timeout') {
+        return { kind: 'timeout' };
+      }
+
+      const { done, value } = result;
+
+      if (done) {
+        return { kind: 'done', chunks };
+      }
+
+      size += value.length;
+      pace.count(Date.now() - startedAt, value.length);
+
+      if (size > maxSize) {
+        return { kind: 'over-limit' };
+      }
+
+      const clientHeld = heldPreReadBytesByClient.get(client) ?? 0;
+
+      if (
+        heldPreReadBytes + value.length > MAX_HELD_PRE_READ_BYTES ||
+        clientHeld + value.length > MAX_HELD_PRE_READ_BYTES_PER_CLIENT
+      ) {
+        return { kind: 'busy' };
+      }
+
+      heldPreReadBytes += value.length;
+      heldPreReadBytesByClient.set(client, clientHeld + value.length);
+      hold(value.length);
+      chunks.push(value);
+    }
+  } finally {
+    clearInterval(timer);
+  }
+};
+
+/**
+ * The same bounds on a Content-Length body, which the route reads itself
+ *. They measure the client: the clock runs only while a read is waiting
+ * on the socket, so time the route spends elsewhere, with a chunk already
+ * waiting for it, does not count. `timedOut` settles when a bound is crossed.
+ * The route's pending read is then left alone until the socket is done and
+ * only fails after that, so the route's answer to the failure reaches no one.
+ */
+const watchBody = (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+  const pace = createPaceBounds();
+  let clientMs = 0;
+  let waitingSince: number | null = null;
+  let isTimedOut = false;
+
+  const clock = () => clientMs + (waitingSince === null ? 0 : Date.now() - waitingSince);
+
+  let onTimeout = () => {};
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    onTimeout = () => resolve('timeout');
+  });
+
+  const timer = setInterval(() => {
+    if (waitingSince !== null && pace.isCrossed(clock())) {
+      isTimedOut = true;
+      clearInterval(timer);
+      onTimeout();
+    }
+  }, PRE_READ_CHECK_MS);
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      waitingSince = Date.now();
+
+      const { done, value } = await reader.read().finally(() => {
+        clientMs = clock();
+        waitingSince = null;
+      });
+
+      if (isTimedOut) {
+        // The linger reads and drops the rest and ends the socket; only then does the route's read fail.
+        await reader.closed.catch(() => undefined);
+        controller.error(new Error('Request timeout'));
+
+        return;
+      }
+
+      if (done) {
+        controller.close();
+
+        return;
+      }
+
+      pace.count(clientMs, value.length);
+      controller.enqueue(value);
+    },
+    async cancel(reason) {
+      clearInterval(timer);
+      await reader.cancel(reason);
+    },
+  });
+
+  return { body, timedOut, stop: () => clearInterval(timer) };
+};
+
+/**
+ * How long a connection refused out of the pre-read keeps reading after its
+ * answer. Node destroys a `Connection: close` socket as soon as the answer is
+ * written, and closing with the client's bytes still unread sends a reset,
+ * which can reach a client that is still writing before the answer does. So
+ * the answer is followed by a FIN, the body is read and dropped, and the
+ * socket is destroyed `REFUSAL_LINGER_MS` later. The bytes are not held.
+ *
+ * At most `MAX_LINGERING_REFUSALS` sockets read and drop at once. Past that a
+ * refused socket still gets its answer, the FIN and the same delay before it
+ * is destroyed, but nothing reads its body, so a flood of refusals costs no
+ * more than the sockets themselves.
+ */
+const REFUSAL_LINGER_MS = 500;
+const MAX_LINGERING_REFUSALS = 64;
+
+let lingeringRefusals = 0;
+
+const lingerAfterAnswer = (c: Context, reader: ReadableStreamDefaultReader<Uint8Array>) => {
+  const socket = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming?.socket;
+
+  if (!socket) {
+    return;
+  }
+
+  socket.destroySoon = () => {
+    socket.end();
+
+    setTimeout(() => {
+      reader.cancel().catch(() => undefined);
+      socket.destroy();
+    }, REFUSAL_LINGER_MS).unref();
+  };
+
+  if (lingeringRefusals >= MAX_LINGERING_REFUSALS) {
+    return;
+  }
+
+  lingeringRefusals++;
+
+  void (async () => {
+    try {
+      while (!(await reader.read()).done) {
+        // Dropped.
+      }
+    } catch {
+      // The socket is gone.
+    } finally {
+      lingeringRefusals--;
+    }
+  })();
+};
+
+/** The pre-read's 408, also sent when a Content-Length body crosses a bound as the route reads it. */
+const answerTimeout = (c: Context, reader: ReadableStreamDefaultReader<Uint8Array>) => {
+  lingerAfterAnswer(c, reader);
+  c.header('Connection', 'close');
+
+  return c.json({ error: 'Request timeout' }, 408);
+};
+
+/**
  * Hono's `bodyLimit`, changed so that a connection survives a refusal.
  *
  * A response sent before the client has finished its body loses the
@@ -154,12 +448,12 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
     return onError(c);
   };
 
-  return async (c, next) => {
+  const limit = async (c: Context, next: Next, client: string, hold: (bytes: number) => void) => {
     if (!c.req.raw.body) {
       return await next();
     }
 
-    if (c.req.raw.headers.has('content-length') && !c.req.raw.headers.has('transfer-encoding')) {
+    if (!isChunked(c.req.raw.headers)) {
       const contentLength = parseInt(c.req.raw.headers.get('content-length') || '0', 10);
 
       if (contentLength > maxSize + MAX_DISCARD_BYTES) {
@@ -171,26 +465,43 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
       if (contentLength > maxSize) {
         return await refuse(c, c.req.raw.body.getReader(), contentLength);
       }
-    } else {
-      let size = 0;
-      const chunks: Uint8Array[] = [];
+
       const reader = c.req.raw.body.getReader();
+      const watched = watchBody(reader);
+      const requestInit: RequestInit & { duplex: 'half' } = { body: watched.body, duplex: 'half' };
 
-      for (;;) {
-        const { done, value } = await reader.read();
+      c.req.raw = new Request(c.req.raw, requestInit);
 
-        if (done) {
-          break;
+      // On a timeout the route is left running on a read that fails later; the race keeps its outcome handled.
+      try {
+        if ((await Promise.race([next(), watched.timedOut])) === 'timeout') {
+          return answerTimeout(c, reader);
         }
-
-        size += value.length;
-
-        if (size > maxSize) {
-          return await refuse(c, reader, MAX_DISCARD_BYTES);
-        }
-
-        chunks.push(value);
+      } finally {
+        watched.stop();
       }
+    } else {
+      const reader = c.req.raw.body.getReader();
+      const result = await preReadBody(reader, maxSize, client, hold);
+
+      if (result.kind === 'over-limit') {
+        return await refuse(c, reader, MAX_DISCARD_BYTES);
+      }
+
+      // Answered at once and kept out of discardBody: the client has stopped sending or the budget is spent.
+      if (result.kind === 'timeout') {
+        return answerTimeout(c, reader);
+      }
+
+      if (result.kind === 'busy') {
+        lingerAfterAnswer(c, reader);
+        c.header('Connection', 'close');
+        c.header('Retry-After', '1');
+
+        return c.json({ error: 'Service unavailable' }, 503);
+      }
+
+      const { chunks } = result;
 
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -205,15 +516,39 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
       const requestInit: RequestInit & { duplex: 'half' } = { body, duplex: 'half' };
 
       c.req.raw = new Request(c.req.raw, requestInit);
-    }
 
-    await next();
+      await next();
+    }
 
     const unreadBody = c.req.raw.body;
 
     if (unreadBody && !c.req.raw.bodyUsed && !unreadBody.locked) {
       if (!(await discardBody(unreadBody.getReader(), maxSize))) {
         c.header('Connection', 'close');
+      }
+    }
+  };
+
+  // The pre-read's bytes stay held until the route has finished with them, whichever way the request ends.
+  return async (c, next) => {
+    const client = clientKey(c);
+    let held = 0;
+
+    try {
+      return await limit(c, next, client, (bytes) => {
+        held += bytes;
+      });
+    } finally {
+      heldPreReadBytes -= held;
+
+      if (held > 0) {
+        const clientHeld = (heldPreReadBytesByClient.get(client) ?? 0) - held;
+
+        if (clientHeld > 0) {
+          heldPreReadBytesByClient.set(client, clientHeld);
+        } else {
+          heldPreReadBytesByClient.delete(client);
+        }
       }
     }
   };
@@ -230,6 +565,11 @@ const multipartApiBodyLimit = bodyLimit({
   onError: (c) => c.json({ error: 'Payload too large' }, 413),
 });
 
+const chunkedMultipartApiBodyLimit = bodyLimit({
+  maxSize: FILE_UPLOAD_BODY_LIMIT_BYTES,
+  onError: (c) => c.json({ error: 'Payload too large' }, 413),
+});
+
 const jsonApiBodyLimit = bodyLimit({
   maxSize: JSON_API_BODY_LIMIT_BYTES,
   onError: (c) => c.json({ error: 'Payload too large' }, 413),
@@ -243,6 +583,11 @@ export const apiBodyLimit = createMiddleware<HonoEnv>(async (c, next) => {
   const contentType = c.req.header('content-type') ?? '';
 
   if (contentType.toLowerCase().startsWith('multipart/form-data')) {
+    // A chunked body is buffered before the route sees it, so it is held to one file's worth.
+    if (isChunked(c.req.raw.headers)) {
+      return await chunkedMultipartApiBodyLimit(c, next);
+    }
+
     return await multipartApiBodyLimit(c, next);
   }
 

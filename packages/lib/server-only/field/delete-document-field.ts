@@ -2,10 +2,11 @@ import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-log
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType } from '@prisma/client';
+import { EnvelopeType, FieldType } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
+import { lockFieldsSparingSeals, refuseCompanySeal } from '../company-seal/company-seal-field';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
@@ -62,6 +63,11 @@ export const deleteDocumentField = async ({ userId, teamId, fieldId, requestMeta
 
   await assertEnvelopeMutable(envelope);
 
+  // Only the V1 routes delete through here, and they cannot delete a company seal.
+  if (field.type === FieldType.COMPANY_SEAL) {
+    throw refuseCompanySeal();
+  }
+
   if (envelope.completedAt) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {
       message: 'Document already complete',
@@ -85,6 +91,7 @@ export const deleteDocumentField = async ({ userId, teamId, fieldId, requestMeta
 
   return await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+    await lockFieldsSparingSeals(tx, [field]);
 
     const deletedField = await tx.field.delete({
       where: {

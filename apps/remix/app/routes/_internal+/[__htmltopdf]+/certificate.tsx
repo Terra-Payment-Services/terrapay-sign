@@ -6,6 +6,7 @@ import { decryptSecondaryData } from '@documenso/lib/server-only/crypto/decrypt'
 import { getDocumentCertificateAuditLogs } from '@documenso/lib/server-only/document/get-document-certificate-audit-logs';
 import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
+import { getCompanySealCertificateEntries } from '@documenso/lib/utils/company-seal-certificate';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { getTranslations } from '@documenso/lib/utils/i18n';
@@ -223,6 +224,11 @@ export default function SigningCertificate({ loaderData }: Route.ComponentProps)
               {document.recipients.map((recipient, i) => {
                 const logs = getRecipientAuditLogs(recipient.id);
                 const signature = getRecipientSignatureField(recipient.id);
+                const companySeals = getCompanySealCertificateEntries(
+                  recipient.id,
+                  recipient.fields,
+                  auditLogs.DOCUMENT_FIELD_INSERTED,
+                );
 
                 return (
                   <TableRow key={i} className="print:break-inside-avoid">
@@ -287,6 +293,33 @@ export default function SigningCertificate({ loaderData }: Route.ComponentProps)
                           {getDevice(logs.DOCUMENT_RECIPIENT_COMPLETED[0]?.userAgent)}
                         </span>
                       </p>
+
+                      {companySeals.length > 0 && (
+                        <div className="mt-2 text-muted-foreground text-sm print:text-xs">
+                          <p className="font-medium">{_(msg`Company seals`)}</p>
+
+                          {companySeals.map((seal) => (
+                            <div key={seal.fieldId} className="mt-1 flex items-start gap-2">
+                              {seal.imageAsBase64 && (
+                                <img src={seal.imageAsBase64} alt="" className="h-8 w-8 object-contain" />
+                              )}
+                              <div>
+                                <span className="block">{seal.legalEntityName}</span>
+                                <span className="block">{seal.sealName}</span>
+                                <span className="block">
+                                  {_(msg`Field ID`)}: {seal.fieldId}
+                                </span>
+                                <span className="block">
+                                  {_(msg`Applied`)}:{' '}
+                                  {DateTime.fromJSDate(seal.appliedAt)
+                                    .setLocale(APP_I18N_OPTIONS.defaultLocale)
+                                    .toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </TableCell>
 
                     <TableCell truncate={false} className="w-[min-content] align-top">

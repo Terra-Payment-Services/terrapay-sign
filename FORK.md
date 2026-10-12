@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 9 October 2026. This file is the notice that section
+program, and this version is dated 11 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -97,7 +97,13 @@ and the certificate that issued them is proved before it is believed. Timestamp 
 are verified for their signature, message imprint, nonce and time, and their signer must
 chain, every link checked, to one of the timestamp authorities' root keys that the
 deployment pins, so that whoever can answer for an authority's address cannot set the time
-a document claims. An answer from a remote
+a document claims. Before a revocation list is fetched, the certificate it is to cover must
+be shown to be signed by the issuer that was found for it. Sectigo's timestamp root names
+no address for its own issuer, so every document timestamped by Sectigo failed the
+revocation check and was sealed only on a retry. The signing package now carries the
+USERTrust RSA root, checked against its SHA-256 on first use, as an issuer that may verify
+a revocation list and for nothing else: it is not a trust anchor and the timestamp pin
+ignores it. A list that has been verified is reused within the signing of one document. An answer from a remote
 signing service is checked against the credential's own certificate before it is
 embedded, and an RSA-PSS key is refused because the PDF library cannot declare one
 correctly. A signing transport for a remote service implementing the Cloud Signature
@@ -150,6 +156,15 @@ storage work, and commits only if the item has not moved, so concurrent requests
 keep each other's changes or are refused with a conflict error. Objects stored by a failed
 attempt are deleted. A field that names no item goes to the first item in order.
 
+Using a template, sending a draft with form values and sealing each stored a document's
+bytes in a new row and left the row it replaced behind, attached to nothing; in TerraPay's
+own database more than half the stored document rows had been left that way. Each of these
+paths now reuses the row or deletes the one it supersedes. A script in `packages/prisma`
+reports the rows already left behind and, only when asked, deletes those older than a
+cutoff, seven days by default. It deletes rows and never a stored object, because under
+S3 or Azure several rows can name the same object. Creating a document through API v1 with
+form values also no longer answers 401 after the document has been made.
+
 ## Recipient and server security
 
 The client address that audit rows record and rate limits count is read from the
@@ -171,7 +186,12 @@ answer cannot redirect it, and the lookup counts against the request's deadline.
 bodies are capped before anything reads them, and a request refused for its size is answered
 with 413 reliably: the server reads and discards a bounded part of the body, limited by
 rate and by how many run at once, so the refusal does not reset the connection and slow
-senders cannot hold connections open. Document files are sent as private and
+senders cannot hold connections open. A request body that arrives too slowly is refused
+with 408 whether it is chunked or declares its length: the first byte must arrive within
+3 seconds, the body must keep up 32 KiB a second over any 10 seconds, and the whole body
+must arrive within 180 seconds, where upstream held such a connection until Node's
+300-second request timeout. Chunked bodies read ahead of the route may hold 256 MiB in all
+and 64 MiB for one client, past which the server answers 503. Document files are sent as private and
 uncacheable, so no shared cache keeps a copy of a contract. Signing tokens are kept out of logs,
 only embedded pages may be framed, and the health endpoint does not publish error detail.
 Runtime dependencies with reachable advisories (postcss-selector-parser, proxy-addr,
@@ -195,6 +215,30 @@ release rather than upstream's version. Every page except an embedded one links 
 repository, which is the offer of source that section 13 of the licence requires. All ten
 offered languages are fully translated.
 
+## Company seals
+
+An organisation can keep several company seals, one for each legal entity, each with a
+name, the entity's name and an image. Its managers create them, and a seal cannot be
+changed or deleted once saved. A sender places a seal field on a document, which must be a
+V2 document, and chooses the seal; only a signed-in member of the organisation, who is the
+field's own signer, can apply it. The image is checked and re-encoded when it is uploaded,
+and the image applied is copied onto the field, so a sealed document never reads the seal
+record again. The audit log names the seal and the legal entity and records the SHA-256 of
+the image applied, and the certificate of completion lists each seal applied with its legal
+entity and the time. The seal is visual: the document's
+digital signature is the deployment's own, as before.
+
+## Background jobs
+
+The BullMQ library reconnects its worker's blocking connection to Redis with a single
+attempt. When that attempt fails, as it can after a short Redis Cluster outage, the worker
+stops taking jobs for good while everything else keeps working, so emails, seals and the
+scheduled sweeps stop with no error logged. The job provider now watches the worker from
+outside the library. Two checks in a row that find a job overdue past a set time, while the
+worker has a free slot and nothing such as a pause or a rate limit holds it back, or a
+blocking connection that has ended outside a shutdown, make the server log the cause and
+shut down gracefully with exit code 1, so that the container platform starts a replacement.
+
 ## Archiving to SharePoint
 
 Every completed document is filed to a SharePoint document library, so that executed
@@ -212,7 +256,9 @@ completion email carrying the signed contract, is sent as a draft with its attac
 uploaded separately. The templates' own images travel inside the message as inline
 attachments, because mail clients block images fetched from a server until the reader
 allows them. A send is recorded only when Graph returns the response it documents
-for a successful send, and no Graph request follows a redirect.
+for a successful send, and no Graph request follows a redirect. The signed contract attached
+to a completion email is named after the document without a second `.pdf`, which upstream
+appended to a title that already ended in one.
 
 ## Removal of embedded authoring
 

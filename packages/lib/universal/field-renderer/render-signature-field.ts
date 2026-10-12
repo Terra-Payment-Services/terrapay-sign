@@ -1,3 +1,4 @@
+import { FieldType } from '@prisma/client';
 import Konva from 'konva';
 
 import { DEFAULT_SIGNATURE_TEXT_FONT_SIZE, getSignatureFontFamily } from '../../constants/pdf';
@@ -19,11 +20,15 @@ void (async () => {
   }
 })();
 
-const getImageDimensions = (img: HTMLImageElement, fieldWidth: number, fieldHeight: number) => {
+/**
+ * Fit the image inside the field, keeping its aspect ratio, centred. A signature
+ * is never enlarged; a company seal is scaled up to fill the field it was given.
+ */
+const getImageDimensions = (img: HTMLImageElement, fieldWidth: number, fieldHeight: number, canEnlarge = false) => {
   let imageWidth = img.width;
   let imageHeight = img.height;
 
-  const scalingFactor = Math.min(fieldWidth / imageWidth, fieldHeight / imageHeight, 1);
+  const scalingFactor = Math.min(fieldWidth / imageWidth, fieldHeight / imageHeight, canEnlarge ? Infinity : 1);
 
   imageWidth = imageWidth * scalingFactor;
   imageHeight = imageHeight * scalingFactor;
@@ -67,7 +72,12 @@ const SIGNATURE_IMAGE_CACHE_PIXEL_RATIO = 2;
  * Build a Konva.Image for a base64 signature, sized to fit within the given
  * field dimensions. Works in both browser and Node.js (via skia-canvas).
  */
-const createSignatureImage = (signatureImageAsBase64: string, fieldWidth: number, fieldHeight: number): Konva.Image => {
+const createSignatureImage = (
+  signatureImageAsBase64: string,
+  fieldWidth: number,
+  fieldHeight: number,
+  canEnlarge = false,
+): Konva.Image => {
   if (typeof window !== 'undefined') {
     const img = new Image();
 
@@ -83,7 +93,7 @@ const createSignatureImage = (signatureImageAsBase64: string, fieldWidth: number
     img.onload = () => {
       image.setAttrs({
         image: img,
-        ...getImageDimensions(img, fieldWidth, fieldHeight),
+        ...getImageDimensions(img, fieldWidth, fieldHeight, canEnlarge),
       });
 
       // Cache the image as a high-resolution bitmap so it stays sharp on
@@ -109,7 +119,7 @@ const createSignatureImage = (signatureImageAsBase64: string, fieldWidth: number
 
   return new Konva.Image({
     image: img,
-    ...getImageDimensions(img, fieldWidth, fieldHeight),
+    ...getImageDimensions(img, fieldWidth, fieldHeight, canEnlarge),
     listening: false,
   });
 };
@@ -126,7 +136,9 @@ const createFieldSignature = (field: FieldToRender, options: RenderFieldElementO
     listening: false,
   });
 
-  const fieldTypeName = translations?.[field.type] || field.type;
+  const isCompanySeal = field.type === FieldType.COMPANY_SEAL;
+  const sealLabel = field.fieldMeta?.type === 'company_seal' ? field.fieldMeta.sealLabel : undefined;
+  const fieldTypeName = sealLabel || translations?.[field.type] || field.type;
 
   // Calculate text positioning based on alignment
   const textX = 0;
@@ -148,7 +160,7 @@ const createFieldSignature = (field: FieldToRender, options: RenderFieldElementO
 
     if (field.inserted && signature?.signatureImageAsBase64) {
       return {
-        node: createSignatureImage(signature.signatureImageAsBase64, fieldWidth, fieldHeight),
+        node: createSignatureImage(signature.signatureImageAsBase64, fieldWidth, fieldHeight, isCompanySeal),
         isImageSignature: true,
         isLabel: false,
       };
@@ -169,7 +181,7 @@ const createFieldSignature = (field: FieldToRender, options: RenderFieldElementO
 
     if (signature?.signatureImageAsBase64) {
       return {
-        node: createSignatureImage(signature.signatureImageAsBase64, fieldWidth, fieldHeight),
+        node: createSignatureImage(signature.signatureImageAsBase64, fieldWidth, fieldHeight, isCompanySeal),
         isImageSignature: true,
         isLabel: false,
       };

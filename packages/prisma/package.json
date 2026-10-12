@@ -17,7 +17,8 @@
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio",
     "backfill:account-issuer": "tsx ./scripts/backfill-account-issuer.ts",
-    "backfill:document-data-owner": "tsx ./scripts/backfill-document-data-owner.ts"
+    "backfill:document-data-owner": "tsx ./scripts/backfill-document-data-owner.ts",
+    "cleanup:unattached-document-data": "tsx ./scripts/cleanup-unattached-document-data.ts"
   },
   "prisma": {
     "seed": "tsx ./seed-database.ts"

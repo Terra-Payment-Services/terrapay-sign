@@ -19,6 +19,7 @@ import { APP_I18N_OPTIONS } from '../../constants/i18n';
 import { getSignatureFontFamily, PDF_BODY_FONT_FAMILY, PDF_DISPLAY_FONT_FAMILY } from '../../constants/pdf';
 import { RECIPIENT_ROLE_SIGNING_REASONS, RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
+import type { CompanySealCertificateEntry } from '../../utils/company-seal-certificate';
 import { svgToPng } from '../../utils/images/svg-to-png';
 import { ensureFontLibrary } from './helpers';
 
@@ -37,6 +38,7 @@ export type CertificateRecipient = {
     signature?: Pick<Signature, 'signatureImageAsBase64' | 'typedSignature'> | null;
   };
   authLevel: string;
+  companySeals?: CompanySealCertificateEntry[];
   logs: {
     emailed: BaseAuditLog | null;
     sent: BaseAuditLog | null;
@@ -407,7 +409,79 @@ const renderColumnTwo = (options: RenderColumnOptions) => {
   });
   column.add(deviceLabelAndText);
 
+  renderCompanySeals({ column, seals: recipient.companySeals ?? [], width: columnWidth, i18n });
+
   return column;
+};
+
+type RenderCompanySealsOptions = {
+  column: Konva.Group;
+  seals: CompanySealCertificateEntry[];
+  width: number;
+  i18n: I18n;
+};
+
+/** Lists each seal the recipient applied under a "Company seals" heading, with a thumbnail. */
+const renderCompanySeals = ({ column, seals, width, i18n }: RenderCompanySealsOptions) => {
+  if (seals.length === 0) {
+    return;
+  }
+
+  const thumbnailSize = 32;
+  const textX = thumbnailSize + 6;
+
+  column.add(
+    new Konva.Text({
+      y: column.getClientRect().height + 10,
+      text: i18n._(msg`Company seals`),
+      fill: textMutedForeground,
+      fontFamily: fontBody,
+      fontSize: textSm,
+      fontStyle: fontMedium,
+    }),
+  );
+
+  for (const seal of seals) {
+    const group = new Konva.Group({ y: column.getClientRect().height + 6 });
+
+    if (seal.imageAsBase64) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const img = new SkiaImage(seal.imageAsBase64) as unknown as HTMLImageElement;
+      const scale = thumbnailSize / Math.max(img.width, img.height);
+
+      group.add(new Konva.Image({ image: img, width: img.width * scale, height: img.height * scale }));
+    }
+
+    const lines = [
+      seal.legalEntityName,
+      seal.sealName,
+      `${i18n._(msg`Field ID`)}: ${seal.fieldId}`,
+      `${i18n._(msg`Applied`)}: ${DateTime.fromJSDate(seal.appliedAt)
+        .setLocale(APP_I18N_OPTIONS.defaultLocale)
+        .toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')}`,
+    ];
+
+    // The text runs beside the thumbnail, so its lines are stacked on their own offset.
+    let textY = 0;
+
+    for (const line of lines) {
+      const text = new Konva.Text({
+        x: textX,
+        y: textY,
+        width: width - textX,
+        text: line,
+        fill: textMutedForeground,
+        fontFamily: fontBody,
+        fontSize: textSm,
+        wrap: 'word',
+      });
+
+      group.add(text);
+      textY += text.height() + 2;
+    }
+
+    column.add(group);
+  }
 };
 
 const renderColumnThree = (options: RenderColumnOptions) => {

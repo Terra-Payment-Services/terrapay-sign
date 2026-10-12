@@ -4,7 +4,7 @@ import {
   isDirectTemplateRecipientEmail,
 } from '@documenso/lib/constants/direct-templates';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, type Recipient } from '@prisma/client';
+import { EnvelopeType, FieldType, type Recipient } from '@prisma/client';
 import { nanoid } from 'nanoid';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
@@ -36,6 +36,7 @@ export const createTemplateDirectLink = async ({
     include: {
       recipients: true,
       directLink: true,
+      fields: true,
     },
   });
 
@@ -45,6 +46,13 @@ export const createTemplateDirectLink = async ({
 
   if (envelope.directLink) {
     throw new AppError(AppErrorCode.ALREADY_EXISTS, { message: 'Direct template already exists' });
+  }
+
+  // A direct-link recipient is created at use and need not be a member of the seal's organisation.
+  if (envelope.fields.some((field) => field.type === FieldType.COMPANY_SEAL)) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'A template carrying a company seal field cannot have a direct link',
+    });
   }
 
   if (directRecipientId && !envelope.recipients.find((recipient) => recipient.id === directRecipientId)) {

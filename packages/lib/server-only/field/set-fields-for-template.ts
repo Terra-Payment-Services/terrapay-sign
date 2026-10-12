@@ -19,6 +19,11 @@ import { EnvelopeType, FieldType } from '@prisma/client';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapFieldToLegacyField } from '../../utils/fields';
+import {
+  assertLegacySetFieldsSparesSeals,
+  lockFieldsSparingSeals,
+  resolveCompanySealFieldMeta,
+} from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
 export type SetFieldsForTemplateOptions = {
@@ -38,9 +43,17 @@ export type SetFieldsForTemplateOptions = {
     pageHeight: number;
     fieldMeta?: FieldMeta;
   }[];
+  /** Set by the V1 routes, which may only keep each stored company seal as it is. */
+  protectCompanySeals?: boolean;
 };
 
-export const setFieldsForTemplate = async ({ userId, teamId, id, fields }: SetFieldsForTemplateOptions) => {
+export const setFieldsForTemplate = async ({
+  userId,
+  teamId,
+  id,
+  fields,
+  protectCompanySeals = false,
+}: SetFieldsForTemplateOptions) => {
   const { envelopeWhereInput } = await getEnvelopeWhereInput({
     id,
     type: EnvelopeType.TEMPLATE,
@@ -72,6 +85,10 @@ export const setFieldsForTemplate = async ({ userId, teamId, id, fields }: SetFi
   }
 
   const existingFields = envelope.fields;
+
+  if (protectCompanySeals) {
+    assertLegacySetFieldsSparesSeals(existingFields, fields);
+  }
 
   const removedFields = existingFields.filter(
     (existingField) => !fields.find((field) => field.id === existingField.id),
@@ -105,128 +122,149 @@ export const setFieldsForTemplate = async ({ userId, teamId, id, fields }: SetFi
     };
   });
 
-  const persistedFields = await Promise.all(
-    // Disabling as wrapping promises here causes type issues
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    linkedFields.map(async (field) => {
-      const parsedFieldMeta = field.fieldMeta
-        ? ZFieldMetaSchema.parse(field.fieldMeta)
-        : FIELD_META_DEFAULT_VALUES[field.type];
+  for (const field of linkedFields) {
+    if (field.type === FieldType.COMPANY_SEAL) {
+      field.fieldMeta = await resolveCompanySealFieldMeta({
+        envelope,
+        recipient: field._recipient,
+        fieldMeta: field.fieldMeta,
+      });
+    }
+  }
 
-      if (field.type === FieldType.TEXT && field.fieldMeta) {
-        const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
-        const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
+  const persistedFields = await prisma.$transaction(async (tx) => {
+    if (protectCompanySeals) {
+      await lockFieldsSparingSeals(tx, [
+        ...linkedFields.flatMap((field) => (field._persisted ? [field._persisted] : [])),
+        ...removedFields,
+      ]);
+    }
 
-      if (field.type === FieldType.NUMBER && field.fieldMeta) {
-        const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
-        const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
+    const fieldsAfterWrite = await Promise.all(
+      // Disabling as wrapping promises here causes type issues
+      // eslint-disable-next-line @typescript-eslint/promise-function-async
+      linkedFields.map(async (field) => {
+        const parsedFieldMeta = field.fieldMeta
+          ? ZFieldMetaSchema.parse(field.fieldMeta)
+          : FIELD_META_DEFAULT_VALUES[field.type];
 
-      if (field.type === FieldType.CHECKBOX) {
-        if (!field.fieldMeta) {
-          throw new Error('Checkbox field is missing required metadata');
+        if (field.type === FieldType.TEXT && field.fieldMeta) {
+          const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
+          const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
+          if (errors.length > 0) {
+            throw new Error(errors.join(', '));
+          }
         }
-        const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
-        const errors = validateCheckboxField(
-          checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
-          checkboxFieldParsedMeta,
-        );
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
 
-      if (field.type === FieldType.RADIO) {
-        if (!field.fieldMeta) {
-          throw new Error('Radio field is missing required metadata');
+        if (field.type === FieldType.NUMBER && field.fieldMeta) {
+          const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
+          const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta);
+          if (errors.length > 0) {
+            throw new Error(errors.join(', '));
+          }
         }
-        const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
-        const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
-        const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join('. '));
-        }
-      }
 
-      if (field.type === FieldType.DROPDOWN) {
-        if (!field.fieldMeta) {
-          throw new Error('Dropdown field is missing required metadata');
+        if (field.type === FieldType.CHECKBOX) {
+          if (!field.fieldMeta) {
+            throw new Error('Checkbox field is missing required metadata');
+          }
+          const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
+          const errors = validateCheckboxField(
+            checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
+            checkboxFieldParsedMeta,
+          );
+          if (errors.length > 0) {
+            throw new Error(errors.join(', '));
+          }
         }
-        const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
-        const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join('. '));
-        }
-      }
 
-      // Proceed with upsert operation
-      const upsertedField = await prisma.field.upsert({
+        if (field.type === FieldType.RADIO) {
+          if (!field.fieldMeta) {
+            throw new Error('Radio field is missing required metadata');
+          }
+          const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
+          const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
+          const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
+          if (errors.length > 0) {
+            throw new Error(errors.join('. '));
+          }
+        }
+
+        if (field.type === FieldType.DROPDOWN) {
+          if (!field.fieldMeta) {
+            throw new Error('Dropdown field is missing required metadata');
+          }
+          const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
+          const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
+          if (errors.length > 0) {
+            throw new Error(errors.join('. '));
+          }
+        }
+
+        // Proceed with upsert operation
+        const upsertedField = await tx.field.upsert({
+          where: {
+            id: field._persisted?.id ?? -1,
+            envelopeId: envelope.id,
+            envelopeItemId: field.envelopeItemId,
+          },
+          update: {
+            page: field.pageNumber,
+            positionX: field.pageX,
+            positionY: field.pageY,
+            width: field.pageWidth,
+            height: field.pageHeight,
+            fieldMeta: parsedFieldMeta,
+          },
+          create: {
+            type: field.type,
+            page: field.pageNumber,
+            positionX: field.pageX,
+            positionY: field.pageY,
+            width: field.pageWidth,
+            height: field.pageHeight,
+            customText: '',
+            inserted: false,
+            fieldMeta: parsedFieldMeta,
+            envelope: {
+              connect: {
+                id: envelope.id,
+              },
+            },
+            envelopeItem: {
+              connect: {
+                id: field.envelopeItemId,
+                envelopeId: envelope.id,
+              },
+            },
+            recipient: {
+              connect: {
+                id: field._recipient.id,
+                envelopeId: envelope.id,
+              },
+            },
+          },
+        });
+
+        return {
+          ...upsertedField,
+          formId: field.formId,
+        };
+      }),
+    );
+
+    if (removedFields.length > 0) {
+      await tx.field.deleteMany({
         where: {
-          id: field._persisted?.id ?? -1,
-          envelopeId: envelope.id,
-          envelopeItemId: field.envelopeItemId,
-        },
-        update: {
-          page: field.pageNumber,
-          positionX: field.pageX,
-          positionY: field.pageY,
-          width: field.pageWidth,
-          height: field.pageHeight,
-          fieldMeta: parsedFieldMeta,
-        },
-        create: {
-          type: field.type,
-          page: field.pageNumber,
-          positionX: field.pageX,
-          positionY: field.pageY,
-          width: field.pageWidth,
-          height: field.pageHeight,
-          customText: '',
-          inserted: false,
-          fieldMeta: parsedFieldMeta,
-          envelope: {
-            connect: {
-              id: envelope.id,
-            },
-          },
-          envelopeItem: {
-            connect: {
-              id: field.envelopeItemId,
-              envelopeId: envelope.id,
-            },
-          },
-          recipient: {
-            connect: {
-              id: field._recipient.id,
-              envelopeId: envelope.id,
-            },
+          id: {
+            in: removedFields.map((field) => field.id),
           },
         },
       });
+    }
 
-      return {
-        ...upsertedField,
-        formId: field.formId,
-      };
-    }),
-  );
-
-  if (removedFields.length > 0) {
-    await prisma.field.deleteMany({
-      where: {
-        id: {
-          in: removedFields.map((field) => field.id),
-        },
-      },
-    });
-  }
+    return fieldsAfterWrite;
+  });
 
   // Filter out fields that have been removed or have been updated.
   const filteredFields = existingFields.filter((field) => {

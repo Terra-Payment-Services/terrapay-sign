@@ -1,7 +1,7 @@
 /**
  * V2 embedded signing shows completion and tells the host page.
  *
- * Written from the specification alone (issue-27-v2-embed-completion), without reading the fix.
+ * Written from the specification alone, without reading the fix.
  *
  * Criteria and failure modes covered here:
  *

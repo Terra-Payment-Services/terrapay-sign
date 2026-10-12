@@ -1,7 +1,7 @@
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { DocumentAuditLog, DocumentMeta, Field, Recipient } from '@prisma/client';
-import { RecipientRole } from '@prisma/client';
+import { FieldType, RecipientRole } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 import { match } from 'ts-pattern';
 
@@ -377,6 +377,18 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
         context: `Audit log format`,
       }),
     }))
+    .with(
+      { type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED, data: { field: { type: FieldType.COMPANY_SEAL } } },
+      ({ data }) => {
+        const { legalEntityName, sealName } = data.field.data;
+
+        return {
+          anonymous: msg`A recipient applied the company seal of ${legalEntityName} (${sealName})`,
+          you: msg`You applied the company seal of ${legalEntityName} (${sealName})`,
+          user: msg`${user} applied the company seal of ${legalEntityName} (${sealName})`,
+        };
+      },
+    )
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED }, () => ({
       anonymous: msg({
         message: `Field signed`,

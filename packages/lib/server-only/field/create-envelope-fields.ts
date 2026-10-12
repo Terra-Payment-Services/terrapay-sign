@@ -1,5 +1,5 @@
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
-import type { TFieldAndMeta } from '@documenso/lib/types/field-meta';
+import type { TFieldAndMetaWithCompanySeal } from '@documenso/lib/types/field-meta';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { deleteFile } from '@documenso/lib/universal/upload/delete-file';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
@@ -7,12 +7,13 @@ import { putFileServerSide } from '@documenso/lib/universal/upload/put-file.serv
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
 import { PDF } from '@libpdf/core';
-import { DocumentDataType, EnvelopeType, Prisma } from '@prisma/client';
+import { DocumentDataType, EnvelopeType, FieldType, Prisma } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
+import { resolveCompanySealFieldMeta } from '../company-seal/company-seal-field';
 import { createDocumentData } from '../document-data/create-document-data';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
@@ -40,7 +41,7 @@ type PlaceholderPosition = {
 
 type FieldPosition = CoordinatePosition | PlaceholderPosition;
 
-export type CreateEnvelopeFieldInput = TFieldAndMeta & {
+export type CreateEnvelopeFieldInput = TFieldAndMetaWithCompanySeal & {
   /**
    * The ID of the item to insert the fields into.
    *
@@ -350,6 +351,14 @@ export const createEnvelopeFields = async ({
       };
     });
 
+    for (const field of validatedFields) {
+      const recipient = envelope.recipients.find((r) => r.id === field.recipientId);
+
+      if (field.type === FieldType.COMPANY_SEAL && recipient) {
+        field.fieldMeta = await resolveCompanySealFieldMeta({ envelope, recipient, fieldMeta: field.fieldMeta });
+      }
+    }
+
     /*
       Draw white rectangles over each resolved placeholder in the PDF to hide the
       placeholder text, and store the modified PDFs. This happens before any field
@@ -411,6 +420,11 @@ export const createEnvelopeFields = async ({
             message: 'The document changed while the fields were being placed. Send the request again.',
           });
         }
+
+        // The superseded row, unless another item holds it.
+        await tx.documentData.deleteMany({
+          where: { id: revision.previousDocumentDataId, envelopeItem: null },
+        });
       }
 
       const newlyCreatedFields = await tx.field.createManyAndReturn({

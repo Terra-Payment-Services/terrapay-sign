@@ -64,7 +64,7 @@ export const renderField = ({
     .with(FieldType.CHECKBOX, () => renderCheckboxFieldElement(field, options))
     .with(FieldType.RADIO, () => renderRadioFieldElement(field, options))
     .with(FieldType.DROPDOWN, () => renderDropdownFieldElement(field, options))
-    .with(FieldType.SIGNATURE, () => renderSignatureFieldElement(field, options))
+    .with(FieldType.SIGNATURE, FieldType.COMPANY_SEAL, () => renderSignatureFieldElement(field, options))
     .with(FieldType.FREE_SIGNATURE, () => {
       throw new Error('Free signature fields are not supported');
     })

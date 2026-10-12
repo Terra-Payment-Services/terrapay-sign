@@ -5,6 +5,7 @@ import { PDF_VIEWER_PAGE_SELECTOR } from '@documenso/lib/constants/pdf-viewer';
 import { FIELD_META_DEFAULT_VALUES } from '@documenso/lib/types/field-meta';
 import { nanoid } from '@documenso/lib/universal/id';
 import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
+import { trpc } from '@documenso/trpc/react';
 import { SignatureIcon } from '@documenso/ui/icons/signature';
 import { getRecipientColorStyles } from '@documenso/ui/lib/recipient-colors';
 import { cn } from '@documenso/ui/lib/utils';
@@ -20,6 +21,7 @@ import {
   HashIcon,
   ListIcon,
   MailIcon,
+  StampIcon,
   TextIcon,
   UserIcon,
 } from 'lucide-react';
@@ -85,6 +87,20 @@ export const fieldButtonList = [
   },
 ];
 
+/** Offered only when the envelope's organisation has at least one seal. */
+const companySealButton = {
+  type: FieldType.COMPANY_SEAL,
+  icon: StampIcon,
+  name: msg`Company seal`,
+  className: '',
+};
+
+/** A seal is drawn into a square box; every other field starts as a wide one. */
+const getDefaultFieldBounds = (type: FieldType | null) => ({
+  height: type === FieldType.COMPANY_SEAL ? DEFAULT_WIDTH_PX : DEFAULT_HEIGHT_PX,
+  width: DEFAULT_WIDTH_PX,
+});
+
 type EnvelopeEditorFieldDragDropProps = {
   selectedRecipientId: number | null;
   selectedEnvelopeItemId: string | null;
@@ -99,6 +115,16 @@ export const EnvelopeEditorFieldDragDrop = ({
   const { t } = useLingui();
 
   const [selectedField, setSelectedField] = useState<FieldType | null>(null);
+
+  const selectedFieldRef = useRef<FieldType | null>(null);
+
+  selectedFieldRef.current = selectedField;
+
+  const { data: companySeals } = trpc.organisation.companySeal.findForEnvelope.useQuery({ envelopeId: envelope.id });
+
+  const firstCompanySeal = companySeals?.data[0];
+
+  const availableFieldButtons = firstCompanySeal ? [...fieldButtonList, companySealButton] : fieldButtonList;
 
   const { isWithinPageBounds, getPage } = useDocumentElement();
 
@@ -185,7 +211,14 @@ export const EnvelopeEditorFieldDragDrop = ({
         width: fieldPageWidth,
         height: fieldPageHeight,
         recipientId: selectedRecipientId,
-        fieldMeta: structuredClone(FIELD_META_DEFAULT_VALUES[selectedField]),
+        fieldMeta:
+          selectedField === FieldType.COMPANY_SEAL && firstCompanySeal
+            ? {
+                type: 'company_seal' as const,
+                sealId: firstCompanySeal.id,
+                sealLabel: `${firstCompanySeal.name} (${firstCompanySeal.legalEntityName})`,
+              }
+            : structuredClone(FIELD_META_DEFAULT_VALUES[selectedField]),
       };
 
       editorFields.addField(field);
@@ -193,7 +226,15 @@ export const EnvelopeEditorFieldDragDrop = ({
       setIsFieldWithinBounds(false);
       setSelectedField(null);
     },
-    [isWithinPageBounds, selectedField, selectedRecipientId, selectedEnvelopeItemId, getPage, editorFields],
+    [
+      isWithinPageBounds,
+      selectedField,
+      selectedRecipientId,
+      selectedEnvelopeItemId,
+      getPage,
+      editorFields,
+      firstCompanySeal,
+    ],
   );
 
   useEffect(() => {
@@ -204,10 +245,7 @@ export const EnvelopeEditorFieldDragDrop = ({
         return;
       }
 
-      fieldBounds.current = {
-        height: Math.max(DEFAULT_HEIGHT_PX),
-        width: Math.max(DEFAULT_WIDTH_PX),
-      };
+      fieldBounds.current = getDefaultFieldBounds(selectedFieldRef.current);
     });
 
     observer.observe(document.body, {
@@ -240,7 +278,7 @@ export const EnvelopeEditorFieldDragDrop = ({
   return (
     <>
       <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
-        {fieldButtonList.map((field) => (
+        {availableFieldButtons.map((field) => (
           <button
             disabled={isFieldsDisabled}
             key={field.type}

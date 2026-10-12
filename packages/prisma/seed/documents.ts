@@ -609,7 +609,7 @@ export const seedPendingDocumentWithFullFields = async ({
                 .with(FieldType.RADIO, () => FIELD_RADIO_META_DEFAULT_VALUES)
                 .with(FieldType.DROPDOWN, () => FIELD_DROPDOWN_META_DEFAULT_VALUES)
                 .with(FieldType.INITIALS, () => FIELD_INITIALS_META_DEFAULT_VALUES)
-                .with(FieldType.FREE_SIGNATURE, () => undefined)
+                .with(FieldType.FREE_SIGNATURE, FieldType.COMPANY_SEAL, () => undefined)
                 .exhaustive(),
             })),
           },

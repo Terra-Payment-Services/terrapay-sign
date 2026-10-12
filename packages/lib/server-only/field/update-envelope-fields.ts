@@ -3,12 +3,17 @@ import type { TFieldMetaSchema } from '@documenso/lib/types/field-meta';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData, diffFieldChanges } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, type FieldType } from '@prisma/client';
+import { EnvelopeType, FieldType } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
+import {
+  lockFieldsSparingSeals,
+  refuseCompanySeal,
+  resolveCompanySealFieldMeta,
+} from '../company-seal/company-seal-field';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
@@ -29,6 +34,8 @@ export interface UpdateEnvelopeFieldsOptions {
     fieldMeta?: TFieldMetaSchema;
   }[];
   requestMetadata: ApiRequestMetadata;
+  /** Set by the V1 routes, which must not change or create a company seal field. */
+  protectCompanySeals?: boolean;
 }
 
 export const updateEnvelopeFields = async ({
@@ -38,6 +45,7 @@ export const updateEnvelopeFields = async ({
   type = null,
   fields,
   requestMetadata,
+  protectCompanySeals = false,
 }: UpdateEnvelopeFieldsOptions) => {
   const { envelopeWhereInput } = await getEnvelopeWhereInput({
     id,
@@ -76,6 +84,13 @@ export const updateEnvelopeFields = async ({
       throw new AppError(AppErrorCode.NOT_FOUND, {
         message: `Field with id ${field.id} not found`,
       });
+    }
+
+    if (
+      protectCompanySeals &&
+      (originalField.type === FieldType.COMPANY_SEAL || field.type === FieldType.COMPANY_SEAL)
+    ) {
+      throw refuseCompanySeal();
     }
 
     const recipient = envelope.recipients.find((recipient) => recipient.id === originalField.recipientId);
@@ -117,8 +132,31 @@ export const updateEnvelopeFields = async ({
     };
   });
 
+  for (const field of fieldsToUpdate) {
+    const fieldType = field.updateData.type || field.originalField.type;
+    const recipient = envelope.recipients.find((r) => r.id === field.originalField.recipientId);
+
+    if (fieldType === FieldType.COMPANY_SEAL && recipient) {
+      field.updateData = {
+        ...field.updateData,
+        fieldMeta: await resolveCompanySealFieldMeta({
+          envelope,
+          recipient,
+          fieldMeta: field.updateData.fieldMeta ?? field.originalField.fieldMeta,
+        }),
+      };
+    }
+  }
+
   const updatedFields = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    if (protectCompanySeals) {
+      await lockFieldsSparingSeals(
+        tx,
+        fieldsToUpdate.map(({ originalField }) => originalField),
+      );
+    }
 
     return await Promise.all(
       fieldsToUpdate.map(async ({ originalField, updateData, recipientEmail }) => {

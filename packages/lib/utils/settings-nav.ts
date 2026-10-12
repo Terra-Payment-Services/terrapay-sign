@@ -115,6 +115,12 @@ export const getSettingsNavGroups = ({ organisation, team }: GetSettingsNavGroup
             isSubNav: true,
           },
           {
+            key: 'preferences-company-seals',
+            path: `/o/${organisation.url}/settings/seals`,
+            label: msg`Company seals`,
+            isSubNav: true,
+          },
+          {
             key: 'teams',
             path: `/o/${organisation.url}/settings/teams`,
             label: msg`Teams`,

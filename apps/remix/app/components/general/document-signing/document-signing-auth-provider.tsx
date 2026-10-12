@@ -148,6 +148,20 @@ export const DocumentSigningAuthProvider = ({
   }, [derivedRecipientActionAuth, user, recipient]);
 
   const executeActionAuthProcedure = async (options: ExecuteActionAuthProcedureOptions) => {
+    // A company seal always needs the recipient's own Sign session, whatever the document's auth settings.
+    if (options.actionTarget === FieldType.COMPANY_SEAL) {
+      const isRecipientSignedIn =
+        Boolean(user) && user?.email.trim().toLowerCase() === recipient.email.trim().toLowerCase();
+
+      if (isRecipientSignedIn) {
+        await options.onReauthFormSubmit();
+        return;
+      }
+
+      setDocumentAuthDialogPayload({ ...options, availableAuthTypes: [DocumentAuth.ACCOUNT] });
+      return;
+    }
+
     // Directly run callback if no auth required.
     if (!derivedRecipientActionAuth || options.actionTarget !== FieldType.SIGNATURE) {
       await options.onReauthFormSubmit();
@@ -215,13 +229,13 @@ export const DocumentSigningAuthProvider = ({
     >
       {children}
 
-      {documentAuthDialogPayload && derivedRecipientActionAuth && (
+      {documentAuthDialogPayload && (documentAuthDialogPayload.availableAuthTypes ?? derivedRecipientActionAuth) && (
         <DocumentSigningAuthDialog
           open={true}
           onOpenChange={() => setDocumentAuthDialogPayload(null)}
           onReauthFormSubmit={documentAuthDialogPayload.onReauthFormSubmit}
           actionTarget={documentAuthDialogPayload.actionTarget}
-          availableAuthTypes={derivedRecipientActionAuth}
+          availableAuthTypes={documentAuthDialogPayload.availableAuthTypes ?? derivedRecipientActionAuth ?? []}
         />
       )}
     </DocumentSigningAuthContext.Provider>
@@ -231,6 +245,9 @@ export const DocumentSigningAuthProvider = ({
 type ExecuteActionAuthProcedureOptions = Omit<
   DocumentSigningAuthDialogProps,
   'open' | 'onOpenChange' | 'documentAuthType' | 'recipientRole' | 'availableAuthTypes'
->;
+> & {
+  /** Overrides the recipient's derived action auth, as company seals do. */
+  availableAuthTypes?: TRecipientActionAuthTypes[];
+};
 
 DocumentSigningAuthProvider.displayName = 'DocumentSigningAuthProvider';

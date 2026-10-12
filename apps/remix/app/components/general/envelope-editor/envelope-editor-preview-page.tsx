@@ -49,6 +49,11 @@ export const EnvelopeEditorPreviewPage = () => {
 
     const faker = fakerInstance;
     return fields.map((field) => {
+      // The preview has no seal image to show, so a seal field keeps its label.
+      if (field.type === FieldType.COMPANY_SEAL) {
+        return field;
+      }
+
       const fieldMeta = ZFieldAndMetaSchema.parse(field);
 
       const recipient = envelope.recipients.find((recipient) => recipient.id === field.recipientId);

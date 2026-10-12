@@ -6,6 +6,7 @@ import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-
 import { prisma } from '@documenso/prisma';
 import type { Envelope, Field, Recipient } from '@prisma/client';
 
+import { AppError, AppErrorCode } from '../../errors/app-error';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { convertPlaceholdersToFieldInputs, extractPdfPlaceholders } from '../pdf/auto-place-fields';
 import { findRecipientByPlaceholder } from '../pdf/helpers';
@@ -99,117 +100,142 @@ export const UNSAFE_replaceEnvelopeItemPdf = async ({
 
   let didFieldsChange = false;
 
-  const updatedEnvelopeItem = await prisma.$transaction(async (tx) => {
-    await assertEnvelopeMutable(envelope, tx);
+  const updatedEnvelopeItem = await prisma
+    .$transaction(async (tx) => {
+      await assertEnvelopeMutable(envelope, tx);
 
-    const updatedItem = await tx.envelopeItem.update({
-      where: {
-        id: envelopeItemId,
-        envelopeId: envelope.id,
-      },
-      data: {
-        documentDataId: newDocumentData.id,
-        title: data.title,
-        order: data.order,
-      },
-    });
-
-    // Todo: Audit log if we're updating the title or order.
-
-    // Delete fields that reference pages beyond the new PDF's page count.
-    const outOfBoundsFields = await tx.field.findMany({
-      where: {
-        envelopeId: envelope.id,
-        envelopeItemId,
-        page: {
-          gt: filePageCount,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    const deletedFieldIds = outOfBoundsFields.map((f) => f.id);
-
-    if (deletedFieldIds.length > 0) {
-      await tx.field.deleteMany({
+      // Only the revision this request read is replaced, so a concurrent send or
+      // replacement is not overwritten.
+      const { count } = await tx.envelopeItem.updateMany({
         where: {
-          id: {
-            in: deletedFieldIds,
+          id: envelopeItemId,
+          envelopeId: envelope.id,
+          documentDataId: oldDocumentDataId,
+        },
+        data: {
+          documentDataId: newDocumentData.id,
+        },
+      });
+
+      if (count === 0) {
+        throw new AppError(AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT, {
+          message: 'The document changed while its PDF was being replaced. Send the request again.',
+        });
+      }
+
+      // The old DocumentData, unless another item holds it.
+      await tx.documentData.deleteMany({
+        where: {
+          id: oldDocumentDataId,
+          envelopeItem: null,
+        },
+      });
+
+      const updatedItem = await tx.envelopeItem.update({
+        where: {
+          id: envelopeItemId,
+          envelopeId: envelope.id,
+        },
+        data: {
+          title: data.title,
+          order: data.order,
+        },
+      });
+
+      // Todo: Audit log if we're updating the title or order.
+
+      // Delete fields that reference pages beyond the new PDF's page count.
+      const outOfBoundsFields = await tx.field.findMany({
+        where: {
+          envelopeId: envelope.id,
+          envelopeItemId,
+          page: {
+            gt: filePageCount,
           },
         },
+        select: {
+          id: true,
+        },
       });
 
-      didFieldsChange = true;
-    }
+      const deletedFieldIds = outOfBoundsFields.map((f) => f.id);
 
-    if (recipients.length > 0 && placeholders.length > 0) {
-      const orderedRecipients = [...recipients].sort((a, b) => {
-        const aOrder = a.signingOrder ?? Number.MAX_SAFE_INTEGER;
-        const bOrder = b.signingOrder ?? Number.MAX_SAFE_INTEGER;
-
-        if (aOrder !== bOrder) {
-          return aOrder - bOrder;
-        }
-
-        return a.id - b.id;
-      });
-
-      const fieldsToCreate = convertPlaceholdersToFieldInputs(
-        placeholders,
-        (recipientPlaceholder, placeholder) =>
-          findRecipientByPlaceholder(recipientPlaceholder, placeholder, orderedRecipients, orderedRecipients),
-        updatedItem.id,
-      );
-
-      if (fieldsToCreate.length > 0) {
-        await tx.field.createMany({
-          data: fieldsToCreate.map((field) => ({
-            envelopeId: envelope.id,
-            envelopeItemId: updatedItem.id,
-            recipientId: field.recipientId,
-            type: field.type,
-            page: field.page,
-            positionX: field.positionX,
-            positionY: field.positionY,
-            width: field.width,
-            height: field.height,
-            customText: '',
-            inserted: false,
-            fieldMeta: field.fieldMeta || undefined,
-          })),
+      if (deletedFieldIds.length > 0) {
+        await tx.field.deleteMany({
+          where: {
+            id: {
+              in: deletedFieldIds,
+            },
+          },
         });
 
         didFieldsChange = true;
       }
-    }
 
-    await tx.documentAuditLog.create({
-      data: createDocumentAuditLogData({
-        type: DOCUMENT_AUDIT_LOG_TYPE.ENVELOPE_ITEM_PDF_REPLACED,
-        envelopeId: envelope.id,
-        data: {
-          envelopeItemId: updatedItem.id,
-          envelopeItemTitle: updatedItem.title,
-        },
-        user: {
-          name: user.name,
-          email: user.email,
-        },
-        requestMetadata: apiRequestMetadata.requestMetadata,
-      }),
+      if (recipients.length > 0 && placeholders.length > 0) {
+        const orderedRecipients = [...recipients].sort((a, b) => {
+          const aOrder = a.signingOrder ?? Number.MAX_SAFE_INTEGER;
+          const bOrder = b.signingOrder ?? Number.MAX_SAFE_INTEGER;
+
+          if (aOrder !== bOrder) {
+            return aOrder - bOrder;
+          }
+
+          return a.id - b.id;
+        });
+
+        const fieldsToCreate = convertPlaceholdersToFieldInputs(
+          placeholders,
+          (recipientPlaceholder, placeholder) =>
+            findRecipientByPlaceholder(recipientPlaceholder, placeholder, orderedRecipients, orderedRecipients),
+          updatedItem.id,
+        );
+
+        if (fieldsToCreate.length > 0) {
+          await tx.field.createMany({
+            data: fieldsToCreate.map((field) => ({
+              envelopeId: envelope.id,
+              envelopeItemId: updatedItem.id,
+              recipientId: field.recipientId,
+              type: field.type,
+              page: field.page,
+              positionX: field.positionX,
+              positionY: field.positionY,
+              width: field.width,
+              height: field.height,
+              customText: '',
+              inserted: false,
+              fieldMeta: field.fieldMeta || undefined,
+            })),
+          });
+
+          didFieldsChange = true;
+        }
+      }
+
+      await tx.documentAuditLog.create({
+        data: createDocumentAuditLogData({
+          type: DOCUMENT_AUDIT_LOG_TYPE.ENVELOPE_ITEM_PDF_REPLACED,
+          envelopeId: envelope.id,
+          data: {
+            envelopeItemId: updatedItem.id,
+            envelopeItemTitle: updatedItem.title,
+          },
+          user: {
+            name: user.name,
+            email: user.email,
+          },
+          requestMetadata: apiRequestMetadata.requestMetadata,
+        }),
+      });
+
+      return updatedItem;
+    })
+    .catch(async (error) => {
+      await prisma.documentData.deleteMany({ where: { id: newDocumentData.id, envelopeItem: null } });
+
+      throw error;
     });
-
-    return updatedItem;
-  });
-
-  // Delete the old DocumentData (now orphaned).
-  await prisma.documentData.delete({
-    where: {
-      id: oldDocumentDataId,
-    },
-  });
 
   let fields: Field[] | undefined;
 

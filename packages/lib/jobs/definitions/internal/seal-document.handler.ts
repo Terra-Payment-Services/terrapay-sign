@@ -9,7 +9,14 @@ import { prisma } from '@documenso/prisma';
 import { signPdf } from '@documenso/signing';
 import { PDF } from '@libpdf/core';
 import type { DocumentData, Envelope, EnvelopeItem, Field } from '@prisma/client';
-import { DocumentStatus, EnvelopeType, RecipientRole, SigningStatus, WebhookTriggerEvents } from '@prisma/client';
+import {
+  DocumentStatus,
+  EnvelopeType,
+  FieldType,
+  RecipientRole,
+  SigningStatus,
+  WebhookTriggerEvents,
+} from '@prisma/client';
 import { nanoid } from 'nanoid';
 import { groupBy } from 'remeda';
 
@@ -310,6 +317,14 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
             documentDataId: newDocumentDataId,
           },
         });
+
+        // The unsealed version. Its initialData lives on in the sealed row.
+        await tx.documentData.deleteMany({
+          where: {
+            id: oldDocumentDataId,
+            envelopeItem: null,
+          },
+        });
       }
 
       await tx.envelope.update({
@@ -497,6 +512,12 @@ const decorateAndSignPdf = async ({
         `Envelope ${envelope.id} carries owner restrictions, which the V1 field insertion ` +
           'path cannot keep. Recreate it as a V2 envelope.',
       );
+    }
+
+    if (envelopeItemFields.some((field) => field.type === FieldType.COMPANY_SEAL)) {
+      // The V1 inserter would print the seal's legal entity as text. Field
+      // writers refuse seals on V1; this catches anything that slipped past.
+      throw new Error(`Envelope ${envelope.id} carries a company seal field, which needs a V2 envelope.`);
     }
 
     const legacy_pdfLibDoc = await PDFDocument.load(await pdfDoc.save({ useXRefStream: true }));

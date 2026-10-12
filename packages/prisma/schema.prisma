@@ -774,6 +774,7 @@ enum FieldType {
   RADIO
   CHECKBOX
   DROPDOWN
+  COMPANY_SEAL
 }
 
 /// @zod.import(["import { ZFieldMetaNotOptionalSchema } from '@documenso/lib/types/field-meta';"])
@@ -938,8 +939,36 @@ model Organisation {
   organisationAuthenticationPortalId String                           @unique
   organisationAuthenticationPortal   OrganisationAuthenticationPortal @relation(fields: [organisationAuthenticationPortalId], references: [id])
 
+  companySeals CompanySeal[]
+
   @@index([name])
   @@index([ownerUserId])
+}
+
+/// A company seal image an organisation's managers upload and its members apply
+/// to V2 documents. Immutable: the application has no update or delete path, so
+/// the creator columns are the seal's whole audit record. The creator's name and
+/// email are copied in so the record survives later account changes.
+model CompanySeal {
+  id              String   @id @default(cuid())
+  organisationId  String
+  name            String
+  legalEntityName String
+  /// The `{ type, data }` reference `putFileServerSide` returns, as `brandingLogo` stores it.
+  imageData       Json
+  /// SHA-256, in hex, of the stored PNG bytes.
+  imageSha256     String
+  createdAt       DateTime @default(now())
+
+  createdByUserId  Int
+  createdByName    String
+  createdByEmail   String
+  createdFromIp    String?
+  createdUserAgent String?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
 }
 
 model OrganisationMember {

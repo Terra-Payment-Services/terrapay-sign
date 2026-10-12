@@ -1,8 +1,8 @@
 /**
  * The seal job, observed from outside.
  *
- * Written from the issue and the specification in the session scratchpad,
- * `specs/issue-38-seal-e2e.md`, before any of it ran. It replaces a unit test
+ * Written from the issue and its specification,
+ * before any of it ran. It replaces a unit test
  * that stubbed the PDF stack and counted calls.
  *
  * Nothing here calls the handler. Envelopes are seeded through the V2 API,

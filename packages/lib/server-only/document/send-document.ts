@@ -45,6 +45,7 @@ import {
   getRecipientsWithMissingFields,
   isRecipientEmailValidForSending,
 } from '../../utils/recipients';
+import { assertCompanySealRecipientsAreMembers } from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
 import { assertLegacyEnvelopeAcceptsPdf, normalizePdf } from '../pdf/normalize-pdf';
@@ -225,6 +226,13 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
       message: `The following recipients are missing required fields: ${missingRecipientDescriptions}. Signers must have at least one signature field.`,
     });
   }
+
+  // Refused before any email goes out: a seal field nobody can apply would leave the document unfinishable.
+  await assertCompanySealRecipientsAreMembers({
+    envelope,
+    fields: envelope.fields,
+    recipients: envelope.recipients,
+  });
 
   // Stored only once every refusal above has been made, so a refused send
   // leaves the upload where its owner can replace it.
@@ -440,7 +448,8 @@ type StagedPdf = {
  * late PUT has no effect.
  *
  * Any other document keeps the existing behaviour: only form values are
- * written, to a new row the item is pointed at.
+ * written, to a new row the item is pointed at, and the row it replaces is
+ * deleted in the same transaction.
  *
  * @param envelope the envelope being sent
  * @param checkedPdfs each item with the bytes the send read and checked for it
@@ -479,10 +488,29 @@ const stagePdfsForSend = async (
           { owner: { userId: envelope.userId, teamId: envelope.teamId } },
         );
 
-        await prisma.envelopeItem.update({
-          where: { id: envelopeItem.id },
-          data: { documentDataId: newDocumentData.id },
-        });
+        // Repoint only if the item still holds the row this send read, so a
+        // concurrent send or replacement is not overwritten. The superseded row
+        // goes with the repoint, unless another item holds it.
+        await prisma
+          .$transaction(async (tx) => {
+            const { count } = await tx.envelopeItem.updateMany({
+              where: { id: envelopeItem.id, documentDataId: documentData.id },
+              data: { documentDataId: newDocumentData.id },
+            });
+
+            if (count === 0) {
+              throw new AppError(AppErrorCode.ENVELOPE_ITEM_REVISION_CONFLICT, {
+                message: 'The document changed while it was being sent. Send it again.',
+              });
+            }
+
+            await tx.documentData.deleteMany({ where: { id: documentData.id, envelopeItem: null } });
+          })
+          .catch(async (error) => {
+            await prisma.documentData.deleteMany({ where: { id: newDocumentData.id, envelopeItem: null } });
+
+            throw error;
+          });
 
         continue;
       }
@@ -600,6 +628,11 @@ export const extractFieldAutoInsertValues = (
   unknownField: Field,
   recipient: Pick<Recipient, 'email'>,
 ): { fieldId: number; customText: string } | null => {
+  // A seal is never auto-inserted, and its meta is outside the V1 union parsed below.
+  if (unknownField.type === FieldType.COMPANY_SEAL) {
+    return null;
+  }
+
   const parsedField = ZFieldAndMetaSchema.safeParse(unknownField);
 
   if (parsedField.error) {
