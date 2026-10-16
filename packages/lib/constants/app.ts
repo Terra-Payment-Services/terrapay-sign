@@ -4,6 +4,16 @@ import { SignatureLevel, type TSignatureLevel } from '../types/signature-level';
 
 export const APP_DOCUMENT_UPLOAD_SIZE_LIMIT = Number(env('NEXT_PUBLIC_DOCUMENT_SIZE_UPLOAD_LIMIT')) || 50;
 
+/**
+ * Bytes of files one upload request may carry together. The server's multipart
+ * limit is this plus room for the form around the files.
+ */
+export const APP_ENVELOPE_UPLOAD_TOTAL_SIZE_LIMIT_BYTES = 63 * 1024 * 1024;
+
+/** True when `files` together are more than one upload request may carry. */
+export const isEnvelopeUploadTooLarge = (files: { size: number }[]) =>
+  files.reduce((total, file) => total + file.size, 0) > APP_ENVELOPE_UPLOAD_TOTAL_SIZE_LIMIT_BYTES;
+
 export const NEXT_PUBLIC_WEBAPP_URL = () => env('NEXT_PUBLIC_WEBAPP_URL') ?? 'http://localhost:3000';
 
 /**

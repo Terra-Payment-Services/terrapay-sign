@@ -53,11 +53,35 @@ const port = parseInt(process.env.PORT || '3000', 10);
 
 const httpServer = serve({ fetch: handler.fetch, port });
 
+// The load balancer closes an idle connection after 60 seconds. The server must
+// hold it longer, or the balancer can send a request on a connection the server
+// is closing and answer the client 502. Node's defaults are 5 and 60.
+httpServer.keepAliveTimeout = 65_000;
+httpServer.headersTimeout = 66_000;
+
 // ECS sends SIGTERM after the load balancer has drained the task and SIGKILL 30
 // seconds later. Finish what is open, including the job worker that runs in this
 // process, inside that window.
+// close() drops only the connections idle at that moment. One that goes idle afterwards would
+// otherwise stay open for the whole keepAliveTimeout above and outlast the shutdown.
+const closeServer = () =>
+  new Promise((resolve, reject) => {
+    const closeIdle = setInterval(() => httpServer.closeIdleConnections(), 250);
+
+    httpServer.close((error) => {
+      clearInterval(closeIdle);
+
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+
 const shutdown = createGracefulShutdown({
-  closeServer: () => new Promise((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve()))),
+  closeServer,
   closeJobs: closeBackgroundJobs,
   exit: (code) => process.exit(code),
   // The job provider stays open until the requests finish; nothing may report a wedge meanwhile.

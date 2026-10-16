@@ -233,7 +233,8 @@ export class BullMQJobProvider extends BaseJobProvider {
     const serverAdapter = new HonoAdapter(serveStatic);
 
     createBullBoard({
-      queues: [new BullMQAdapter(this._queue)],
+      // Read-only: the board is for looking, and adds, retries and pauses go through the app.
+      queues: [new BullMQAdapter(this._queue, { readOnlyMode: true })],
       serverAdapter,
       options: { uiBasePath: uiPackagePath },
     });

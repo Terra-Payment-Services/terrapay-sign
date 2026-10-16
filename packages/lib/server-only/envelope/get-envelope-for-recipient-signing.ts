@@ -5,7 +5,14 @@ import EnvelopeSchema from '@documenso/prisma/generated/zod/modelSchema/Envelope
 import SignatureSchema from '@documenso/prisma/generated/zod/modelSchema/SignatureSchema';
 import TeamSchema from '@documenso/prisma/generated/zod/modelSchema/TeamSchema';
 import UserSchema from '@documenso/prisma/generated/zod/modelSchema/UserSchema';
-import { DocumentSigningOrder, DocumentStatus, EnvelopeType, RecipientRole, SigningStatus } from '@prisma/client';
+import {
+  DocumentSigningOrder,
+  DocumentStatus,
+  EnvelopeType,
+  FieldType,
+  RecipientRole,
+  SigningStatus,
+} from '@prisma/client';
 import { z } from 'zod';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
@@ -244,14 +251,17 @@ export const getEnvelopeForRecipientSigning = async ({
 
   const settings = await getTeamSettings({ teamId: envelope.teamId });
 
-  // Get the signature if they have put it in already.
+  // Get the signature if they have put it in already. A seal is stored as a
+  // Signature row too, and must never be offered as the recipient's signature.
   const recipientSignature = await prisma.signature.findFirst({
     where: {
       field: {
         recipientId: recipient.id,
         envelopeId: envelope.id,
+        type: FieldType.SIGNATURE,
       },
     },
+    orderBy: { created: 'desc' },
     select: {
       id: true,
       recipientId: true,

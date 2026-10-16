@@ -28,26 +28,27 @@ export const shouldRevalidate = ({ currentParams, nextParams }: ShouldRevalidate
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { id } = params;
 
+  if (!id) {
+    throw new Response('Not Found', { status: 404 });
+  }
+
   const documentId = Number(id);
+  const isLegacyId = !Number.isNaN(documentId);
 
-  // If ID is a number, redirect to use envelope ID instead.
-  if (!Number.isNaN(documentId)) {
-    const { user } = await getSession(request);
+  const { user } = await getSession(request);
 
-    const team = await getTeamByUrl({
-      userId: user.id,
-      teamUrl: params.teamUrl,
-    });
-
-    const envelope = await getEnvelopeById({
-      id: {
-        type: 'documentId',
-        id: documentId,
-      },
-      type: EnvelopeType.DOCUMENT,
-      userId: user.id,
-      teamId: team.id,
-    }).catch((err) => {
+  // An unknown team, a team the user is not in, the wrong team and a missing document all answer 404, so the
+  // response says nothing about whether the document exists. The envelope ID form uses the client query's lookup.
+  const envelope = await getTeamByUrl({ userId: user.id, teamUrl: params.teamUrl })
+    .then(async (team) =>
+      getEnvelopeById({
+        id: isLegacyId ? { type: 'documentId', id: documentId } : { type: 'envelopeId', id },
+        type: isLegacyId ? EnvelopeType.DOCUMENT : null,
+        userId: user.id,
+        teamId: team.id,
+      }),
+    )
+    .catch((err) => {
       const error = AppError.parseError(err);
 
       if (error.code === AppErrorCode.NOT_FOUND) {
@@ -57,6 +58,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       throw err;
     });
 
+  // If ID is a number, redirect to use envelope ID instead.
+  if (isLegacyId) {
     const url = new URL(request.url);
 
     throw redirect(url.pathname.replace(`/documents/${id}`, `/documents/${envelope.id}`));

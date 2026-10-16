@@ -12,7 +12,6 @@ import {
   FILE_UPLOAD_LIMIT_BYTES,
   KIB,
   MIB,
-  MULTIPART_API_LIMIT_BYTES,
   MULTIPART_CONTENT_TYPE,
   openRawConnection,
   TRPC_PATH,
@@ -74,7 +73,7 @@ test.describe('criterion 6: fast Content-Length bodies just under each limit rea
       name: 'a multipart body just under the multipart API limit on /api/trpc',
       path: TRPC_PATH,
       type: MULTIPART_CONTENT_TYPE,
-      body: () => buildMultipartBody(MULTIPART_API_LIMIT_BYTES - KIB),
+      body: () => buildMultipartBody(64 * MIB - KIB),
     },
   ];
 

@@ -1,7 +1,7 @@
 import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
-import type { Prisma } from '@prisma/client';
+import { DocumentStatus, type Prisma } from '@prisma/client';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -53,6 +53,9 @@ route.get(
         envelope: {
           id: envelopeId,
           qrToken: token,
+          // The QR link on the certificate is for a finished document only.
+          status: DocumentStatus.COMPLETED,
+          deletedAt: null,
         },
       };
     }

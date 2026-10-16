@@ -9,6 +9,7 @@ import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../
 import { nanoid, prefixedId } from '../../universal/id';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { isValidRedirectUrl } from '../../utils/is-valid-redirect-url';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
@@ -122,6 +123,10 @@ export const duplicateEnvelope = async ({ id, userId, teamId, overrides }: Dupli
     prisma.documentMeta.create({
       data: {
         ...omit(envelope.documentMeta, ['id']),
+        redirectUrl:
+          envelope.documentMeta.redirectUrl && isValidRedirectUrl(envelope.documentMeta.redirectUrl)
+            ? envelope.documentMeta.redirectUrl
+            : null,
         emailSettings: envelope.documentMeta.emailSettings || undefined,
       },
     }),

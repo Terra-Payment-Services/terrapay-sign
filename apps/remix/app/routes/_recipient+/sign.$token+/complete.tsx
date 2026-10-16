@@ -2,6 +2,7 @@ import signingCelebration from '@documenso/assets/images/signing-celebration.png
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
 import { isSignupEnabledForProvider } from '@documenso/lib/constants/auth';
+import { isRecipientAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
@@ -19,7 +20,7 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, redirect } from 'react-router';
 import { match } from 'ts-pattern';
 
 import { EnvelopeDownloadDialog } from '~/components/dialogs/envelope-download-dialog';
@@ -72,6 +73,17 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       recipientEmail: recipient.email,
       branding,
     } as const;
+  }
+
+  // The signing page asks for the emailed access code; send the recipient there rather than show the document.
+  const isAccess2FASatisfied = await isRecipientAccess2FASatisfied({
+    headers: request.headers,
+    documentAuthOptions: document.authOptions,
+    recipient,
+  });
+
+  if (!isAccess2FASatisfied) {
+    throw redirect(`/sign/${token}`);
   }
 
   const signatures = await getRecipientSignatures({ recipientId: recipient.id });

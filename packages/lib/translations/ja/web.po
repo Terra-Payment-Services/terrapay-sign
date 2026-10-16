@@ -1725,7 +1725,7 @@ msgstr "文書のアップロード中にエラーが発生しました。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "An existing signature on this document is already invalid, so it cannot be signed here. Please contact the sender."
-msgstr ""
+msgstr "この文書の既存の署名はすでに無効になっているため、ここでは署名できません。送信者にお問い合わせください。"
 
 #: packages/lib/jobs/definitions/emails/send-organisation-limit-alert-email.handler.ts
 msgid "An organisation has exceeded their fair use limits"
@@ -1953,7 +1953,7 @@ msgstr "組織に追加してもらうには <0>{SUPPORT_EMAIL}</0> に依頼し
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer-states.tsx
 msgid "Ask for a copy without a password."
-msgstr ""
+msgstr "パスワードなしのコピーを依頼してください。"
 
 #: apps/remix/app/components/tables/organisation-groups-table.tsx
 msgid "Assigned Teams"
@@ -3943,7 +3943,7 @@ msgstr "文書の準備ができていません"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Document not sent"
-msgstr ""
+msgstr "文書は送信されませんでした"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -5197,6 +5197,10 @@ msgstr "ファイルサイズが小さすぎます"
 #: apps/remix/app/components/dialogs/template-use-dialog.tsx
 msgid "File size exceeds the limit of {APP_DOCUMENT_UPLOAD_SIZE_LIMIT} MB"
 msgstr "ファイルサイズが {APP_DOCUMENT_UPLOAD_SIZE_LIMIT} MB の上限を超えています"
+
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "Files too large to upload together"
+msgstr "ファイルが大きすぎるため、まとめてアップロードできません"
 
 #: apps/remix/app/components/dialogs/email-transport-create-dialog.tsx
 msgid "Fill in the details to create a new email transport."
@@ -7375,7 +7379,7 @@ msgstr "パスワードを更新しました。"
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer.tsx
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Password-protected PDF"
-msgstr ""
+msgstr "パスワードで保護された PDF"
 
 #: packages/lib/constants/billing.ts
 msgctxt "Subscription status"
@@ -7388,7 +7392,7 @@ msgstr "PDF文書"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "PDF not supported here"
-msgstr ""
+msgstr "この PDF はここではサポートされていません"
 
 #: apps/remix/app/components/dialogs/envelopes-bulk-download-dialog.tsx
 #: apps/remix/app/components/general/document/document-page-view-recipients.tsx
@@ -7724,7 +7728,7 @@ msgstr "設定"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Preparing this PDF for sending would break the signature it carries, so it was not sent. If it has no signature, the file may be unreadable."
-msgstr ""
+msgstr "送信用にこの PDF を準備すると、含まれている署名が損なわれるため、送信しませんでした。署名が含まれていない場合は、ファイルを読み取れない可能性があります。"
 
 #: apps/remix/app/components/forms/email-preferences-form.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
@@ -9211,7 +9215,7 @@ msgstr "署名"
 #: apps/remix/app/utils/toast-error-messages.ts
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Signature already invalid"
-msgstr ""
+msgstr "署名はすでに無効です"
 
 #: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
 #: packages/lib/server-only/pdf/render-certificate.ts
@@ -10222,11 +10226,11 @@ msgstr "ドキュメント名"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "The document's PDF is password-protected, which this signing link cannot handle. Please contact the sender."
-msgstr ""
+msgstr "この文書の PDF はパスワードで保護されているため、この署名リンクでは処理できません。送信者にお問い合わせください。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "The document's PDF restricts editing, which this signing link cannot handle. Please contact the sender."
-msgstr ""
+msgstr "この文書の PDF は編集が制限されているため、この署名リンクでは処理できません。送信者にお問い合わせください。"
 
 #: apps/remix/app/components/dialogs/envelopes-bulk-cancel-dialog.tsx
 msgid "The documents will remain in your dashboard marked as Cancelled"
@@ -10531,6 +10535,10 @@ msgstr "一部のフィールドの表示に問題がありました。フィー
 msgid "These can be overriden by setting the authentication requirements directly on each recipient in the next step. Multiple methods can be selected."
 msgstr "これは、次のステップで各受信者に対して直接設定される認証要件によって上書きされます。複数の方法を選択できます。"
 
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "These files add up to more than 63 MB. Upload them one at a time."
+msgstr "これらのファイルの合計が 63 MB を超えています。1 つずつアップロードしてください。"
+
 #: packages/ui/components/recipient/recipient-action-auth-select.tsx
 msgid "These will override any global settings. Multiple methods can be selected."
 msgstr "これらはグローバル設定を上書きします。複数の方法を選択できます。"
@@ -10590,7 +10598,7 @@ msgstr "このドキュメントは復元できません。今後のドキュメ
 #: apps/remix/app/utils/toast-error-messages.ts
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This document cannot be signed here"
-msgstr ""
+msgstr "この文書はここでは署名できません"
 
 #: apps/remix/app/components/dialogs/envelope-cancel-dialog.tsx
 msgid "This document could not be cancelled at this time. Please try again."
@@ -10668,11 +10676,11 @@ msgstr "この文書は現在下書きであり、送信されていません"
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer-states.tsx
 msgid "This document is password-protected and cannot be opened."
-msgstr ""
+msgstr "この文書はパスワードで保護されているため、開くことができません。"
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer.tsx
 msgid "This document is password-protected and cannot be opened. Ask for a copy without a password."
-msgstr ""
+msgstr "この文書はパスワードで保護されているため、開くことができません。パスワードなしのコピーを依頼してください。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This document is signed in a set order and other recipients must sign before you. You will receive an email when it is your turn."
@@ -10794,19 +10802,19 @@ msgstr "このアプリケーション用に設定されていないパスキー
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF cannot be uploaded. It may be unreadable, or carry a signature that uploading would invalidate."
-msgstr ""
+msgstr "この PDF はアップロードできません。ファイルを読み取れないか、アップロードによって無効になる署名が含まれている可能性があります。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF needs a password to open. Remove the password and upload it again."
-msgstr ""
+msgstr "この PDF を開くにはパスワードが必要です。パスワードを解除してから、もう一度アップロードしてください。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF restricts editing, which legacy documents cannot keep. Upload it as an envelope instead."
-msgstr ""
+msgstr "この PDF は編集が制限されており、レガシー文書ではこの制限を保持できません。代わりに封筒としてアップロードしてください。"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF's existing signature is already invalid: the file was changed after it was signed. Ask the sender for a copy whose signature still verifies."
-msgstr ""
+msgstr "この PDF の既存の署名はすでに無効です。署名後にファイルが変更されています。署名を引き続き検証できるコピーを送信者に依頼してください。"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: packages/ui/primitives/document-flow/add-fields.tsx

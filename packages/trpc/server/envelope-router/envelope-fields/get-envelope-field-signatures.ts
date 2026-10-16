@@ -39,7 +39,7 @@ export const getEnvelopeFieldSignaturesRoute = authenticatedProcedure
         fields: {
           where: {
             inserted: true,
-            type: FieldType.SIGNATURE,
+            type: { in: [FieldType.SIGNATURE, FieldType.COMPANY_SEAL] },
           },
           include: {
             signature: true,
@@ -54,7 +54,17 @@ export const getEnvelopeFieldSignaturesRoute = authenticatedProcedure
       });
     }
 
-    const signatures = envelope.fields.map((field) => ({
+    // The response carries signature and seal images.
+    ctx.resHeaders?.set('Cache-Control', 'private, no-store');
+
+    // Seal snapshots go only to members of the envelope's own team, the audience of
+    // organisation.companySeal.findForEnvelope. The where input above also admits the
+    // envelope's owner and the team email's sender from another team.
+    const fields = envelope.fields.filter(
+      (field) => field.type !== FieldType.COMPANY_SEAL || envelope.teamId === teamId,
+    );
+
+    const signatures = fields.map((field) => ({
       fieldId: field.id,
       signatureImageAsBase64: field.signature?.signatureImageAsBase64 ?? null,
       typedSignature: field.signature?.typedSignature ?? null,

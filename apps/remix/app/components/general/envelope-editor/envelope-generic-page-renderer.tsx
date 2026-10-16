@@ -9,7 +9,7 @@ import { renderField } from '@documenso/lib/universal/field-renderer/render-fiel
 import { getClientSideFieldTranslations } from '@documenso/lib/utils/fields';
 import { EnvelopeRecipientFieldTooltip } from '@documenso/ui/components/document/envelope-recipient-field-tooltip';
 import { useLingui } from '@lingui/react/macro';
-import { DocumentStatus, type Recipient, SigningStatus } from '@prisma/client';
+import { DocumentStatus, FieldType, type Recipient, SigningStatus } from '@prisma/client';
 import type Konva from 'konva';
 import { useEffect, useMemo } from 'react';
 
@@ -81,12 +81,13 @@ export const EnvelopeGenericPageRenderer = ({ pageData }: { pageData: PageRender
 
     // Look up an inserted signature for this field. If we don't have one (e.g.
     // the signatures haven't been loaded, or the field hasn't been signed yet)
-    // fall back to a placeholder so the field still renders something.
+    // fall back to a placeholder so the field still renders something. A seal
+    // falls back to its own label, never to the word "Signature".
     const insertedSignature = signaturesByFieldId.get(field.id);
 
     const signature = insertedSignature ?? {
       signatureImageAsBase64: '',
-      typedSignature: fieldTranslations.SIGNATURE,
+      typedSignature: field.type === FieldType.COMPANY_SEAL ? '' : fieldTranslations.SIGNATURE,
     };
 
     renderField({

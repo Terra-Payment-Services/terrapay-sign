@@ -21,6 +21,7 @@ import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-emai
 import { DocumentAccessAuth } from '@documenso/lib/types/document-auth';
 import { SignatureLevel } from '@documenso/lib/types/signature-level';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
+import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { logger } from '@documenso/lib/utils/logger';
 import { isRecipientExpired } from '@documenso/lib/utils/recipients';
 import { prisma } from '@documenso/prisma';
@@ -165,7 +166,9 @@ const handleV1Loader = async ({ params, request }: Route.LoaderArgs) => {
   }
 
   if (document.status === DocumentStatus.COMPLETED || recipient.signingStatus === SigningStatus.SIGNED) {
-    throw redirect(documentMeta?.redirectUrl || `/sign/${token}/complete`);
+    const redirectUrl = documentMeta?.redirectUrl;
+
+    throw redirect(redirectUrl && isValidRedirectUrl(redirectUrl) ? redirectUrl : `/sign/${token}/complete`);
   }
 
   const [recipientSignatures, settings] = await Promise.all([
@@ -284,7 +287,9 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
   }
 
   if (isCompleted) {
-    throw redirect(envelope.documentMeta.redirectUrl || `/sign/${token}/complete`);
+    const { redirectUrl } = envelope.documentMeta;
+
+    throw redirect(redirectUrl && isValidRedirectUrl(redirectUrl) ? redirectUrl : `/sign/${token}/complete`);
   }
 
   if (isExpired) {

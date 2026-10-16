@@ -5193,6 +5193,10 @@ msgstr "File is too small"
 msgid "File size exceeds the limit of {APP_DOCUMENT_UPLOAD_SIZE_LIMIT} MB"
 msgstr "File size exceeds the limit of {APP_DOCUMENT_UPLOAD_SIZE_LIMIT} MB"
 
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "Files too large to upload together"
+msgstr "Files too large to upload together"
+
 #: apps/remix/app/components/dialogs/email-transport-create-dialog.tsx
 msgid "Fill in the details to create a new email transport."
 msgstr "Fill in the details to create a new email transport."
@@ -10525,6 +10529,10 @@ msgstr "There was an issue rendering some fields, please review the fields and t
 #: packages/ui/components/document/document-global-auth-action-select.tsx
 msgid "These can be overriden by setting the authentication requirements directly on each recipient in the next step. Multiple methods can be selected."
 msgstr "These can be overriden by setting the authentication requirements directly on each recipient in the next step. Multiple methods can be selected."
+
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "These files add up to more than 63 MB. Upload them one at a time."
+msgstr "These files add up to more than 63 MB. Upload them one at a time."
 
 #: packages/ui/components/recipient/recipient-action-auth-select.tsx
 msgid "These will override any global settings. Multiple methods can be selected."

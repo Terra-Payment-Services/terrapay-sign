@@ -69,6 +69,13 @@ const upsertFieldText = (field: FieldToRender, options: RenderFieldElementOption
     }
   }
 
+  // The editor previews the value a field will hold, laid out as it will be once inserted.
+  if (mode === 'edit' && !field.inserted && field.previewText && !fieldMeta?.label) {
+    isLabel = false;
+    textToRender = field.previewText;
+    textAlign = fieldMeta?.textAlign || FIELD_DEFAULT_GENERIC_ALIGN;
+  }
+
   // Default to blank for export mode since we want to ensure we don't show
   // any placeholder text or labels unless actually it's inserted.
   if (mode === 'export') {

@@ -56,7 +56,15 @@ export const getRecipientSuggestions = async ({ userId, teamId, query }: GetReci
     take: 5,
   });
 
-  if (teamId) {
+  // The team comes from the request header, so suggest its members only to a member of it.
+  const isTeamMember =
+    !!teamId &&
+    !!(await prisma.team.findFirst({
+      where: buildTeamWhereQuery({ teamId, userId }),
+      select: { id: true },
+    }));
+
+  if (isTeamMember) {
     const teamMembers = await prisma.organisationMember.findMany({
       where: {
         user: {

@@ -98,7 +98,13 @@ const localProjects = [
   {
     name: 'api',
     testMatch: /e2e\/api\/.*\.spec\.ts/,
-    testIgnore: [/e2e\/api\/chunked-stall\/.*\.spec\.ts/, /e2e\/api\/orphan-document-data\/cleanup-script\.spec\.ts/],
+    testIgnore: [
+      /e2e\/api\/chunked-stall\/.*\.spec\.ts/,
+      /e2e\/api\/family-body-limits\/.*\.spec\.ts/,
+      /e2e\/api\/keep-alive\/.*\.spec\.ts/,
+      /e2e\/api\/declared-budget\/.*\.spec\.ts/,
+      /e2e\/api\/orphan-document-data\/cleanup-script\.spec\.ts/,
+    ],
     workers: 10, // Limited by DB connections before it gets flakey.
   },
   // The cleanup script spec counts whole tables and runs a delete over
@@ -114,10 +120,15 @@ const localProjects = [
     dependencies: ['api', 'chunked-stall', 'ui', 'directory-sync', 'remote', 'worker-wedge'],
   },
   // The chunked-stall specs fill the server's process-wide pre-read
-  // budget and lingering-refusal cap, so its files run one at a time.
+  // budget and lingering-refusal cap, so its files run one at a time. The
+  // family-body-limits specs send bodies at those budgets' scale and
+  // time stalls against the same bounds, and the keep-alive specs each
+  // hold a connection idle for over a minute and time the server's closes, so
+  // they run here too. The declared-budget specs hold declared bodies
+  // against the same budget and per-client share, so they run here as well.
   {
     name: 'chunked-stall',
-    testMatch: /e2e\/api\/chunked-stall\/.*\.spec\.ts/,
+    testMatch: /e2e\/api\/(chunked-stall|family-body-limits|keep-alive|declared-budget)\/.*\.spec\.ts/,
     fullyParallel: false,
     workers: 1,
   },
@@ -130,7 +141,10 @@ const localProjects = [
       ...devices['Desktop Chrome'],
       viewport: { width: 1920, height: 1200 },
     },
-    workers: calculateWorkers(),
+    // calculateWorkers() reserves two cores and gives one worker per two left,
+    // so a four-core runner got one ui worker while the job sized for two left
+    // the other idle for most of the run. E2E_WORKERS, when the job sets it, wins.
+    workers: Number(process.env.E2E_WORKERS) || calculateWorkers(),
   },
   // The directory sync specs start a built server of their own per test,
   // with the sync configured against a stub of Microsoft Graph, and give each

@@ -1,5 +1,6 @@
 import type { TCssVarsSchema } from '../../types/css-vars';
 import { ZCssVarsSchema } from '../../types/css-vars';
+import { sanitizeBrandingCss } from '../../utils/sanitize-branding-css';
 import { getTeamSettings } from '../team/get-team-settings';
 
 export type RecipientBrandingPayload = {
@@ -44,10 +45,14 @@ export const loadRecipientBrandingByTeamId = async ({
   // brandingColors is stored as JSON; parse defensively. Drop unknown keys via Zod.
   const parsedColors = settings.brandingColors ? ZCssVarsSchema.safeParse(settings.brandingColors) : null;
 
+  // Sanitise again on the way out: CSS saved before the sanitiser tightened is still in the
+  // database, and this keeps every stored row to today's rules.
+  const css = settings.brandingCss ? sanitizeBrandingCss(settings.brandingCss).css : '';
+
   return {
     allowCustomBranding: true,
     hidePoweredBy,
     colors: parsedColors?.success ? parsedColors.data : null,
-    css: settings.brandingCss && settings.brandingCss.length > 0 ? settings.brandingCss : null,
+    css: css.length > 0 ? css : null,
   };
 };

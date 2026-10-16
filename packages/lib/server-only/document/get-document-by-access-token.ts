@@ -17,6 +17,7 @@ export const getDocumentByAccessToken = async ({ token }: GetDocumentByAccessTok
       type: EnvelopeType.DOCUMENT,
       status: DocumentStatus.COMPLETED,
       qrToken: token,
+      deletedAt: null,
     },
     // Do not provide extra information that is not needed.
     select: {

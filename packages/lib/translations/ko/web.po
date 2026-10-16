@@ -1725,7 +1725,7 @@ msgstr "문서를 업로드하는 중 오류가 발생했습니다."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "An existing signature on this document is already invalid, so it cannot be signed here. Please contact the sender."
-msgstr ""
+msgstr "이 문서의 기존 서명이 이미 유효하지 않아 여기에서 서명할 수 없습니다. 보낸 사람에게 문의해 주세요."
 
 #: packages/lib/jobs/definitions/emails/send-organisation-limit-alert-email.handler.ts
 msgid "An organisation has exceeded their fair use limits"
@@ -1953,7 +1953,7 @@ msgstr "<0>{SUPPORT_EMAIL}</0>에 조직에 추가해 달라고 요청하세요.
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer-states.tsx
 msgid "Ask for a copy without a password."
-msgstr ""
+msgstr "비밀번호가 없는 사본을 요청하세요."
 
 #: apps/remix/app/components/tables/organisation-groups-table.tsx
 msgid "Assigned Teams"
@@ -3943,7 +3943,7 @@ msgstr "준비되지 않은 문서"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Document not sent"
-msgstr ""
+msgstr "문서가 전송되지 않았습니다"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -5197,6 +5197,10 @@ msgstr "파일이 너무 작습니다"
 #: apps/remix/app/components/dialogs/template-use-dialog.tsx
 msgid "File size exceeds the limit of {APP_DOCUMENT_UPLOAD_SIZE_LIMIT} MB"
 msgstr "파일 크기가 {APP_DOCUMENT_UPLOAD_SIZE_LIMIT}MB 제한을 초과했습니다."
+
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "Files too large to upload together"
+msgstr "파일이 너무 커서 함께 업로드할 수 없습니다"
 
 #: apps/remix/app/components/dialogs/email-transport-create-dialog.tsx
 msgid "Fill in the details to create a new email transport."
@@ -7375,7 +7379,7 @@ msgstr "비밀번호가 업데이트되었습니다!"
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer.tsx
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Password-protected PDF"
-msgstr ""
+msgstr "비밀번호로 보호된 PDF"
 
 #: packages/lib/constants/billing.ts
 msgctxt "Subscription status"
@@ -7388,7 +7392,7 @@ msgstr "PDF 문서"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "PDF not supported here"
-msgstr ""
+msgstr "여기에서 지원되지 않는 PDF"
 
 #: apps/remix/app/components/dialogs/envelopes-bulk-download-dialog.tsx
 #: apps/remix/app/components/general/document/document-page-view-recipients.tsx
@@ -7724,7 +7728,7 @@ msgstr "환경설정"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Preparing this PDF for sending would break the signature it carries, so it was not sent. If it has no signature, the file may be unreadable."
-msgstr ""
+msgstr "이 PDF를 전송용으로 준비하면 포함된 서명이 손상되므로 전송하지 않았습니다. 서명이 없는 경우 파일을 읽을 수 없는 상태일 수 있습니다."
 
 #: apps/remix/app/components/forms/email-preferences-form.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
@@ -9211,7 +9215,7 @@ msgstr "서명"
 #: apps/remix/app/utils/toast-error-messages.ts
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Signature already invalid"
-msgstr ""
+msgstr "서명이 이미 유효하지 않음"
 
 #: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
 #: packages/lib/server-only/pdf/render-certificate.ts
@@ -10222,11 +10226,11 @@ msgstr "문서 이름"
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "The document's PDF is password-protected, which this signing link cannot handle. Please contact the sender."
-msgstr ""
+msgstr "문서의 PDF가 비밀번호로 보호되어 있어 이 서명 링크로는 처리할 수 없습니다. 보낸 사람에게 문의해 주세요."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "The document's PDF restricts editing, which this signing link cannot handle. Please contact the sender."
-msgstr ""
+msgstr "문서의 PDF에 편집 제한이 설정되어 있어 이 서명 링크로는 처리할 수 없습니다. 보낸 사람에게 문의해 주세요."
 
 #: apps/remix/app/components/dialogs/envelopes-bulk-cancel-dialog.tsx
 msgid "The documents will remain in your dashboard marked as Cancelled"
@@ -10531,6 +10535,10 @@ msgstr "일부 필드를 렌더링하는 데 문제가 있었습니다. 필드�
 msgid "These can be overriden by setting the authentication requirements directly on each recipient in the next step. Multiple methods can be selected."
 msgstr "이 설정은 다음 단계에서 각 수신자별로 인증 요구 사항을 직접 설정하면 재정의됩니다. 여러 방법을 선택할 수 있습니다."
 
+#: apps/remix/app/utils/toast-error-messages.ts
+msgid "These files add up to more than 63 MB. Upload them one at a time."
+msgstr "이 파일들의 합계가 63MB를 초과합니다. 한 번에 하나씩 업로드해 주세요."
+
 #: packages/ui/components/recipient/recipient-action-auth-select.tsx
 msgid "These will override any global settings. Multiple methods can be selected."
 msgstr "여기에서 설정하는 값은 모든 전역 설정을 재정의합니다. 여러 방법을 선택할 수 있습니다."
@@ -10590,7 +10598,7 @@ msgstr "이 문서는 복구할 수 없습니다. 향후 문서에 대한 삭제
 #: apps/remix/app/utils/toast-error-messages.ts
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This document cannot be signed here"
-msgstr ""
+msgstr "이 문서는 여기에서 서명할 수 없습니다"
 
 #: apps/remix/app/components/dialogs/envelope-cancel-dialog.tsx
 msgid "This document could not be cancelled at this time. Please try again."
@@ -10668,11 +10676,11 @@ msgstr "이 문서는 현재 초안 상태이며 발송되지 않았습니다"
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer-states.tsx
 msgid "This document is password-protected and cannot be opened."
-msgstr ""
+msgstr "이 문서는 비밀번호로 보호되어 있어 열 수 없습니다."
 
 #: apps/remix/app/components/general/pdf-viewer/pdf-viewer.tsx
 msgid "This document is password-protected and cannot be opened. Ask for a copy without a password."
-msgstr ""
+msgstr "이 문서는 비밀번호로 보호되어 있어 열 수 없습니다. 비밀번호가 없는 사본을 요청하세요."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This document is signed in a set order and other recipients must sign before you. You will receive an email when it is your turn."
@@ -10794,19 +10802,19 @@ msgstr "이 패스키는 이 애플리케이션에 대해 구성되지 않았습
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF cannot be uploaded. It may be unreadable, or carry a signature that uploading would invalidate."
-msgstr ""
+msgstr "이 PDF는 업로드할 수 없습니다. 읽을 수 없는 파일이거나, 업로드하면 무효화되는 서명이 포함되어 있을 수 있습니다."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF needs a password to open. Remove the password and upload it again."
-msgstr ""
+msgstr "이 PDF를 열려면 비밀번호가 필요합니다. 비밀번호를 제거한 후 다시 업로드해 주세요."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF restricts editing, which legacy documents cannot keep. Upload it as an envelope instead."
-msgstr ""
+msgstr "이 PDF에는 편집 제한이 있으며, 레거시 문서에서는 이를 유지할 수 없습니다. 대신 봉투로 업로드해 주세요."
 
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "This PDF's existing signature is already invalid: the file was changed after it was signed. Ask the sender for a copy whose signature still verifies."
-msgstr ""
+msgstr "이 PDF의 기존 서명은 이미 유효하지 않습니다. 서명된 후 파일이 변경되었습니다. 서명을 여전히 검증할 수 있는 사본을 보낸 사람에게 요청하세요."
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: packages/ui/primitives/document-flow/add-fields.tsx

@@ -1,6 +1,7 @@
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
 import { useSession } from '@documenso/lib/client-only/providers/session';
+import { isEnvelopeUploadTooLarge } from '@documenso/lib/constants/app';
 import { TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
 import { formatDocumentsPath, formatTemplatesPath } from '@documenso/lib/utils/teams';
@@ -19,7 +20,7 @@ import { ErrorCode as DropzoneErrorCode, type FileRejection } from 'react-dropzo
 import { useNavigate } from 'react-router';
 
 import { useCurrentTeam } from '~/providers/team';
-import { getUploadErrorMessage } from '~/utils/toast-error-messages';
+import { ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE, getUploadErrorMessage } from '~/utils/toast-error-messages';
 
 export type EnvelopeUploadButtonProps = {
   className?: string;
@@ -57,6 +58,17 @@ export const EnvelopeUploadButton = ({ className, type, folderId }: EnvelopeUplo
   }, [user.emailVerified, team]);
 
   const onFileDrop = async (files: File[]) => {
+    if (isEnvelopeUploadTooLarge(files)) {
+      toast({
+        title: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.title),
+        description: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.description),
+        variant: 'destructive',
+        duration: 7500,
+      });
+
+      return;
+    }
+
     try {
       setIsLoading(true);
 

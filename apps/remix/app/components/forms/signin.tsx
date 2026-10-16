@@ -332,7 +332,8 @@ export const SignInForm = ({
             </>
           )}
 
-          {!isEmbeddedRedirect && (
+          {/* An embedded redirect keeps only the email form, unless that form is off. */}
+          {(!isEmbeddedRedirect || !isEmailPasswordSigninEnabled) && (
             <>
               {isEmailPasswordSigninEnabled && hasSocialAuthEnabled && (
                 <div className="relative flex items-center justify-center gap-x-4 py-2 text-xs uppercase">

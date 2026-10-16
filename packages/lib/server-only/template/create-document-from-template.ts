@@ -2,6 +2,7 @@ import { nanoid, prefixedId } from '@documenso/lib/universal/id';
 import { prisma } from '@documenso/prisma';
 import type { DocumentData, DocumentDistributionMethod, DocumentSigningOrder } from '@prisma/client';
 import {
+  DocumentDataType,
   DocumentSource,
   EnvelopeType,
   type Field,
@@ -516,6 +517,8 @@ export const createDocumentFromTemplate = async ({
 
       let buffer = await getFileServerSide({ type: documentDataToDuplicate.type, data: sourceData });
 
+      const sourceBuffer = buffer;
+
       if (template.internalVersion === 1) {
         await assertLegacyEnvelopeAcceptsPdf(buffer);
       }
@@ -545,13 +548,26 @@ export const createDocumentFromTemplate = async ({
 
         documentDataId = documentDataToDuplicate.id;
       } else {
+        // A template's object may still have a live presigned upload URL, so the
+        // document's initial version is copied to a key of its own.
+        const initialData =
+          documentDataToDuplicate.type === DocumentDataType.S3_PATH
+            ? (
+                await putFileServerSide({
+                  name: titleToUse.endsWith('.pdf') ? titleToUse : `${titleToUse}.pdf`,
+                  type: 'application/pdf',
+                  arrayBuffer: async () => Promise.resolve(sourceBuffer),
+                })
+              ).data
+            : sourceData;
+
         const newDocumentData = await putNormalizedPdfFileServerSide(
           {
             name: titleToUse,
             type: 'application/pdf',
             arrayBuffer: async () => Promise.resolve(buffer),
           },
-          { owner: { userId, teamId }, initialData: sourceData },
+          { owner: { userId, teamId }, initialData },
         );
 
         documentDataId = newDocumentData.id;

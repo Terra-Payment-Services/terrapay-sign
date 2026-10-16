@@ -37,6 +37,18 @@ const OID_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
 /** id-ct-TSTInfo, the eContent of an RFC 3161 timestamp token. */
 const OID_TST_INFO = '1.2.840.113549.1.9.16.1.4';
 
+/**
+ * How many ASN.1 nodes a signature may hold before we stop parsing it.
+ *
+ * asn1js stops at 10,000 by default. A signature that embeds certificates and
+ * revocation lists for long-term validation passes that: a 91 KB PandaDoc
+ * signature needed between 10,000 and 20,000. The /Contents gap comes from
+ * whoever sent the file, so the parse stays bounded. At about 600 bytes of heap
+ * per node, 100,000 nodes is about 60 MB, and covers a signature of several
+ * hundred kilobytes.
+ */
+const MAX_SIGNATURE_NODES = 100_000;
+
 const DIGEST_NAMES_BY_OID: Record<string, string> = {
   '2.16.840.1.101.3.4.2.1': 'SHA-256',
   '2.16.840.1.101.3.4.2.2': 'SHA-384',
@@ -229,7 +241,9 @@ const claimedDigest = async (
   }
 
   try {
-    const parsed = asn1js.fromBER(der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength));
+    const parsed = asn1js.fromBER(der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength), {
+      maxNodes: MAX_SIGNATURE_NODES,
+    });
 
     if (parsed.offset === -1) {
       return null;
@@ -414,7 +428,9 @@ const timestampImprint = (signedData: pkijs.SignedData): { algorithm: string; di
   }
 
   const hex = eContent.valueBlock.valueHexView;
-  const parsed = asn1js.fromBER(hex.buffer.slice(hex.byteOffset, hex.byteOffset + hex.byteLength));
+  const parsed = asn1js.fromBER(hex.buffer.slice(hex.byteOffset, hex.byteOffset + hex.byteLength), {
+    maxNodes: MAX_SIGNATURE_NODES,
+  });
 
   if (parsed.offset === -1 || !(parsed.result instanceof asn1js.Sequence)) {
     return null;

@@ -6,7 +6,7 @@ import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/che
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
-import type { Prisma } from '@prisma/client';
+import { DocumentStatus, type Prisma } from '@prisma/client';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 
@@ -271,6 +271,9 @@ export const filesRoute = new Hono<HonoEnv>()
           id: envelopeItemId,
           envelope: {
             qrToken: token,
+            // The QR link on the certificate is for a finished document only.
+            status: DocumentStatus.COMPLETED,
+            deletedAt: null,
           },
         };
       }
@@ -327,6 +330,9 @@ export const filesRoute = new Hono<HonoEnv>()
           id: envelopeItemId,
           envelope: {
             qrToken: token,
+            // The QR link on the certificate is for a finished document only.
+            status: DocumentStatus.COMPLETED,
+            deletedAt: null,
           },
         };
       }

@@ -2,7 +2,7 @@ import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import { useEnvelopeAutosave } from '@documenso/lib/client-only/hooks/use-envelope-autosave';
 import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
 import { useCurrentEnvelopeEditor } from '@documenso/lib/client-only/providers/envelope-editor-provider';
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, isEnvelopeUploadTooLarge } from '@documenso/lib/constants/app';
 import { nanoid } from '@documenso/lib/universal/id';
 import { megabytesToBytes } from '@documenso/lib/universal/unit-convertions';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
@@ -24,6 +24,7 @@ import { ErrorCode as DropzoneErrorCode, type FileRejection, useDropzone } from 
 
 import { EnvelopeItemDeleteDialog } from '~/components/dialogs/envelope-item-delete-dialog';
 import { useCspNonce } from '~/utils/nonce';
+import { ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE } from '~/utils/toast-error-messages';
 
 import { EnvelopeEditorInvalidDirectTemplateAlert } from './envelope-editor-invalid-direct-template-alert';
 import { EnvelopeEditorRecipientForm } from './envelope-editor-recipient-form';
@@ -152,6 +153,17 @@ export const EnvelopeEditorUploadPage = () => {
   });
 
   const onFileDrop = async (files: File[]) => {
+    if (isEnvelopeUploadTooLarge(files)) {
+      toast({
+        title: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.title),
+        description: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.description),
+        variant: 'destructive',
+        duration: 7500,
+      });
+
+      return;
+    }
+
     const newUploadingFiles: (LocalFile & {
       file: File;
     })[] = files.map((file) => ({

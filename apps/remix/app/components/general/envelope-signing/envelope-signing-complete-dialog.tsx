@@ -5,6 +5,7 @@ import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { TRecipientAccessAuth } from '@documenso/lib/types/document-auth';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
+import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { trpc } from '@documenso/trpc/react';
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { useLingui } from '@lingui/react/macro';
@@ -124,7 +125,7 @@ export const EnvelopeSignerCompleteDialog = () => {
         return;
       }
 
-      if (envelope.documentMeta.redirectUrl) {
+      if (envelope.documentMeta.redirectUrl && isValidRedirectUrl(envelope.documentMeta.redirectUrl)) {
         window.location.href = envelope.documentMeta.redirectUrl;
       } else {
         window.location.href = `/sign/${recipient.token}/complete`;
@@ -207,7 +208,7 @@ export const EnvelopeSignerCompleteDialog = () => {
         return;
       }
 
-      if (redirectUrl) {
+      if (redirectUrl && isValidRedirectUrl(redirectUrl)) {
         window.location.href = redirectUrl;
       } else {
         window.location.href = `/sign/${token}/complete`;

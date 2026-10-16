@@ -35,6 +35,10 @@
  * connections. The job is then enqueued after the shutdown began, by
  * construction. The document is still a draft when the body is released, which
  * shows the handler had not yet run.
+ *
+ * The held part of the body is not idle. The server answers 408 to a body that
+ * sends less than 32 KiB/s over 10 s, so the spec pads the JSON with
+ * leading whitespace and trickles the padding at 48 KiB/s until release.
  */
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -100,20 +104,33 @@ const seedV1Document = async (userId: number, teamId: number, label: string) => 
 
 type SendResult = { status: number; text: string; at: number } | { error: string; at: number };
 
+/** Whitespace ahead of the held send's JSON: 48 KiB/s for about 170 s, under the 10 MiB JSON limit. */
+const HOLD_PADDING_BYTES = 8 * 1024 * 1024;
+const HOLD_TRICKLE_BYTES = 4.8 * 1024;
+const HOLD_TRICKLE_MS = 100;
+
 /**
- * A V1 send whose headers and first half of body go out at once and whose
- * remainder waits for `release()`. Its own connection (no agent), so nothing
+ * A V1 send whose headers go out at once and whose body trickles whitespace
+ * until `release()` sends the rest. Its own connection (no agent), so nothing
  * else shares or reuses it.
  */
 const holdSend = (server: WedgeServer, token: string, documentId: number) => {
-  const body = JSON.stringify({ sendEmail: true });
-  const split = Math.floor(body.length / 2);
+  const body = ' '.repeat(HOLD_PADDING_BYTES) + JSON.stringify({ sendEmail: true });
+  let split = Math.floor(HOLD_TRICKLE_BYTES);
   const url = new URL(`${server.origin}/api/v1/documents/${documentId}/send`);
   let release: () => number = () => 0;
   let connected: () => void = () => {};
   const isConnected = new Promise<void>((resolve) => (connected = resolve));
 
   const response = new Promise<SendResult>((resolve) => {
+    let trickle: NodeJS.Timeout | undefined;
+
+    // Stop the trickle however the request ends, so a failure before release does not keep writing.
+    const settle = (result: SendResult) => {
+      clearInterval(trickle);
+      resolve(result);
+    };
+
     const req = http.request(
       {
         hostname: url.hostname,
@@ -132,17 +149,25 @@ const holdSend = (server: WedgeServer, token: string, documentId: number) => {
 
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => (text += chunk));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, text, at: Date.now() }));
-        res.on('error', (error) => resolve({ error: error.message, at: Date.now() }));
+        res.on('end', () => settle({ status: res.statusCode ?? 0, text, at: Date.now() }));
+        res.on('error', (error) => settle({ error: error.message, at: Date.now() }));
       },
     );
 
-    req.on('error', (error) => resolve({ error: error.message, at: Date.now() }));
+    req.on('error', (error) => settle({ error: error.message, at: Date.now() }));
     req.on('socket', (socket) => socket.on('connect', () => connected()));
     req.flushHeaders();
     req.write(body.slice(0, split));
 
+    trickle = setInterval(() => {
+      const next = Math.min(split + Math.floor(HOLD_TRICKLE_BYTES), HOLD_PADDING_BYTES);
+
+      req.write(body.slice(split, next));
+      split = next;
+    }, HOLD_TRICKLE_MS);
+
     release = () => {
+      clearInterval(trickle);
       req.end(body.slice(split));
 
       return Date.now();

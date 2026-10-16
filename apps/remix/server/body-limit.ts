@@ -1,6 +1,9 @@
 import type { IncomingMessage } from 'node:http';
 
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
+import {
+  APP_DOCUMENT_UPLOAD_SIZE_LIMIT,
+  APP_ENVELOPE_UPLOAD_TOTAL_SIZE_LIMIT_BYTES,
+} from '@documenso/lib/constants/app';
 import { getIpAddress } from '@documenso/lib/universal/get-ip-address';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -25,20 +28,15 @@ const UPLOAD_FILE_MAX_BYTES = APP_DOCUMENT_UPLOAD_SIZE_LIMIT * MEBIBYTE;
 /** Room for multipart boundaries, part headers and the small text fields beside a file. */
 const MULTIPART_OVERHEAD_BYTES = MEBIBYTE;
 
-/**
- * Files one tRPC or API v2 request may legitimately carry.
- *
- * Envelope creation and the embedded editor take `files` as a repeatable form
- * field, up to the organisation's `envelopeItemCount` claim. That claim
- * defaults to 5 (`DEFAULT_MINIMUM_ENVELOPE_ITEM_COUNT`) and an admin can raise
- * it with no upper bound, so no static figure is exact. Ten covers the default
- * twice over; an organisation given more than ten items would be refused here.
- */
-const MAX_FILES_PER_REQUEST = 10;
-
 export const FILE_UPLOAD_BODY_LIMIT_BYTES = UPLOAD_FILE_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
 
-export const MULTIPART_API_BODY_LIMIT_BYTES = MAX_FILES_PER_REQUEST * UPLOAD_FILE_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
+/**
+ * Multipart bodies on tRPC and API v2, which may carry several files: the files
+ * the upload screens allow together, plus the form around them. That is 64 MiB,
+ * one client's share of the byte budget, which a declared body reserves, so a
+ * larger body is refused as too large rather than always as busy.
+ */
+export const MULTIPART_API_BODY_LIMIT_BYTES = APP_ENVELOPE_UPLOAD_TOTAL_SIZE_LIMIT_BYTES + MULTIPART_OVERHEAD_BYTES;
 
 /**
  * JSON bodies on tRPC and API v2. The largest legitimate ones are a profile
@@ -47,6 +45,16 @@ export const MULTIPART_API_BODY_LIMIT_BYTES = MAX_FILES_PER_REQUEST * UPLOAD_FIL
  * megabyte in practice; ten leaves a wide margin.
  */
 export const JSON_API_BODY_LIMIT_BYTES = 10 * MEBIBYTE;
+
+/** `/api/auth/*`, whose sign-in, password and two-factor bodies are a few KB at most. */
+export const AUTH_BODY_LIMIT_BYTES = MEBIBYTE;
+
+/**
+ * `/api/jobs/*`. Production's BullMQ handler reads no body outside the admin
+ * board, but the local provider's bulk-send payload, a CSV of up to 4M
+ * characters, can serialise to about 12 MiB.
+ */
+export const JOBS_BODY_LIMIT_BYTES = 16 * MEBIBYTE;
 
 /**
  * Most a body is read past the limit before it is refused, so the connection
@@ -149,9 +157,10 @@ const PRE_READ_CHECK_MS = 100;
 const PRE_READ_WINDOW_SLOTS = PRE_READ_WINDOW_MS / PRE_READ_CHECK_MS;
 
 /**
- * Bytes all chunked pre-reads may hold at once, about 6 % of the 4096 MiB
- * task. Tricklers hold none of it. A chunk that would take the total past it
- * is answered 503 with `Retry-After: 1` and `Connection: close`.
+ * Bytes all chunked pre-reads and declared bodies may hold at once, about 6 %
+ * of the 4096 MiB task. A chunk or a declared length that would take the total
+ * past it is answered 503 with `Retry-After: 1` and `Connection: close`. A
+ * declared body reserves its whole length before the route reads it.
  */
 const MAX_HELD_PRE_READ_BYTES = 256 * MEBIBYTE;
 
@@ -166,6 +175,20 @@ let heldPreReadBytes = 0;
 const MAX_HELD_PRE_READ_BYTES_PER_CLIENT = 64 * MEBIBYTE;
 
 const heldPreReadBytesByClient = new Map<string, number>();
+
+/** Count `bytes` against the budget and `client`'s share, or report that they do not fit. */
+const tryHold = (client: string, bytes: number) => {
+  const clientHeld = heldPreReadBytesByClient.get(client) ?? 0;
+
+  if (heldPreReadBytes + bytes > MAX_HELD_PRE_READ_BYTES || clientHeld + bytes > MAX_HELD_PRE_READ_BYTES_PER_CLIENT) {
+    return false;
+  }
+
+  heldPreReadBytes += bytes;
+  heldPreReadBytesByClient.set(client, clientHeld + bytes);
+
+  return true;
+};
 
 const clientKey = (c: Context) => {
   try {
@@ -276,17 +299,10 @@ const preReadBody = async (
         return { kind: 'over-limit' };
       }
 
-      const clientHeld = heldPreReadBytesByClient.get(client) ?? 0;
-
-      if (
-        heldPreReadBytes + value.length > MAX_HELD_PRE_READ_BYTES ||
-        clientHeld + value.length > MAX_HELD_PRE_READ_BYTES_PER_CLIENT
-      ) {
+      if (!tryHold(client, value.length)) {
         return { kind: 'busy' };
       }
 
-      heldPreReadBytes += value.length;
-      heldPreReadBytesByClient.set(client, clientHeld + value.length);
       hold(value.length);
       chunks.push(value);
     }
@@ -448,6 +464,14 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
     return onError(c);
   };
 
+  const answerBusy = (c: Context, reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    lingerAfterAnswer(c, reader);
+    c.header('Connection', 'close');
+    c.header('Retry-After', '1');
+
+    return c.json({ error: 'Service unavailable' }, 503);
+  };
+
   const limit = async (c: Context, next: Next, client: string, hold: (bytes: number) => void) => {
     if (!c.req.raw.body) {
       return await next();
@@ -467,6 +491,14 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
       }
 
       const reader = c.req.raw.body.getReader();
+
+      // The route's parser will buffer the whole declared length, so it is held before the route runs.
+      if (!tryHold(client, contentLength)) {
+        return answerBusy(c, reader);
+      }
+
+      hold(contentLength);
+
       const watched = watchBody(reader);
       const requestInit: RequestInit & { duplex: 'half' } = { body: watched.body, duplex: 'half' };
 
@@ -494,11 +526,7 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
       }
 
       if (result.kind === 'busy') {
-        lingerAfterAnswer(c, reader);
-        c.header('Connection', 'close');
-        c.header('Retry-After', '1');
-
-        return c.json({ error: 'Service unavailable' }, 503);
+        return answerBusy(c, reader);
       }
 
       const { chunks } = result;
@@ -529,7 +557,7 @@ const bodyLimit = (options: { maxSize: number; onError: (c: Context) => Response
     }
   };
 
-  // The pre-read's bytes stay held until the route has finished with them, whichever way the request ends.
+  // Held bytes, pre-read or declared, stay held until the route has finished with them, whichever way the request ends.
   return async (c, next) => {
     const client = clientKey(c);
     let held = 0;
@@ -572,6 +600,24 @@ const chunkedMultipartApiBodyLimit = bodyLimit({
 
 const jsonApiBodyLimit = bodyLimit({
   maxSize: JSON_API_BODY_LIMIT_BYTES,
+  onError: (c) => c.json({ error: 'Payload too large' }, 413),
+});
+
+/**
+ * For `/api/v1/*`, which takes JSON only and parses it before checking the
+ * token, so any body, multipart included, is held to the JSON ceiling.
+ */
+export const apiV1BodyLimit = jsonApiBodyLimit;
+
+/** For `/api/auth/*`, which parses JSON before every handler and its sign-in checks. */
+export const authBodyLimit = bodyLimit({
+  maxSize: AUTH_BODY_LIMIT_BYTES,
+  onError: (c) => c.json({ error: 'Payload too large' }, 413),
+});
+
+/** For `/api/jobs/*`, whose local provider reads the body before checking its signature. */
+export const jobsBodyLimit = bodyLimit({
+  maxSize: JOBS_BODY_LIMIT_BYTES,
   onError: (c) => c.json({ error: 'Payload too large' }, 413),
 });
 

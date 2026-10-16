@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 11 October 2026. This file is the notice that section
+program, and this version is dated 16 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -38,6 +38,17 @@ new user joins the deployment's single organisation rather than receiving a pers
 Only an administrator can create that organisation, and no one can create a second. A
 session ends eight hours after sign-in and is never extended by use.
 
+A signer who must be signed in to act, as for a company seal, is sent from the signing page
+to the sign-in page, which used to hide its Microsoft button on that route and so showed an
+empty form; the button now stays. The address a person returns to after sign-in has any
+leading run of slashes and backslashes collapsed to one, and is dropped unless it resolves
+to the application's own origin, so a value such as `/.//evil.com` cannot send the browser,
+or the server's redirect at the end of single sign-on, to another site. Two-factor setup is
+refused while two-factor is on, so a signed-in session cannot replace the authenticator and
+backup codes without a code. Enabling two-factor succeeds only while the stored secret is
+the one whose code was checked, so a setup that lands in the middle cannot leave two-factor
+on for a secret the user never confirmed.
+
 A scheduled job reconciles access against the directory, either a configured group or the
 whole tenant, so a person who leaves loses access without a manual step. Disabled,
 deleted and guest accounts count as gone, and disabling a user ends the sessions they
@@ -63,6 +74,10 @@ both when the role is chosen and when a link token is redeemed. A role change th
 have no effect, because the person's groups grant a higher role, is refused with the names
 of those groups, and the rows involved are locked while the decision is made so that a
 concurrent change cannot slip underneath it.
+
+Recipient suggestions include a team's members only when the person asking belongs to that
+team. The team was taken from a request header and never checked, so a signed-in user could name
+another organisation's team and read its members' names and addresses.
 
 ## Signing and certificates
 
@@ -90,7 +105,11 @@ cannot keep owner restrictions, because its sealing path drops them, so a restri
 refused there, whether it is sent directly, copied or made from a template, with a message
 that names the cause. An uploaded PDF is parsed once in each stage and the parsed document
 is handed on, where it was parsed again in every stage. The messages shown when a protected
-or broken PDF is refused are in the translation catalogs.
+or broken PDF is refused are in the translation catalogs. A signature that carries its own
+revocation lists and a timestamp, as PandaDoc's do, can need more than the 10,000 ASN.1
+nodes the parsing library allows by default, and such a file was refused as already
+broken; the signature parser now allows 100,000, which still bounds what a sender can make
+it read.
 
 Validation data is not trusted until it is checked. Revocation responses are verified,
 and the certificate that issued them is proved before it is believed. Timestamp tokens
@@ -146,7 +165,11 @@ signing email or a reminder is sent. A refusal is logged and the notification sk
 a signer who has already signed keeps that signature. A document created in two steps through
 API v1 names an object that the upload URL can write for an hour. At send, the checked PDF is
 therefore copied to a key that was never offered for upload and the document's record is
-pointed at the copy, so a later upload to the URL changes nothing the document reads. Two
+pointed at the copy, so a later upload to the URL changes nothing the document reads. A
+document made from a template under S3 or Azure storage took the template's own object as its
+original PDF, so for the hour the template's upload URL stayed valid an upload to it changed
+the document's original and what a reseal reads; the original bytes are now stored under a
+key of the document's own. Two
 sends of the same draft at once leave one stored copy, and the one that loses is refused
 with a conflict error.
 
@@ -172,9 +195,19 @@ right-hand end of `X-Forwarded-For`, which the trusted proxy writes, rather than
 left, which the client controls. Access rules are checked on every signing action and not
 only when the page loads. An emailed access code locks for an hour after five wrong
 attempts, and a document it protects is withheld, with its files, until the code is
-entered. An unused query that returned a document's data to a signed-in recipient without
+entered, on the completion, rejected and expired pages and in the attachment list as well as
+on the signing page; without the code, those pages send the recipient to the code prompt and
+return once it is entered. The link in the QR code, which every document is given when it is
+created, serves the files and the share page only for a completed document that has not been
+deleted, and it stays public there because the certificate prints it. An unused query that returned a document's data to a signed-in recipient without
 the code is removed. Writes authenticated by a cookie are refused when they come from another
-origin.
+origin, and the job dashboard is no longer exempt from that check. The dashboard is also
+read-only: it shows jobs and refuses every request to add, retry, promote, remove, clean,
+pause or resume them. A redirect address given for after signing must be an http or https
+URL when a document is created through API v1, and the signing pages follow a stored one only
+when it is, falling back to the completion page, so a `javascript:` or `data:` address saved
+before this check is never followed, nor copied onto a new document from a template or a
+duplicate.
 
 Each webhook delivery that has a secret is signed with HMAC-SHA256 over a timestamp and
 the body, in `X-TerraPay-Timestamp` and `X-TerraPay-Signature`, so a receiver can check
@@ -183,27 +216,45 @@ the address it has just validated, fails closed when the address cannot be resol
 caps the response it stores. Every outbound request, to a webhook or to an identity
 provider, connects only to the addresses checked when it was validated, so a second DNS
 answer cannot redirect it, and the lookup counts against the request's deadline. Request
-bodies are capped before anything reads them, and a request refused for its size is answered
+bodies are capped before anything reads them. API v1 is held to the 10 MiB JSON limit
+whatever its content type, the authentication routes to 1 MiB and the job routes to 16 MiB.
+A multipart body that may carry several files and declares its length is capped at 64 MiB,
+where it allowed ten files at the full single-file limit, a chunked one at the single-file
+limit, and the upload screens add up the chosen files first and ask
+for them one at a time above 63 MiB. A request refused for its size is answered
 with 413 reliably: the server reads and discards a bounded part of the body, limited by
 rate and by how many run at once, so the refusal does not reset the connection and slow
 senders cannot hold connections open. A request body that arrives too slowly is refused
 with 408 whether it is chunked or declares its length: the first byte must arrive within
 3 seconds, the body must keep up 32 KiB a second over any 10 seconds, and the whole body
 must arrive within 180 seconds, where upstream held such a connection until Node's
-300-second request timeout. Chunked bodies read ahead of the route may hold 256 MiB in all
-and 64 MiB for one client, past which the server answers 503. Document files are sent as private and
+300-second request timeout. Chunked bodies read ahead of the route, and bodies that declare
+their length, which reserve that length before they are read, may hold 256 MiB in all and
+64 MiB for one client, past which the server answers 503. The server keeps an idle
+connection open for 65 seconds, so a proxy in front of it that closes idle connections after
+60 seconds cannot send a request on one the server is closing. Document files are sent as private and
 uncacheable, so no shared cache keeps a copy of a contract. Signing tokens are kept out of logs,
 only embedded pages may be framed, and the health endpoint does not publish error detail.
 Runtime dependencies with reachable advisories (postcss-selector-parser, proxy-addr,
-compression and source-map-js) are patched, and a test shows that a branding stylesheet
-selector built to stall the parser no longer does.
+compression and source-map-js) are patched. A branding stylesheet keeps only colour,
+background, border, outline and font properties, where a list of refused properties missed
+declarations in nested rules and outside any rule and those written with CSS escapes. Values
+are read token by token and only colour and gradient functions survive, border and outline
+widths are capped at 16px, 1em or 1rem, and a stylesheet is cleaned again each time a signing
+page loads it, so one saved earlier cannot set the position, stacking, transform, size or
+margins of the page's controls either.
 
 ## Signing pages and staff screens
 
 The button that published a signer's name and signature as a shareable card is removed,
 along with the code behind it. "Require account" is not offered as an access rule, because
 an external signer cannot hold an account. A document that still has a placeholder
-recipient is refused at send. Placeholder addresses use the reserved `.invalid` domain,
+recipient is refused at send. In the version 2 editor a name field shows its
+recipient's name and a date field today's date, in the document's format and time zone, laid
+out as the signed field will be, so a sender can see whether the value fits; nothing is
+stored. A document address under a team that does not exist, or one the user is not in,
+shows a not-found page, where it failed with a server error, and the page shown depends on the team alone, never on
+whether the document exists. Placeholder addresses use the reserved `.invalid` domain,
 and webhooks carry their secret in an `X-TerraPay-Secret` header as well as upstream's
 header. Staff who need help are sent to the deployment's own support address, billing code
 that could never run here is deleted, and the security settings offer only the options the
@@ -213,7 +264,8 @@ blocklist are removed, since none of them can act on a deployment with no billin
 sending mailbox and sign-in through Entra alone, and the statistics page names the running
 release rather than upstream's version. Every page except an embedded one links to this
 repository, which is the offer of source that section 13 of the licence requires. All ten
-offered languages are fully translated.
+offered languages are fully translated, and a test fails if any message is left without a
+translation.
 
 ## Company seals
 
@@ -226,7 +278,10 @@ and the image applied is copied onto the field, so a sealed document never reads
 record again. The audit log names the seal and the legal entity and records the SHA-256 of
 the image applied, and the certificate of completion lists each seal applied with its legal
 entity and the time. The seal is visual: the document's
-digital signature is the deployment's own, as before.
+digital signature is the deployment's own, as before. The owner's view of a pending document
+draws a seal already applied, where it showed the word "Signature", and a seal not yet
+applied shows its label. The owner's view receives a seal image only for a viewer in the document's own team, and a
+signer's signature pad is never filled in with a seal they have applied.
 
 ## Background jobs
 

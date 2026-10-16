@@ -1,6 +1,6 @@
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
 import { useMaximumEnvelopeItemCount } from '@documenso/lib/client-only/hooks/use-maximum-envelope-item-count';
-import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
+import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT, isEnvelopeUploadTooLarge } from '@documenso/lib/constants/app';
 import { getAllowedUploadMimeTypes } from '@documenso/lib/constants/document-conversion';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError } from '@documenso/lib/errors/app-error';
@@ -20,7 +20,7 @@ import { ErrorCode as DropzoneErrorCode, type FileRejection, useDropzone } from 
 import { useNavigate, useParams } from 'react-router';
 
 import { useCurrentTeam } from '~/providers/team';
-import { getUploadErrorMessage } from '~/utils/toast-error-messages';
+import { ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE, getUploadErrorMessage } from '~/utils/toast-error-messages';
 
 export interface EnvelopeDropZoneWrapperProps {
   children: ReactNode;
@@ -49,6 +49,17 @@ export const EnvelopeDropZoneWrapper = ({ children, type, className }: EnvelopeD
   const { mutateAsync: createEnvelope } = trpc.envelope.create.useMutation();
 
   const onFileDrop = async (files: File[]) => {
+    if (isEnvelopeUploadTooLarge(files)) {
+      toast({
+        title: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.title),
+        description: i18n._(ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE.description),
+        variant: 'destructive',
+        duration: 7500,
+      });
+
+      return;
+    }
+
     try {
       setIsLoading(true);
 

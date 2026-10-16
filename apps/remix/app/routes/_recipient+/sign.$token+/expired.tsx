@@ -1,5 +1,6 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
+import { isRecipientAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
@@ -8,7 +9,7 @@ import { Badge } from '@documenso/ui/primitives/badge';
 import { Button } from '@documenso/ui/primitives/button';
 import { Trans } from '@lingui/react/macro';
 import { TimerOffIcon } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, redirect } from 'react-router';
 
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
 import { RecipientBranding } from '~/components/general/recipient-branding';
@@ -43,6 +44,17 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   if (!recipient) {
     throw new Response('Not Found', { status: 404 });
+  }
+
+  // The signing page asks for the emailed access code; send the recipient there rather than show the document.
+  const isAccess2FASatisfied = await isRecipientAccess2FASatisfied({
+    headers: request.headers,
+    documentAuthOptions: document.authOptions,
+    recipient,
+  });
+
+  if (!isAccess2FASatisfied) {
+    throw redirect(`/sign/${token}`);
   }
 
   const isDocumentAccessValid = await isRecipientAuthorized({

@@ -7,6 +7,8 @@ import {
   type PageRenderData,
   useCurrentEnvelopeRender,
 } from '@documenso/lib/client-only/providers/envelope-render-provider';
+import { DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
+import { DEFAULT_DOCUMENT_TIME_ZONE } from '@documenso/lib/constants/time-zones';
 import { FIELD_META_DEFAULT_VALUES } from '@documenso/lib/types/field-meta';
 import {
   convertPixelToPercentage,
@@ -28,11 +30,12 @@ import {
 } from '@documenso/ui/primitives/command';
 import { FRIENDLY_FIELD_TYPE } from '@documenso/ui/primitives/document-flow/types';
 import { useLingui } from '@lingui/react/macro';
-import type { FieldType } from '@prisma/client';
+import { FieldType } from '@prisma/client';
 import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Transformer } from 'konva/lib/shapes/Transformer';
 import { CopyPlusIcon, ShapesIcon, SquareStackIcon, TrashIcon, UserCircleIcon } from 'lucide-react';
+import { DateTime } from 'luxon';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fieldButtonList } from './envelope-editor-fields-drag-drop';
@@ -213,6 +216,23 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
     highlight.moveToTop();
   };
 
+  // What a NAME or DATE field will hold once signed, so the sender can size it.
+  const getPreviewText = (type: FieldType, recipientName?: string) => {
+    if (type === FieldType.NAME) {
+      return recipientName || undefined;
+    }
+
+    if (type === FieldType.DATE) {
+      const { timezone, dateFormat } = envelope.documentMeta;
+
+      return DateTime.now()
+        .setZone(timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
+        .toFormat(dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+    }
+
+    return undefined;
+  };
+
   const unsafeRenderFieldOnLayer = (field: TLocalField) => {
     if (!pageLayer.current) {
       return;
@@ -230,6 +250,7 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
         customText: '',
         inserted: false,
         fieldMeta: field.fieldMeta,
+        previewText: getPreviewText(field.type, recipient?.name),
       },
       translations: getClientSideFieldTranslations(i18n),
       pageWidth: unscaledViewport.width,
@@ -569,6 +590,9 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
     overlappingFieldFormIds,
     isFieldChanging,
     editorFields.selectedField?.formId,
+    envelope.recipients,
+    envelope.documentMeta.timezone,
+    envelope.documentMeta.dateFormat,
   ]);
 
   const setSelectedFields = (nodes: Konva.Node[], options?: { isAutoSelect?: boolean }) => {

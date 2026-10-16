@@ -19,6 +19,8 @@ export type FieldToRender = Pick<
   isValidating?: boolean;
   fieldMeta?: TFieldMetaSchema | null;
   signature?: Pick<Signature, 'signatureImageAsBase64' | 'typedSignature'> | null;
+  /** The value an uninserted field will hold, drawn in edit mode as if inserted. */
+  previewText?: string;
 };
 
 /**

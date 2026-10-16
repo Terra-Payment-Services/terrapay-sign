@@ -3,11 +3,15 @@
  * some other way, so the same-origin check does not apply to them:
  *
  * - /api/v1: the public API, authenticated only by an API token.
- * - /api/jobs: the background job handler, called by the job provider.
+ * - /api/jobs: the background job handler, called by the job provider. The job
+ *   dashboard under it is used from the browser with the session cookie, so it is
+ *   not exempt.
  * - /api/webhook/trigger: inbound webhook calls, authenticated by a secret.
  * - /api/upstream-watch/heartbeat: the watcher heartbeat, a bearer secret.
  */
 const CSRF_EXEMPT_PATH_PREFIXES = ['/api/v1/', '/api/jobs/', '/api/webhook/trigger', '/api/upstream-watch/heartbeat'];
+
+const JOB_BOARD_PATH = '/api/jobs/board';
 
 /**
  * The v2 API takes an API token, and falls back to the session cookie when no
@@ -26,6 +30,10 @@ export const isCsrfExemptRequest = ({
   path: string;
   hasAuthorizationHeader: boolean;
 }): boolean => {
+  if (path === JOB_BOARD_PATH || path.startsWith(`${JOB_BOARD_PATH}/`)) {
+    return false;
+  }
+
   if (CSRF_EXEMPT_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     return true;
   }

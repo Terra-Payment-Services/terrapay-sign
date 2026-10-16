@@ -1,4 +1,5 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
 import { findAttachmentsByEnvelopeId } from '@documenso/lib/server-only/envelope-attachment/find-attachments-by-envelope-id';
 import { findAttachmentsByToken } from '@documenso/lib/server-only/envelope-attachment/find-attachments-by-token';
 
@@ -21,6 +22,13 @@ export const findAttachmentsRoute = maybeAuthenticatedProcedure
     });
 
     if (token) {
+      // The attachments are part of the document, so they wait for the emailed access code too.
+      if (!(await isRecipientTokenAccess2FASatisfied({ headers: ctx.req.headers, token }))) {
+        throw new AppError(AppErrorCode.UNAUTHORIZED, {
+          message: 'The access code must be entered before viewing this document',
+        });
+      }
+
       const data = await findAttachmentsByToken({ envelopeId, token });
 
       return {

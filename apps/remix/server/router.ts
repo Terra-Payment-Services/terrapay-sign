@@ -28,7 +28,7 @@ import type { Logger } from 'pino';
 
 import { downloadRoute } from './api/download/download';
 import { filesRoute } from './api/files/files';
-import { apiBodyLimit, fileUploadBodyLimit } from './body-limit';
+import { apiBodyLimit, apiV1BodyLimit, authBodyLimit, fileUploadBodyLimit, jobsBodyLimit } from './body-limit';
 import { type AppContext, appContext } from './context';
 import { appMiddleware } from './middleware';
 import { securityHeadersMiddleware } from './security-headers';
@@ -117,6 +117,7 @@ app.use('*', sameOriginMiddleware);
 
 // Apply cors and rate limits to API routes.
 app.use(`/api/v1/*`, cors());
+app.use('/api/v1/*', apiV1BodyLimit);
 app.use('/api/v1/*', apiV1RateLimitMiddleware);
 app.use(`/api/v2/*`, cors());
 app.use('/api/v2/*', apiBodyLimit);
@@ -126,6 +127,7 @@ app.use('/api/v2-beta/*', apiBodyLimit);
 app.use('/api/v2-beta/*', apiV2RateLimitMiddleware);
 
 // Auth server.
+app.use('/api/auth/*', authBodyLimit);
 app.route('/api/auth', auth);
 
 // Files route. The body limit comes first so an oversized upload is refused
@@ -136,6 +138,7 @@ app.route('/api/files', filesRoute);
 
 // API servers.
 app.route('/api/v1', tsRestHonoApp);
+app.use('/api/jobs/*', jobsBodyLimit);
 app.use('/api/jobs/*', jobsClient.getApiHandler());
 
 app.use('/api/trpc/*', apiBodyLimit);

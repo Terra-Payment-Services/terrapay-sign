@@ -8,6 +8,12 @@ export type ToastMessageDescriptor = {
   description: MessageDescriptor;
 };
 
+/** Shown before sending files that together exceed one upload request. */
+export const ENVELOPE_UPLOAD_TOO_LARGE_ERROR_MESSAGE = {
+  title: msg`Files too large to upload together`,
+  description: msg`These files add up to more than 63 MB. Upload them one at a time.`,
+};
+
 export const RECIPIENT_LIMIT_EXCEEDED_ERROR_MESSAGE = {
   title: msg`Too many recipients`,
   description: msg`This document has too many recipients. Please remove some recipients or contact support if you need more.`,

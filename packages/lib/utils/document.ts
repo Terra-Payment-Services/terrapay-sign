@@ -7,6 +7,7 @@ import type { TDocumentLite, TDocumentMany } from '../types/document';
 import { DEFAULT_DOCUMENT_EMAIL_SETTINGS } from '../types/document-email';
 import { SignatureLevel } from '../types/signature-level';
 import { mapSecondaryIdToDocumentId } from './envelope';
+import { isValidRedirectUrl } from './is-valid-redirect-url';
 import { mapRecipientToLegacyRecipient } from './recipients';
 
 export const isDocumentCompleted = (document: Pick<Envelope, 'status'> | DocumentStatus) => {
@@ -49,7 +50,7 @@ export const extractDerivedDocumentMeta = (
     dateFormat: meta.dateFormat || settings.documentDateFormat,
     message: meta.message || null,
     subject: meta.subject || null,
-    redirectUrl: meta.redirectUrl || null,
+    redirectUrl: meta.redirectUrl && isValidRedirectUrl(meta.redirectUrl) ? meta.redirectUrl : null,
 
     signingOrder: resolveSigningOrder({ signatureLevel, requested: meta.signingOrder }),
     allowDictateNextSigner: meta.allowDictateNextSigner ?? false,

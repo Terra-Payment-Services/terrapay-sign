@@ -46,7 +46,9 @@ export const normalizeReturnTo = (returnTo?: string) => {
 
     const basePath = getBasePath();
 
-    let pathname = returnToUrl.pathname;
+    // "/.//evil.com" resolves to the pathname "//evil.com", which a browser reads as a
+    // protocol-relative URL, so collapse any leading run of slashes to one.
+    let pathname = returnToUrl.pathname.replace(/^[/\\]+/, '/');
 
     // A root-relative returnTo ("/inbox") resolves to a pathname without the
     // sub-path, so re-apply it when it is missing.
@@ -54,7 +56,14 @@ export const normalizeReturnTo = (returnTo?: string) => {
       pathname = `${basePath}${pathname}`;
     }
 
-    return `${pathname}${returnToUrl.search}${returnToUrl.hash}`;
+    const normalized = `${pathname}${returnToUrl.search}${returnToUrl.hash}`;
+
+    // Check the string the caller will redirect to, not only the URL it came from.
+    if (new URL(normalized, NEXT_PUBLIC_WEBAPP_URL()).origin !== getWebAppOrigin()) {
+      return undefined;
+    }
+
+    return normalized;
   } catch {
     return undefined;
   }
