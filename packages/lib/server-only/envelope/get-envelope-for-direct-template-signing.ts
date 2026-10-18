@@ -150,7 +150,8 @@ export const getEnvelopeForDirectTemplateSigning = async ({
       };
 
   return ZEnvelopeForSigningResponse.parse({
-    envelope,
+    // With "Send on Behalf of Team" off, the owner's name and email do not reach the signer's browser.
+    envelope: { ...envelope, user: sender },
     recipient: {
       ...recipient,
       directToken: envelope.directLink?.token || '',

@@ -12,12 +12,14 @@ import {
 } from '@documenso/lib/server-only/company-seal/company-seal-field';
 import { assertRecipientAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
+import { lockEnvelopeForRecipientAction } from '@documenso/lib/server-only/recipient/lock-envelope-for-recipient-action';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { DocumentAuth } from '@documenso/lib/types/document-auth';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
 import { assertRecipientNotExpired } from '@documenso/lib/utils/recipients';
 import { prisma } from '@documenso/prisma';
+import type { Prisma } from '@prisma/client';
 import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { match } from 'ts-pattern';
 
@@ -132,6 +134,22 @@ export const signEnvelopeFieldRoute = procedure
       });
     }
 
+    // Re-checked under the envelope lock inside each write, so a rejection that commits after the checks
+    // above still stops this sign.
+    const assertRecipientCanStillSign = async (tx: Prisma.TransactionClient) => {
+      const actor = await lockEnvelopeForRecipientAction(tx, {
+        envelopeId: envelope.id,
+        recipientId: recipient.id,
+        fieldRecipientId: field.recipientId,
+      });
+
+      if (actor.signingStatus === SigningStatus.SIGNED) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has already signed`,
+        });
+      }
+    };
+
     if (field.fieldMeta?.readOnly) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: `Field ${fieldId} is read only`,
@@ -170,6 +188,8 @@ export const signEnvelopeFieldRoute = procedure
     // Early return for uninserting fields.
     if (!insertionValues.inserted) {
       return await prisma.$transaction(async (tx) => {
+        await assertRecipientCanStillSign(tx);
+
         const updatedField = await tx.field.update({
           where: {
             id: field.id,
@@ -254,6 +274,8 @@ export const signEnvelopeFieldRoute = procedure
     }
 
     return await prisma.$transaction(async (tx) => {
+      await assertRecipientCanStillSign(tx);
+
       const updatedField = await tx.field.update({
         where: {
           id: field.id,

@@ -30,6 +30,7 @@ import { assertRecipientNotExpired } from '../../utils/recipients';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
 import { assertRecipientAccessAuthorized } from '../document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '../document/validate-field-auth';
+import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 
 export type SignFieldWithTokenOptions = {
   token: string;
@@ -72,7 +73,7 @@ export const signFieldWithToken = async ({
     },
   });
 
-  const field = await prisma.field.findFirstOrThrow({
+  const field = await prisma.field.findFirst({
     where: {
       id: fieldId,
       recipient: {
@@ -101,6 +102,13 @@ export const signFieldWithToken = async ({
     },
   });
 
+  // A nullable lookup: an assistant's target may complete between requests, which must be a 4xx.
+  if (!field) {
+    throw new AppError(AppErrorCode.NOT_FOUND, {
+      message: `Field ${fieldId} not found`,
+    });
+  }
+
   const { envelope } = field;
 
   if (!envelope) {
@@ -116,17 +124,23 @@ export const signFieldWithToken = async ({
   }
 
   if (envelope.status !== DocumentStatus.PENDING) {
-    throw new Error(`Document ${envelope.id} must be pending for signing`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Document ${envelope.id} must be pending for signing`,
+    });
   }
 
   assertRecipientNotExpired(recipient);
 
   if (recipient.signingStatus === SigningStatus.SIGNED || field.recipient.signingStatus === SigningStatus.SIGNED) {
-    throw new Error(`Recipient ${recipient.id} has already signed`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Recipient ${recipient.id} has already signed`,
+    });
   }
 
   if (field.inserted) {
-    throw new Error(`Field ${fieldId} has already been inserted`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Field ${fieldId} has already been inserted`,
+    });
   }
 
   // The V1 signing path cannot apply a company seal. Seal fields exist only on V2 envelopes.
@@ -273,6 +287,27 @@ export const signFieldWithToken = async ({
   const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
 
   return await prisma.$transaction(async (tx) => {
+    const actor = await lockEnvelopeForRecipientAction(tx, {
+      envelopeId: envelope.id,
+      recipientId: recipient.id,
+      fieldRecipientId: field.recipientId,
+    });
+
+    if (actor.signingStatus === SigningStatus.SIGNED) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} has already signed`,
+      });
+    }
+
+    // Every field writer takes the lock, so a second sign of the same field sees the first here.
+    const lockedField = await tx.field.findUniqueOrThrow({ where: { id: field.id }, select: { inserted: true } });
+
+    if (lockedField.inserted) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Field ${fieldId} has already been inserted`,
+      });
+    }
+
     const updatedField = await tx.field.update({
       where: {
         id: field.id,

@@ -72,15 +72,17 @@ export const EnvelopeDistributeDialog = ({
 
   const { mutateAsync: distributeEnvelope } = trpcReact.envelope.distribute.useMutation();
 
-  const form = useForm<TEnvelopeDistributeFormSchema>({
-    defaultValues: {
-      meta: {
-        emailReplyTo: envelope.documentMeta?.emailReplyTo || undefined,
-        subject: envelope.documentMeta?.subject ?? '',
-        message: envelope.documentMeta?.message ?? '',
-        distributionMethod: envelope.documentMeta?.distributionMethod || DocumentDistributionMethod.EMAIL,
-      },
+  const getMetaFormValues = (): TEnvelopeDistributeFormSchema => ({
+    meta: {
+      emailReplyTo: envelope.documentMeta?.emailReplyTo || undefined,
+      subject: envelope.documentMeta?.subject ?? '',
+      message: envelope.documentMeta?.message ?? '',
+      distributionMethod: envelope.documentMeta?.distributionMethod || DocumentDistributionMethod.EMAIL,
     },
+  });
+
+  const form = useForm<TEnvelopeDistributeFormSchema>({
+    defaultValues: getMetaFormValues(),
     resolver: zodResolver(ZEnvelopeDistributeFormSchema),
   });
 
@@ -215,12 +217,15 @@ export const EnvelopeDistributeDialog = ({
     setIsSyncing(false);
   };
 
+  // The dialog stays mounted for the whole editor session, so take the saved settings afresh on each
+  // open, and again once a sync has replaced the envelope.
   useEffect(() => {
-    // Default the distribution method tab to the envelope's configured setting.
-    if (isOpen && envelope.documentMeta) {
-      setValue('meta.distributionMethod', envelope.documentMeta.distributionMethod);
+    if (isOpen && !isSyncing) {
+      form.reset(getMetaFormValues());
     }
+  }, [isOpen, isSyncing]);
 
+  useEffect(() => {
     // Resync the whole envelope if the envelope is mid saving.
     if (isOpen && (isAutosaving || autosaveError)) {
       void handleSync();
@@ -249,7 +254,8 @@ export const EnvelopeDistributeDialog = ({
         {!invalidEnvelopeCode || isSyncing ? (
           <Form {...form}>
             <form onSubmit={handleSubmit(onFormSubmit)}>
-              <fieldset disabled={isSubmitting}>
+              {/* Nothing is editable until a sync has finished and the form has been reset from it. */}
+              <fieldset disabled={isSubmitting || isSyncing}>
                 {hasOverlappingEnvelopeFields && (
                   <Alert variant="warning" className="mb-4 flex flex-row items-start gap-3">
                     <AlertTriangleIcon className="mt-0.5 h-5 w-5 flex-shrink-0" />

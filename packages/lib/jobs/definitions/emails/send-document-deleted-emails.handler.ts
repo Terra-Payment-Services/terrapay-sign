@@ -1,4 +1,5 @@
 import DocumentCancelTemplate from '@documenso/email/templates/document-cancel';
+import { prisma } from '@documenso/prisma';
 import { msg } from '@lingui/core/macro';
 import { createElement } from 'react';
 
@@ -17,14 +18,15 @@ export const run = async ({ payload, io }: { payload: TSendDocumentDeletedEmails
     return;
   }
 
-  const { branding, emailLanguage, senderEmail, replyToEmail, emailsDisabled, emailTransport } = await getEmailContext({
-    emailType: 'RECIPIENT',
-    source: {
-      type: 'team',
-      teamId,
-    },
-    meta,
-  });
+  const { branding, emailLanguage, senderEmail, replyToEmail, emailsDisabled, emailTransport, settings } =
+    await getEmailContext({
+      emailType: 'RECIPIENT',
+      source: {
+        type: 'team',
+        teamId,
+      },
+      meta,
+    });
 
   // Don't send cancellation emails if the organisation has email sending
   // disabled. Re-checked here (not just at enqueue time) because the org can be
@@ -32,6 +34,14 @@ export const run = async ({ payload, io }: { payload: TSendDocumentDeletedEmails
   if (emailsDisabled) {
     return;
   }
+
+  // "Send on Behalf of Team" off names the team, not the member who deleted it.
+  const team = settings.includeSenderDetails
+    ? null
+    : await prisma.team.findUniqueOrThrow({
+        where: { id: teamId },
+        select: { name: true, teamEmail: { select: { email: true } } },
+      });
 
   const assetBaseUrl = NEXT_PUBLIC_WEBAPP_URL() || 'http://localhost:3000';
   const i18n = await getI18nInstance(emailLanguage);
@@ -44,8 +54,8 @@ export const run = async ({ payload, io }: { payload: TSendDocumentDeletedEmails
 
       const template = createElement(DocumentCancelTemplate, {
         documentName,
-        inviterName: inviterName || undefined,
-        inviterEmail,
+        inviterName: team ? team.name : inviterName || undefined,
+        inviterEmail: team ? team.teamEmail?.email : inviterEmail,
         assetBaseUrl,
       });
 

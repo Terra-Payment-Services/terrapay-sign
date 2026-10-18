@@ -8,11 +8,17 @@ import { parseDocumentAuditLogData } from '../../utils/document-audit-logs';
 import { getTranslations } from '../../utils/i18n';
 import { getOrganisationClaimByTeamId } from '../organisation/get-organisation-claims';
 import type { GenerateCertificatePdfOptions } from './generate-certificate-pdf';
+import { type AuditLogSenderStandIn, hideSenderInAuditLogs } from './hide-sender-in-audit-logs';
 import { renderAuditLogs } from './render-audit-logs';
 
 type GenerateAuditLogPdfOptions = GenerateCertificatePdfOptions & {
   envelopeItems: string[];
   additionalAuditLogs?: TDocumentAuditLog[];
+  /**
+   * Set when sealing with "Send on Behalf of Team" off: the owner and other team members are shown as
+   * this stand-in (the team). Leave unset for the owner's and admin's own audit-log downloads.
+   */
+  senderStandIn?: AuditLogSenderStandIn;
 };
 
 export const generateAuditLogPdf = async (options: GenerateAuditLogPdfOptions) => {
@@ -25,6 +31,7 @@ export const generateAuditLogPdf = async (options: GenerateAuditLogPdfOptions) =
     pageWidth,
     pageHeight,
     additionalAuditLogs = [],
+    senderStandIn,
   } = options;
 
   const documentLanguage = ZSupportedLanguageCodeSchema.parse(language);
@@ -40,11 +47,19 @@ export const generateAuditLogPdf = async (options: GenerateAuditLogPdfOptions) =
     messages,
   });
 
-  const auditLogs: TDocumentAuditLog[] = [...additionalAuditLogs, ...partialAuditLogs];
+  const allAuditLogs: TDocumentAuditLog[] = [...additionalAuditLogs, ...partialAuditLogs];
+
+  const auditLogs = senderStandIn
+    ? hideSenderInAuditLogs(allAuditLogs, {
+        recipientEmails: recipients.map((recipient) => recipient.email),
+        ownerEmail: envelopeOwner.email,
+        standIn: senderStandIn,
+      })
+    : allAuditLogs;
 
   const auditLogPages = await renderAuditLogs({
     envelope,
-    envelopeOwner,
+    envelopeOwner: senderStandIn ?? envelopeOwner,
     envelopeItems,
     recipients,
     auditLogs,

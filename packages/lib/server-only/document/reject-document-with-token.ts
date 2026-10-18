@@ -18,6 +18,7 @@ import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
 import { assertRecipientNotExpired } from '../../utils/recipients';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
+import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
 
 export type RejectDocumentWithTokenOptions = {
@@ -99,8 +100,16 @@ export async function rejectDocumentWithToken({
   }
 
   // Update the recipient status to rejected
-  const [updatedRecipient] = await prisma.$transaction([
-    prisma.recipient.update({
+  const updatedRecipient = await prisma.$transaction(async (tx) => {
+    const actor = await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
+    if (actor.signingStatus !== SigningStatus.NOT_SIGNED) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} has already actioned this document`,
+      });
+    }
+
+    const rejected = await tx.recipient.update({
       where: {
         id: recipient.id,
       },
@@ -109,8 +118,9 @@ export async function rejectDocumentWithToken({
         signingStatus: SigningStatus.REJECTED,
         rejectionReason: reason,
       },
-    }),
-    prisma.documentAuditLog.create({
+    });
+
+    await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({
         envelopeId: envelope.id,
         type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_REJECTED,
@@ -127,8 +137,10 @@ export async function rejectDocumentWithToken({
         },
         requestMetadata,
       }),
-    }),
-  ]);
+    });
+
+    return rejected;
+  });
 
   const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
 

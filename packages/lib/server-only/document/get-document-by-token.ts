@@ -4,6 +4,7 @@ import { EnvelopeType } from '@prisma/client';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { TDocumentAuthMethods } from '../../types/document-auth';
 import { mapSecondaryIdToDocumentId } from '../../utils/envelope';
+import { getTeamSettings } from '../team/get-team-settings';
 import { isRecipientAuthorized } from './is-recipient-authorized';
 
 export interface GetDocumentAndSenderByTokenOptions {
@@ -148,12 +149,15 @@ export const getDocumentAndSenderByToken = async ({
 
   const legacyDocumentId = mapSecondaryIdToDocumentId(result.secondaryId);
 
+  // With "Send on Behalf of Team" off, the owner's name and email do not reach the signer's browser.
+  const { includeSenderDetails } = await getTeamSettings({ teamId: result.teamId });
+
   return {
     ...result,
     user: {
       id: result.user.id,
-      email: result.user.email,
-      name: result.user.name,
+      email: includeSenderDetails ? result.user.email : result.team.teamEmail?.email || '',
+      name: includeSenderDetails ? result.user.name : result.team.name,
     },
     documentData: firstDocumentData,
     id: legacyDocumentId,

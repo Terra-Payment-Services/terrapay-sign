@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 16 October 2026. This file is the notice that section
+program, and this version is dated 17 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -109,7 +109,14 @@ or broken PDF is refused are in the translation catalogs. A signature that carri
 revocation lists and a timestamp, as PandaDoc's do, can need more than the 10,000 ASN.1
 nodes the parsing library allows by default, and such a file was refused as already
 broken; the signature parser now allows 100,000, which still bounds what a sender can make
-it read.
+it read. A PDF may set a page's MediaBox, CropBox and Rotate once on a node of its page tree for
+every page beneath it, and the PDF library read them only from the page itself, so such pages
+could be sized, cropped or rotated wrongly. A page that inherited its MediaBox was taken as US
+Letter, which on an A4 page put sealed fields about 50 points from where the editor showed them,
+and the certificate and audit pages appended to the document took the wrong size. The library
+patch now walks up the tree for the nearest value, treats a null entry as absent and
+stops after 64 levels. The correction is made when a file is read, so it holds for documents
+stored before it as well.
 
 Validation data is not trusted until it is checked. Revocation responses are verified,
 and the certificate that issued them is proved before it is believed. Timestamp tokens
@@ -159,6 +166,16 @@ go to the team that owns the document. A retried completion job does not send th
 completion emails and webhooks twice, and a retried seal job does not seal a finished
 envelope again.
 
+Signing a field, removing a signature, completing and rejecting are refused once any recipient
+has rejected, including a rejection the owner records on a recipient's behalf through API v2.
+Each of these locks the envelope's row and checks again under the lock, so a rejection and any of
+them run one after the other and the later one sees the earlier. Under the same lock, completion reads the
+recipient's fields again and writes its automatic date values, so a refused completion leaves its
+automatic date fields and completion state unchanged. An assistant's write to a field is refused once that field's recipient has signed, and
+when one field of a legacy (V1) document is signed twice at once, one request succeeds and the
+other is refused. Each of
+these refusals is answered with a client error, where several failed with a server error.
+
 A legacy (V1) document's PDF is checked again whenever the document is about to notify
 someone: before the next signer in a sequential order is invited, on resend, and when a
 signing email or a reminder is sent. A refusal is logged and the notification skipped, and
@@ -186,7 +203,10 @@ paths now reuses the row or deletes the one it supersedes. A script in `packages
 reports the rows already left behind and, only when asked, deletes those older than a
 cutoff, seven days by default. It deletes rows and never a stored object, because under
 S3 or Azure several rows can name the same object. Creating a document through API v1 with
-form values also no longer answers 401 after the document has been made.
+form values also no longer answers 401 after the document has been made. Adding a recipient
+through API v1 adds that one recipient. It used to delete and recreate every recipient already on
+the document, which gave each of them a new signing link, deleted their fields and, on a sent
+document, could email them that they had been removed.
 
 ## Recipient and server security
 
@@ -252,7 +272,12 @@ an external signer cannot hold an account. A document that still has a placehold
 recipient is refused at send. In the version 2 editor a name field shows its
 recipient's name and a date field today's date, in the document's format and time zone, laid
 out as the signed field will be, so a sender can see whether the value fits; nothing is
-stored. A document address under a team that does not exist, or one the user is not in,
+stored. Undoing strokes on the signature drawing pad checks the drawing that remains, as drawing
+does, and clears a signature that no longer passes. The version 2 editor's send dialog
+takes the subject, message, reply-to address and distribution method from the saved settings
+each time it opens. It used to keep what it first opened with, send that and save it over later
+changes. Its controls stay disabled while it waits for an editor save still in flight. A
+document address under a team that does not exist, or one the user is not in,
 shows a not-found page, where it failed with a server error, and the page shown depends on the team alone, never on
 whether the document exists. Placeholder addresses use the reserved `.invalid` domain,
 and webhooks carry their secret in an `X-TerraPay-Secret` header as well as upstream's
@@ -266,6 +291,20 @@ release rather than upstream's version. Every page except an embedded one links 
 repository, which is the offer of source that section 13 of the licence requires. All ten
 offered languages are fully translated, and a test fails if any message is left without a
 translation.
+
+When a team's "Send on Behalf of Team" setting is off, set on the team or inherited from its
+organisation, recipients are shown the team in place of the member who sent the document, with the team's
+email address where the message or page shows one. Upstream applied the setting to the
+invitation and to part of the signing page's data; it now covers the places that follow. A
+reminder's heading and default message now name the team, the version 1 signing page
+shows the team where it had the condition inverted, and the data sent to the signing,
+completion, embedded and direct-template pages carries the team in place of the owner. The cancellation, deletion, recipient-removed and rejection-confirmation emails
+name the team too. In the audit pages appended to a sealed PDF the owner card shows the team,
+and the team stands in for every team member an entry names, among them the member a rejection
+was made on behalf of and a delegated owner, and for whoever recorded a rejection on a
+recipient's behalf. A team member who is also a recipient keeps their name on what they do as a
+recipient. The audit log in the
+application and the owner's own audit-log download still name the members.
 
 ## Company seals
 

@@ -8,6 +8,7 @@ import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
 import { assertRecipientAccessAuthorized } from '../document/assert-recipient-access-authorized';
+import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 
 export type RemovedSignedFieldWithTokenOptions = {
   token: string;
@@ -38,7 +39,7 @@ export const removeSignedFieldWithToken = async ({
     },
   });
 
-  const field = await prisma.field.findFirstOrThrow({
+  const field = await prisma.field.findFirst({
     where: {
       id: fieldId,
       recipient: {
@@ -63,6 +64,13 @@ export const removeSignedFieldWithToken = async ({
     },
   });
 
+  // A nullable lookup: an assistant's target may complete between requests, which must be a 4xx.
+  if (!field) {
+    throw new AppError(AppErrorCode.NOT_FOUND, {
+      message: `Field ${fieldId} not found`,
+    });
+  }
+
   const { envelope } = field;
 
   if (!envelope) {
@@ -70,13 +78,17 @@ export const removeSignedFieldWithToken = async ({
   }
 
   if (envelope.status !== DocumentStatus.PENDING) {
-    throw new Error(`Document ${envelope.id} must be pending`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Document ${envelope.id} must be pending`,
+    });
   }
 
   assertRecipientNotExpired(recipient);
 
   if (recipient?.signingStatus === SigningStatus.SIGNED || field.recipient.signingStatus === SigningStatus.SIGNED) {
-    throw new Error(`Recipient ${recipient.id} has already signed`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Recipient ${recipient.id} has already signed`,
+    });
   }
 
   // Unreachable code based on the above query but we need to satisfy TypeScript
@@ -108,6 +120,18 @@ export const removeSignedFieldWithToken = async ({
   }
 
   await prisma.$transaction(async (tx) => {
+    const actor = await lockEnvelopeForRecipientAction(tx, {
+      envelopeId: envelope.id,
+      recipientId: recipient.id,
+      fieldRecipientId: field.recipientId,
+    });
+
+    if (actor.signingStatus === SigningStatus.SIGNED) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} has already signed`,
+      });
+    }
+
     await tx.field.update({
       where: {
         id: field.id,

@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@documenso/prisma', () => ({
   prisma: {
     recipient: { findFirstOrThrow: mocks.recipient },
-    field: { findFirstOrThrow: mocks.field },
+    field: { findFirst: mocks.field },
     documentMeta: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: mocks.transaction,
   },
@@ -141,6 +141,9 @@ describe('an assistant clearing a field it prefilled is audited', () => {
     // Run the callback against a stub tx so the writes inside it are observable.
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
+        // The envelope lock: the query returns nothing and the assistant is still to act.
+        $queryRaw: async () => [],
+        recipient: { findMany: async () => [{ id: assistant.id, signingStatus: assistant.signingStatus }] },
         field: { update: mocks.fieldUpdate },
         signature: { deleteMany: mocks.signatureDeleteMany },
         documentAuditLog: { create: mocks.auditLogCreate },

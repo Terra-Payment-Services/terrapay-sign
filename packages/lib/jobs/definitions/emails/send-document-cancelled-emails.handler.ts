@@ -47,15 +47,24 @@ export const run = async ({ payload, io }: { payload: TSendDocumentCancelledEmai
     },
   });
 
-  const { branding, emailLanguage, senderEmail, replyToEmail, organisationId, claims, emailsDisabled, emailTransport } =
-    await getEmailContext({
-      emailType: 'RECIPIENT',
-      source: {
-        type: 'team',
-        teamId: envelope.teamId,
-      },
-      meta: envelope.documentMeta,
-    });
+  const {
+    branding,
+    emailLanguage,
+    senderEmail,
+    replyToEmail,
+    organisationId,
+    claims,
+    emailsDisabled,
+    emailTransport,
+    settings,
+  } = await getEmailContext({
+    emailType: 'RECIPIENT',
+    source: {
+      type: 'team',
+      teamId: envelope.teamId,
+    },
+    meta: envelope.documentMeta,
+  });
 
   const { documentMeta, user: documentOwner } = envelope;
 
@@ -127,8 +136,9 @@ export const run = async ({ payload, io }: { payload: TSendDocumentCancelledEmai
 
         const template = createElement(DocumentCancelTemplate, {
           documentName: envelope.title,
-          inviterName: documentOwner.name || undefined,
-          inviterEmail: documentOwner.email,
+          // "Send on Behalf of Team" off names the team, not the member who sent it.
+          inviterName: settings.includeSenderDetails ? documentOwner.name || undefined : envelope.team.name,
+          inviterEmail: settings.includeSenderDetails ? documentOwner.email : envelope.team.teamEmail?.email,
           assetBaseUrl: NEXT_PUBLIC_WEBAPP_URL(),
           cancellationReason: cancellationReason || 'The document has been cancelled.',
         });

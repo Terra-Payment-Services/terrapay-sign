@@ -64,14 +64,15 @@ export const run = async ({ payload, io }: { payload: TSendSigningRejectionEmail
     return;
   }
 
-  const { branding, emailLanguage, senderEmail, replyToEmail, emailsDisabled, emailTransport } = await getEmailContext({
-    emailType: 'RECIPIENT',
-    source: {
-      type: 'team',
-      teamId: envelope.teamId,
-    },
-    meta: envelope.documentMeta,
-  });
+  const { branding, emailLanguage, senderEmail, replyToEmail, emailsDisabled, emailTransport, settings } =
+    await getEmailContext({
+      emailType: 'RECIPIENT',
+      source: {
+        type: 'team',
+        teamId: envelope.teamId,
+      },
+      meta: envelope.documentMeta,
+    });
 
   const i18n = await getI18nInstance(emailLanguage);
 
@@ -83,7 +84,10 @@ export const run = async ({ payload, io }: { payload: TSendSigningRejectionEmail
       const recipientTemplate = createElement(DocumentRejectionConfirmedEmail, {
         recipientName: recipient.name,
         documentName: envelope.title,
-        documentOwnerName: envelope.user.name || envelope.user.email,
+        // "Send on Behalf of Team" off names the team, not the member who sent it.
+        documentOwnerName: settings.includeSenderDetails
+          ? envelope.user.name || envelope.user.email
+          : envelope.team.name,
         reason: recipient.rejectionReason || '',
         assetBaseUrl: NEXT_PUBLIC_WEBAPP_URL(),
       });

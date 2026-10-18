@@ -18,6 +18,7 @@ import { mapSecondaryIdToDocumentId } from '../../utils/envelope';
 import { assertRecipientNotExpired } from '../../utils/recipients';
 import { buildTeamWhereQuery } from '../../utils/teams';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 
 export type RejectDocumentOnBehalfOfOptions = {
   /**
@@ -112,8 +113,16 @@ export async function rejectDocumentOnBehalfOf({
 
   // Update the recipient status to rejected and record an external rejection
   // audit log within the same transaction.
-  const [updatedRecipient] = await prisma.$transaction([
-    prisma.recipient.update({
+  const updatedRecipient = await prisma.$transaction(async (tx) => {
+    const actor = await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
+    if (actor.signingStatus !== SigningStatus.NOT_SIGNED) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} has already actioned this document`,
+      });
+    }
+
+    const rejected = await tx.recipient.update({
       where: {
         id: recipient.id,
       },
@@ -122,8 +131,9 @@ export async function rejectDocumentOnBehalfOf({
         signingStatus: SigningStatus.REJECTED,
         rejectionReason: reason,
       },
-    }),
-    prisma.documentAuditLog.create({
+    });
+
+    await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({
         envelopeId: envelope.id,
         type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_REJECTED,
@@ -143,8 +153,10 @@ export async function rejectDocumentOnBehalfOf({
           onBehalfOfUserName: electedUser?.name,
         },
       }),
-    }),
-  ]);
+    });
+
+    return rejected;
+  });
 
   const legacyDocumentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
 

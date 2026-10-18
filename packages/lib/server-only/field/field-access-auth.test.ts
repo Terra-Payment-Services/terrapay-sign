@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@documenso/prisma', () => ({
   prisma: {
     recipient: { findFirstOrThrow: mocks.recipient },
-    field: { findFirstOrThrow: mocks.field },
+    field: { findFirst: mocks.field },
     user: { findFirst: mocks.user },
     documentMeta: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: mocks.transaction,

@@ -278,13 +278,28 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
               }).then(async (buffer) => PDF.load(buffer))
             : generateCertificatePdf(certificatePayload);
 
+        // The audit pages go to every recipient: with "Send on Behalf of Team" off they show the team in
+        // place of its members.
+        const getSenderStandIn = async () => {
+          if (settings.includeSenderDetails) {
+            return undefined;
+          }
+
+          const team = await prisma.team.findUniqueOrThrow({
+            where: { id: envelope.teamId },
+            select: { name: true, teamEmail: { select: { email: true } } },
+          });
+
+          return { name: team.name, email: team.teamEmail?.email ?? '' };
+        };
+
         const makeAuditLogPdf = async () =>
           usePlaywrightPdf
             ? getAuditLogsPdf({
                 documentId,
                 language: envelope.documentMeta.language,
               }).then(async (buffer) => PDF.load(buffer))
-            : generateAuditLogPdf(certificatePayload);
+            : generateAuditLogPdf({ ...certificatePayload, senderStandIn: await getSenderStandIn() });
 
         [certificateDoc, auditLogDoc] = await Promise.all([
           needsCertificate ? makeCertificatePdf() : null,

@@ -1,8 +1,45 @@
 diff --git a/node_modules/@libpdf/core/dist/index.mjs b/node_modules/@libpdf/core/dist/index.mjs
-index ca55581..e522464 100644
+index ca55581..3888173 100644
 --- a/node_modules/@libpdf/core/dist/index.mjs
 +++ b/node_modules/@libpdf/core/dist/index.mjs
-@@ -33636,7 +33636,19 @@ var DocumentParser = class {
+@@ -26662,8 +26662,8 @@ var PDFPage = class PDFPage {
+ 	* Page rotation in degrees (0, 90, 180, or 270).
+ 	*/
+ 	get rotation() {
+-		const rotate = this.dict.getNumber("Rotate", this.ctx.resolve.bind(this.ctx));
+-		if (rotate) {
++		const rotate = this.getInheritedPageAttribute("Rotate");
++		if (rotate instanceof PdfNumber) {
+ 			const value = rotate.value % 360;
+ 			if (value === 90 || value === -270) return 90;
+ 			if (value === 180 || value === -180) return 180;
+@@ -28264,8 +28264,24 @@ var PDFPage = class PDFPage {
+ 	/**
+ 	* Get a box (MediaBox, CropBox, etc.) from the page dictionary.
+ 	*/
++	/**
++	* Read a page attribute that the PDF spec lets a page inherit (MediaBox, CropBox, Rotate,
++	* Resources): the page's own value, else the nearest one up the /Parent chain. Reading only the
++	* page dictionary sized pages whose MediaBox sits on /Pages as US Letter (TerraPay Sign #112).
++	* A null entry counts as absent (PDF 1.7, 7.3.9), so the walk goes on past it.
++	*/
++	getInheritedPageAttribute(name) {
++		const resolve = this.ctx.resolve.bind(this.ctx);
++		let current = this.dict;
++		for (let depth = 0; current instanceof PdfDict && depth < 64; depth++) {
++			const value = current.get(name, resolve);
++			if (value !== void 0 && !(value instanceof PdfNull)) return value;
++			current = current.get("Parent", resolve);
++		}
++		return void 0;
++	}
+ 	getBox(name) {
+-		const box = this.dict.get(name, this.ctx.resolve.bind(this.ctx));
++		const box = this.getInheritedPageAttribute(name);
+ 		if (!(box instanceof PdfArray) || box.length < 4) return null;
+ 		const x1 = box.at(0);
+ 		const y1 = box.at(1);
+@@ -33636,7 +33652,19 @@ var DocumentParser = class {
  						const result = new IndirectObjectParser(this.scanner, lengthResolver, recoveryOptions).parseObjectAt(entry.offset);
  						if (result.genNum !== ref.generation) this.warnings.push(`Generation mismatch for object ${ref.objectNumber}: expected ${ref.generation}, got ${result.genNum}`);
  						obj = result.value;
@@ -23,7 +60,7 @@ index ca55581..e522464 100644
  						break;
  					}
  					case "compressed": {
-@@ -44967,6 +44979,14 @@ var P12Signer = class P12Signer {
+@@ -44967,6 +44995,14 @@ var P12Signer = class P12Signer {
  	keyType;
  	signatureAlgorithm;
  	privateKey;
@@ -38,7 +75,7 @@ index ca55581..e522464 100644
  	constructor(privateKey, certificate, certificateChain, keyType, signatureAlgorithm) {
  		this.privateKey = privateKey;
  		this.certificate = certificate;
-@@ -45084,10 +45104,17 @@ var P12Signer = class P12Signer {
+@@ -45084,10 +45120,17 @@ var P12Signer = class P12Signer {
  	static async importPrivateKey(privateKeyInfo) {
  		const crypto = getCrypto();
  		const algorithmOid = privateKeyInfo.privateKeyAlgorithm.algorithmId;
@@ -60,7 +97,7 @@ index ca55581..e522464 100644
  		if (algorithmOid === "1.2.840.10045.2.1") {
  			const params = privateKeyInfo.privateKeyAlgorithm.algorithmParams;
  			let namedCurve = "P-256";
-@@ -45155,11 +45182,42 @@ var P12Signer = class P12Signer {
+@@ -45155,11 +45198,42 @@ var P12Signer = class P12Signer {
  				};
  				break;
  		}

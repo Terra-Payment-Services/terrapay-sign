@@ -27,7 +27,19 @@ vi.mock('@documenso/prisma', () => ({
     documentAuditLog: {
       create: async (...args: unknown[]) => await auditLogCreate(...args),
     },
-    $transaction: async (operations: Promise<unknown>[]) => await Promise.all(operations),
+    // The rejection runs in an interactive transaction behind the envelope lock: the lock query
+    // returns nothing and the recipient list is the recipient under test.
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      await callback({
+        $queryRaw: async () => [],
+        recipient: {
+          findMany: async () => [await findFirst()],
+          update: async (...args: unknown[]) => await update(...args),
+        },
+        documentAuditLog: {
+          create: async (...args: unknown[]) => await auditLogCreate(...args),
+        },
+      }),
   },
 }));
 

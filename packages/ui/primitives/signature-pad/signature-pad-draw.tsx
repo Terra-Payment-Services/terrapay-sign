@@ -214,7 +214,12 @@ export const SignaturePadDraw = ({
       ctx?.fill(pathData);
     });
 
-    onChange?.($el.current.toDataURL());
+    // Undoing back to a blank or too-small drawing must not leave it in place as the signature.
+    const isValidSignature = checkSignatureValidity($el);
+
+    setIsSignatureValid(isValidSignature);
+
+    onChange?.(isValidSignature ? $el.current.toDataURL() : '');
   };
 
   unsafe_useEffectOnce(() => {

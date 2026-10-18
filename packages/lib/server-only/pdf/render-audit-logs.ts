@@ -22,6 +22,7 @@ import type { TDocumentAuditLog } from '../../types/document-audit-logs';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
 import { formatDocumentAuditLogAction } from '../../utils/document-audit-logs';
 import { ensureFontLibrary } from './helpers';
+import { formatAuditLogOwner } from './hide-sender-in-audit-logs';
 
 export type AuditLogRecipient = {
   id: number;
@@ -206,7 +207,7 @@ const renderOverviewCard = (options: RenderOverviewCardOptions) => {
   });
   const ownerLabel = renderOverviewCardLabels({
     label: i18n._(msg`Owner`),
-    text: `${envelopeOwner.name} (${envelopeOwner.email})`,
+    text: formatAuditLogOwner(envelopeOwner),
     width: columnWidth,
     groupX: columnWidth + columnSpacing,
   });

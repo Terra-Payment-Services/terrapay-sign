@@ -5,8 +5,11 @@ import { unsafeGetEntireEnvelope } from '@documenso/lib/server-only/admin/get-en
 import { decryptSecondaryData } from '@documenso/lib/server-only/crypto/decrypt';
 import { findDocumentAuditLogs } from '@documenso/lib/server-only/document/find-document-audit-logs';
 import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
+import { hideSenderInAuditLogs } from '@documenso/lib/server-only/pdf/hide-sender-in-audit-logs';
+import { getTeamSettings } from '@documenso/lib/server-only/team/get-team-settings';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { getTranslations } from '@documenso/lib/utils/i18n';
+import { prisma } from '@documenso/prisma';
 import { Card, CardContent } from '@documenso/ui/primitives/card';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -57,7 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const documentLanguage = ZSupportedLanguageCodeSchema.parse(envelope.documentMeta?.language);
 
-  const { data: auditLogs } = await findDocumentAuditLogs({
+  const { data: allAuditLogs } = await findDocumentAuditLogs({
     documentId: documentId,
     userId: envelope.userId,
     teamId: envelope.teamId,
@@ -66,6 +69,29 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const messages = await getTranslations(documentLanguage);
 
+  // Only sealing renders this page, and the sealed PDF reaches every recipient: with "Send on Behalf of
+  // Team" off, show the team in place of its members.
+  const { includeSenderDetails } = await getTeamSettings({ teamId: envelope.teamId });
+
+  const team = includeSenderDetails
+    ? null
+    : await prisma.team.findUniqueOrThrow({
+        where: { id: envelope.teamId },
+        select: { name: true, teamEmail: { select: { email: true } } },
+      });
+
+  const owner = team
+    ? { name: team.name, email: team.teamEmail?.email ?? '' }
+    : { name: envelope.user.name ?? '', email: envelope.user.email };
+
+  const auditLogs = team
+    ? hideSenderInAuditLogs(allAuditLogs, {
+        recipientEmails: envelope.recipients.map((recipient) => recipient.email),
+        ownerEmail: envelope.user.email,
+        standIn: owner,
+      })
+    : allAuditLogs;
+
   return {
     auditLogs,
     document: {
@@ -73,10 +99,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       title: envelope.title,
       status: envelope.status,
       envelopeId: envelope.id,
-      user: {
-        name: envelope.user.name,
-        email: envelope.user.email,
-      },
+      user: owner,
       recipients: envelope.recipients,
       createdAt: envelope.createdAt,
       updatedAt: envelope.updatedAt,
@@ -136,7 +159,7 @@ export default function AuditLog({ loaderData }: Route.ComponentProps) {
             <span className="font-medium">{_(msg`Owner`)}</span>
 
             <span className="mt-1 block break-words">
-              {document.user.name} ({document.user.email})
+              {document.user.email ? `${document.user.name} (${document.user.email})` : document.user.name}
             </span>
           </p>
 

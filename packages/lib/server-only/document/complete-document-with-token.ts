@@ -31,6 +31,7 @@ import { assertRecipientNotExpired } from '../../utils/recipients';
 import { assertCompanySealApplicable } from '../company-seal/company-seal-field';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
+import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 import { assertAccessAuth2FAAttemptAllowed } from './assert-access-auth-2fa-attempt-allowed';
 import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
@@ -288,54 +289,19 @@ export const completeDocumentWithToken = async ({
     });
   }
 
-  // Auto-insert all un-inserted date fields for V2 envelopes at completion time.
-  if (envelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
-    const formattedDate = DateTime.now()
-      .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
-      .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+  // Auto-insert all un-inserted date fields for V2 envelopes at completion time. The values are worked
+  // out here for the check below and written inside the locked transaction, so a refused completion
+  // writes nothing.
+  const shouldInsertDateFields = envelope.internalVersion === 2 && uninsertedDateFields.length > 0;
+  const formattedDate = DateTime.now()
+    .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
+    .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+  const newDateFieldValues = {
+    customText: formattedDate,
+    inserted: true,
+  };
 
-    const newDateFieldValues = {
-      customText: formattedDate,
-      inserted: true,
-    };
-
-    await prisma.field.updateMany({
-      where: {
-        id: {
-          in: uninsertedDateFields.map((field) => field.id),
-        },
-      },
-      data: {
-        ...newDateFieldValues,
-      },
-    });
-
-    // Create audit log entries for each auto-inserted date field.
-    await prisma.documentAuditLog.createMany({
-      data: uninsertedDateFields.map((field) =>
-        createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
-          envelopeId: envelope.id,
-          user: {
-            email: recipientEmail,
-            name: recipientName,
-          },
-          requestMetadata,
-          data: {
-            recipientEmail: recipientEmail,
-            recipientId: recipient.id,
-            recipientName: recipientName,
-            recipientRole: recipient.role,
-            fieldId: field.secondaryId,
-            field: {
-              type: FieldType.DATE,
-              data: formattedDate,
-            },
-          },
-        }),
-      ),
-    });
-
+  if (shouldInsertDateFields) {
     // Update the local fields array so the subsequent validation check passes.
     fields = fields.map((field) => {
       if (field.type === FieldType.DATE && !field.inserted) {
@@ -369,6 +335,63 @@ export const completeDocumentWithToken = async ({
   }
 
   await prisma.$transaction(async (tx) => {
+    await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
+    if (shouldInsertDateFields) {
+      await tx.field.updateMany({
+        where: {
+          id: {
+            in: uninsertedDateFields.map((field) => field.id),
+          },
+        },
+        data: {
+          ...newDateFieldValues,
+        },
+      });
+
+      // Create audit log entries for each auto-inserted date field.
+      await tx.documentAuditLog.createMany({
+        data: uninsertedDateFields.map((field) =>
+          createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+            envelopeId: envelope.id,
+            user: {
+              email: recipientEmail,
+              name: recipientName,
+            },
+            requestMetadata,
+            data: {
+              recipientEmail: recipientEmail,
+              recipientId: recipient.id,
+              recipientName: recipientName,
+              recipientRole: recipient.role,
+              fieldId: field.secondaryId,
+              field: {
+                type: FieldType.DATE,
+                data: formattedDate,
+              },
+            },
+          }),
+        ),
+      });
+    }
+
+    // Field writers take the same lock, so read the fields again under it: one removed since the check
+    // above must not let the recipient complete with it empty.
+    const lockedFields = await tx.field.findMany({
+      where: {
+        envelopeId: envelope.id,
+        recipientId: recipient.id,
+      },
+    });
+
+    if (fieldsContainUnsignedRequiredField(lockedFields)) {
+      throw new AppError(AppErrorCode.RECIPIENT_HAS_UNSIGNED_FIELDS, {
+        message: `Recipient ${recipient.id} has unsigned fields`,
+        statusCode: 400,
+      });
+    }
+
     // Conditional update so two concurrent completion requests can't both
     // proceed: only the request that transitions the recipient to SIGNED
     // continues, the loser sees a count of 0 and aborts.

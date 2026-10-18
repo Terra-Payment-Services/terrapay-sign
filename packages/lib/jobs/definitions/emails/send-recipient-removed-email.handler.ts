@@ -22,6 +22,11 @@ export const run = async ({ payload, io }: { payload: TSendRecipientRemovedEmail
     },
     include: {
       documentMeta: true,
+      team: {
+        select: {
+          name: true,
+        },
+      },
     },
   });
 
@@ -39,15 +44,24 @@ export const run = async ({ payload, io }: { payload: TSendRecipientRemovedEmail
     return;
   }
 
-  const { branding, emailLanguage, senderEmail, replyToEmail, organisationId, claims, emailsDisabled, emailTransport } =
-    await getEmailContext({
-      emailType: 'RECIPIENT',
-      source: {
-        type: 'team',
-        teamId: envelope.teamId,
-      },
-      meta: envelope.documentMeta,
-    });
+  const {
+    branding,
+    emailLanguage,
+    senderEmail,
+    replyToEmail,
+    organisationId,
+    claims,
+    emailsDisabled,
+    emailTransport,
+    settings,
+  } = await getEmailContext({
+    emailType: 'RECIPIENT',
+    source: {
+      type: 'team',
+      teamId: envelope.teamId,
+    },
+    meta: envelope.documentMeta,
+  });
 
   // Don't send the removal email if the organisation has email sending disabled.
   if (emailsDisabled) {
@@ -78,7 +92,8 @@ export const run = async ({ payload, io }: { payload: TSendRecipientRemovedEmail
 
   const template = createElement(RecipientRemovedFromDocumentTemplate, {
     documentName: envelope.title,
-    inviterName: inviterName || undefined,
+    // "Send on Behalf of Team" off names the team, not the member who removed them.
+    inviterName: settings.includeSenderDetails ? inviterName || undefined : envelope.team.name,
     assetBaseUrl,
   });
 

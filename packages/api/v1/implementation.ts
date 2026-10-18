@@ -17,6 +17,7 @@ import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envel
 import { getEnvelopeById, getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { deleteDocumentField } from '@documenso/lib/server-only/field/delete-document-field';
 import { updateEnvelopeFields } from '@documenso/lib/server-only/field/update-envelope-fields';
+import { createEnvelopeRecipients } from '@documenso/lib/server-only/recipient/create-envelope-recipients';
 import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
 import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/get-recipients-for-document';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
@@ -25,7 +26,6 @@ import { createDocumentFromTemplate } from '@documenso/lib/server-only/template/
 import { deleteTemplate } from '@documenso/lib/server-only/template/delete-template';
 import { findTemplates } from '@documenso/lib/server-only/template/find-templates';
 import { getTemplateById } from '@documenso/lib/server-only/template/get-template-by-id';
-import { ZRecipientAuthOptionsSchema } from '@documenso/lib/types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '@documenso/lib/types/document-email';
 import {
   COMPANY_SEAL_V2_ONLY_MESSAGE,
@@ -1121,7 +1121,9 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
 
     try {
-      const { recipients: newRecipients } = await setDocumentRecipients({
+      // Add only the new recipient. Passing the whole list to setDocumentRecipients without ids
+      // recreated every existing recipient with a new token.
+      const { recipients: newRecipients } = await createEnvelopeRecipients({
         id: {
           type: 'documentId',
           id: Number(documentId),
@@ -1129,13 +1131,6 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         userId: user.id,
         teamId: team.id,
         recipients: [
-          ...recipients.map((recipient) => ({
-            email: recipient.email,
-            name: recipient.name,
-            role: recipient.role,
-            signingOrder: recipient.signingOrder,
-            actionAuth: ZRecipientAuthOptionsSchema.parse(recipient.authOptions)?.actionAuth ?? [],
-          })),
           {
             email,
             name,
