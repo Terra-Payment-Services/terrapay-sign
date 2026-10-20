@@ -187,8 +187,9 @@ test.describe('[BRANDING_CSS]: branding CSS cannot hide the Reject button from a
       expect(decoded).not.toMatch(/display\s*:\s*none/);
       expect(decoded).not.toContain('aria-haspopup');
 
-      // Inside the one `.documenso-branded { ... }` wrapper, no rule holds another rule.
-      const inner = decoded.replace(/^\s*\.documenso-branded\s*\{/, '').replace(/\}\s*$/, '');
+      // Inside the one wrapper, `.documenso-branded` repeated one or more times (raised to three),
+      // no rule holds another rule.
+      const inner = decoded.replace(/^\s*(?:\.documenso-branded)+\s*\{/, '').replace(/\}\s*$/, '');
 
       expect(inner).not.toMatch(/\{[^}]*\{/);
     }

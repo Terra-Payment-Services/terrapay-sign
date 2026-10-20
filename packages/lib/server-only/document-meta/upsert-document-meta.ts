@@ -13,6 +13,7 @@ import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
 import { assertCompatibleSigningOrder } from '../signature-level/assert-compatible-signing-order';
+import { assertMergedDocumentMetaMethodsEnabled } from './assert-signature-methods-enabled';
 
 export type CreateDocumentMetaOptions = {
   userId: number;
@@ -100,6 +101,12 @@ export const updateDocumentMeta = async ({
 
   return await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    await assertMergedDocumentMetaMethodsEnabled(tx, envelope.documentMetaId, {
+      typedSignatureEnabled,
+      drawSignatureEnabled,
+      uploadSignatureEnabled,
+    });
 
     const upsertedDocumentMeta = await tx.documentMeta.update({
       where: {

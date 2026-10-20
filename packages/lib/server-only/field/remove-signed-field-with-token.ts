@@ -8,6 +8,7 @@ import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
 import { assertRecipientAccessAuthorized } from '../document/assert-recipient-access-authorized';
+import { assertRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 
 export type RemovedSignedFieldWithTokenOptions = {
@@ -77,6 +78,13 @@ export const removeSignedFieldWithToken = async ({
     throw new Error(`Document not found for field ${field.id}`);
   }
 
+  // A V2 envelope's fields are cleared through the V2 signing routes, which apply the V2 rules (#142).
+  if (envelope.internalVersion !== 1) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Document ${envelope.id} is a V2 envelope: clear its fields through the V2 signing routes`,
+    });
+  }
+
   if (envelope.status !== DocumentStatus.PENDING) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {
       message: `Document ${envelope.id} must be pending`,
@@ -103,7 +111,9 @@ export const removeSignedFieldWithToken = async ({
     field.recipientId !== recipient.id &&
     (field.type === FieldType.SIGNATURE || field.type === FieldType.FREE_SIGNATURE)
   ) {
-    throw new Error(`Assistant ${recipient.id} cannot remove the signature of recipient ${field.recipientId}`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Assistant ${recipient.id} cannot remove the signature of recipient ${field.recipientId}`,
+    });
   }
 
   await assertRecipientAccessAuthorized({
@@ -125,6 +135,9 @@ export const removeSignedFieldWithToken = async ({
       recipientId: recipient.id,
       fieldRecipientId: field.recipientId,
     });
+
+    // Under the lock, so a completion or reorder that commits first is seen; an assistant's own turn (#145).
+    await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
 
     if (actor.signingStatus === SigningStatus.SIGNED) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {

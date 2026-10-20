@@ -464,6 +464,11 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      // A refused signature-method policy (#136) answers 400 with its reason.
+      if (err instanceof AppError && err.code === AppErrorCode.INVALID_REQUEST) {
+        return AppError.toRestAPIError(err);
+      }
+
       return {
         status: 404,
         body: {
@@ -579,6 +584,11 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      // A refused signature-method policy (#136) answers 400 with its reason.
+      if (err instanceof AppError && err.code === AppErrorCode.INVALID_REQUEST) {
+        return AppError.toRestAPIError(err);
+      }
+
       return {
         status: 404,
         body: {
@@ -1052,6 +1062,16 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
 
       if (refusal) {
         return refusal;
+      }
+
+      // A refusal the caller can act on, such as resending a rejected document (#123), is a 400.
+      if (err instanceof AppError && err.code === AppErrorCode.INVALID_REQUEST) {
+        return {
+          status: 400,
+          body: {
+            message: err.message,
+          },
+        };
       }
 
       return {

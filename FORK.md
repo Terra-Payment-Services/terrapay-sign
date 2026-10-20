@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 17 October 2026. This file is the notice that section
+program, and this version is dated 20 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -37,6 +37,10 @@ created only by signing in through Entra with an address on the configured domai
 new user joins the deployment's single organisation rather than receiving a personal one.
 Only an administrator can create that organisation, and no one can create a second. A
 session ends eight hours after sign-in and is never extended by use.
+Signing out answers 200 with an empty body, so the header that deletes the session cookie
+reaches the browser. Upstream returned no response once it had ended the session, which the
+server reported as an error, and a reply to a session that had already ended now deletes the
+cookie as well.
 
 A signer who must be signed in to act, as for a company seal, is sent from the signing page
 to the sign-in page, which used to hide its Microsoft button on that route and so showed an
@@ -145,7 +149,9 @@ signer with no address. Fonts are bundled so that names written in Arabic, Devan
 Han, Cyrillic and other non-Latin scripts are legible whatever fonts the producing machine
 has installed, and the files are static instances, because the PDF backend printed some
 letters of a word at the wrong weight from variable fonts. The certificate is produced in
-English.
+English. The audit pages appended to a sealed document order entries that share a creation
+time, as two written in the same millisecond do, by their id, so those entries appear in the
+same order every time the pages are made.
 
 ## Document integrity and access control
 
@@ -175,6 +181,41 @@ automatic date fields and completion state unchanged. An assistant's write to a 
 when one field of a legacy (V1) document is signed twice at once, one request succeeds and the
 other is refused. Each of
 these refusals is answered with a client error, where several failed with a server error.
+
+A rejection fixes the document's outcome, though the document stays pending until the seal job
+records it. In that time the owner cannot edit or delete a recipient who has rejected, nor one
+who has filled in any field, whatever their role, and cannot change, move or remove that
+recipient's fields. Each of the owner's edits checks again under the envelope's lock, so a
+rejection or a signature that commits first is seen rather than overwritten, and a field submitted
+under a recipient it does not belong to is refused. An administrator's edit of a recipient is
+written only while the recipient has neither signed nor rejected, so one who does either at the
+same moment is not edited. A rejected document cannot be cancelled. The
+owner's delete hides it, as it hides a completed document, and sends no deletion emails, and an
+administrator's purge tells the recipients that a document was cancelled only when nobody had
+rejected it, and only once the purge has committed. An invitation is suppressed when a check finds a rejection:
+sending, resending and the invitation of the next signer in a sequential order each look for a
+rejection on the primary database, and again just before the email goes, and the next signer is
+chosen and written under the lock, so a name and address the previous signer dictates cannot
+overwrite a rejecter. A recipient whose role was changed to CC after rejecting keeps the
+rejection, and the seal records it.
+
+A cancelled document is never sealed, resealed or announced as complete, whoever queued the job,
+and an administrator cannot reseal one. The seal writes the document's final status only if the
+status is still the one it read when it started, and does so first in its commit, so a seal and
+a cancel that run at once leave one outcome: a cancel that commits first makes the seal discard
+the copies it made, and one that comes second is refused. A send that loses to a cancel is
+refused in the same way. Every recipient action waiting on the envelope's lock checks once it
+holds it that the document is still pending. A seal job whose document has been purged ends
+without retrying, and a stored file whose database row cannot be created is deleted. Where read
+replicas are configured, the checks for a rejection read the primary, since a replica may not yet
+hold the latest commit, and the seal looks its document up on the primary when a replica does not
+find it, before it treats the document as purged. Of two requests that sign one
+field of a version 2 document at once, the later is refused, as on version 1; checkboxes and
+radio buttons, which the signing page edits in place, keep the later value. On a version 2
+document, completion writes each automatic date value only to a date field that is still empty
+under the lock, so a date the recipient filled in while the completion waited keeps its value
+and gets no second audit entry. API v1 answers 400,
+where it answered 500, when it refuses to resend a rejected document.
 
 A legacy (V1) document's PDF is checked again whenever the document is about to notify
 someone: before the next signer in a sequential order is invited, on resend, and when a
@@ -208,6 +249,66 @@ through API v1 adds that one recipient. It used to delete and recreate every rec
 the document, which gave each of them a new signing link, deleted their fields and, on a sent
 document, could email them that they had been removed.
 
+## Signature values and signing order
+
+Every route that stores a signature checks the value on the server: signing a field of either
+document version, a direct template, account creation and the profile. Upstream stored any
+non-empty string. A typed signature is trimmed, must contain a letter, number,
+punctuation mark or symbol, may contain no control character anywhere and is at most 500
+characters. A value that starts with `data:`, in any letter case, is an image and must be a PNG
+data URL in canonical base64, at most 4 MiB decoded and 4,096 pixels on each side; it is decoded,
+checked for ink and stored re-encoded as an 8-bit RGBA PNG, so every later reader sees the bytes
+that were checked. A pixel counts as ink when, laid over white, its luminance is below 230 of 255,
+and an image needs ink on more than 1% of its pixels. The signature pad applies the same rule,
+where it counted every pixel that was not fully transparent, so a white or faint drawing or upload
+is refused in the browser and on the server alike. A saved signature that fails the rule is not
+offered on the signing pages or in the profile form, and saving the profile form while it is
+held back clears it. The upload pad stores only the part of the pad the image covers, so an uploaded
+signature keeps its own shape and fills its field rather than carrying the pad's empty margins,
+and the drawing pad no longer starts a stroke from the press that opened it.
+
+The signature methods a document allows, typed, drawn and uploaded, are enforced when a field is
+signed through either version's route, and checked again under the envelope's lock, so a change
+to them that commits first applies. Upstream refused only a typed signature where typing was
+off, and accepted an image with drawing and uploading both off. A drawn image and an uploaded
+one cannot be told apart, so an image is accepted when either is allowed. Settings that leave all
+three off are refused when an organisation's, a team's, a document's or a template's settings
+are saved and when a document or a template is created, directly or from a template, and API v1
+answers that refusal with 400.
+The check reads the stored settings under row locks taken in one order, so two saves at once
+cannot together turn every method off for an organisation or for any team that inherits from it.
+A document already stored with all three off is signed as if all three were on, and its signature
+pad offers all three, where it showed nothing.
+
+The seal, the certificate and the partial download draw each signature from a PNG re-encoded from
+the stored image within the same limit of 4,096 pixels a side, never from the stored string,
+which the PDF library may not read. When a stored image cannot be read at all, the seal stops
+before it changes the document's status or its PDF: a pending document stays pending and a
+resealed one keeps its status and PDF, its CC recipients that have not rejected are marked as
+signed as on every seal attempt, its audit log gets one entry for each such field, saying
+that the signature image could not be rendered and the document was not sealed, and the job is
+not retried. The downloads answer such an image with a client error. The rejection email to the
+rejecter and the cancellation emails to the other recipients are sent by the seal that first
+takes a rejected document out of pending, where upstream sent them at the moment of rejection, so a
+seal that stops sends none and a later reseal sends none again. A request for the certificate of
+a document that is not complete is answered with a client error rather than a server error.
+
+In a sequential signing order the server enforces each recipient's turn when a field is signed or
+cleared, a document completed or rejected, an assistant's actions included, and checks it under
+the envelope's lock, so a completion or a reorder that commits first is seen. Upstream checked the
+order on the signing page and at completion alone, before the lock, and a signer's link
+could sign or clear a field, or reject, out of turn by calling those routes directly. Recipients who share a position in the order form a step and may act in
+any order among themselves; the next step opens once all of them have signed. On an advanced or
+qualified (AES or QES) document the members of one step still go one at a time, by id. Sending a
+document invites every member of the first step, or on such a document its first member, and of two completions that run at once only the
+one that opens the next step invites its members, each once. A signer may dictate the next
+signer's name and address only when the next step has a single recipient. The version 1 signing
+routes refuse a field of a version 2 document, which the version 2 route checks under its own
+rules. Embedded multi-sign refuses a version 2 document, and a recipient whose turn has not come,
+before it shows the document or records it as viewed. A signed-in visitor outside the document's
+team who opens a signing link before their turn sees the waiting page, where it failed with an
+error.
+
 ## Recipient and server security
 
 The client address that audit rows record and rate limits count is read from the
@@ -221,7 +322,12 @@ return once it is entered. The link in the QR code, which every document is give
 created, serves the files and the share page only for a completed document that has not been
 deleted, and it stays public there because the certificate prints it. An unused query that returned a document's data to a signed-in recipient without
 the code is removed. Writes authenticated by a cookie are refused when they come from another
-origin, and the job dashboard is no longer exempt from that check. The dashboard is also
+origin, and the job dashboard is no longer exempt from that check. The session cookie is
+SameSite=Lax: the browser still sends it when a link on another site opens a Sign page, but
+withholds it from other requests that site starts, including those of a page embedded there.
+An embedded signing page that needs the recipient to be signed in to their account therefore
+no longer works on another site, while one that relies on the signing link or an emailed
+access code still does, because the access code cookie stays SameSite=None and partitioned. The dashboard is also
 read-only: it shows jobs and refuses every request to add, retry, promote, remove, clean,
 pause or resume them. A redirect address given for after signing must be an http or https
 URL when a document is created through API v1, and the signing pages follow a stored one only
@@ -257,12 +363,178 @@ uncacheable, so no shared cache keeps a copy of a contract. Signing tokens are k
 only embedded pages may be framed, and the health endpoint does not publish error detail.
 Runtime dependencies with reachable advisories (postcss-selector-parser, proxy-addr,
 compression and source-map-js) are patched. A branding stylesheet keeps only colour,
-background, border, outline and font properties, where a list of refused properties missed
+background, border colour, outline colour and font properties, where a list of refused properties missed
 declarations in nested rules and outside any rule and those written with CSS escapes. Values
-are read token by token and only colour and gradient functions survive, border and outline
-widths are capped at 16px, 1em or 1rem, and a stylesheet is cleaned again each time a signing
+are read token by token and only colour and gradient functions survive. A tenant can recolour a
+border or outline the app already draws (`border-color`, the four `border-*-color` properties
+and `outline-color`) but cannot create, widen, restyle or round one: the `border` and `outline`
+shorthands, every style and width property and the radius properties are removed with a
+warning, since borders on nested elements add up and can erase an icon, as 3px borders on a
+checkbox and its tick did, and a rounded corner shows what lies behind an element. A
+`font-family` is kept only when every family in it is on a named list: the generic `serif`,
+`sans-serif`, `monospace`, `system-ui`, `ui-sans-serif`, `ui-serif` and `ui-monospace`, and
+Arial, Helvetica, Helvetica Neue, Verdana, Tahoma, Trebuchet MS, Segoe UI, Roboto, Inter, Open
+Sans, Lato, Georgia, Times New Roman, Times, Garamond, Palatino, Courier New, Courier, Consolas,
+Menlo and Monaco, compared without letter case. Families are split at the commas as written, a
+quoted name is always a font name, and any backslash removes the value, since an escape can
+join two families into one name or hide a comma; a single unquoted `inherit`, `initial`,
+`unset`, `revert` or `revert-layer` is kept too, and a quoted one is a font name and removed.
+A quoted Arial broken across lines with a backslash is removed as well, though the browser would
+read it as Arial. Any other family, `fantasy`
+and `cursive` included, removes the declaration with a warning, so a symbol font such as
+Wingdings cannot turn a label into pictures. A stylesheet is cleaned again each time a signing
 page loads it, so one saved earlier cannot set the position, stacking, transform, size or
-margins of the page's controls either.
+margins of the page's controls either. Colours alone could still hide a label, so text and icon
+colours are checked against their background at 3:1, in both the light and dark themes, when
+branding is saved and again each time a signing page loads it. A rule's own colours are paired
+with each other, and a colour set without its partner is paired with the page's background or
+text colour. The colour tokens are checked in their pairs too: background with foreground and
+with muted foreground, and muted, popover, card, field card, primary, secondary, accent and
+destructive each with their foreground, and the input colour, which draws form-field and
+checkbox borders, with the background. The signing components also put the foreground and the
+muted foreground on the card (the mobile signing widget) and on the widget (the desktop
+widget), the muted foreground on the popover, the popover and secondary foregrounds on muted,
+and the primary and destructive colours on the background (the field loading spinners and the
+rejected page's icon), and those pairs are
+checked as well, each traced to the component line that paints it. A few surfaces have a fixed
+background rather than a token: in the light theme the V2 signing page and the neutral alert
+paint `bg-gray-50` (#f6f7f7), so the foreground and the muted foreground are checked against
+that colour too, the muted foreground at 80% opacity as the PDF page label paints it. In the dark theme that
+label sits on the page background instead, so the muted foreground is also checked at 80% on the
+background there, and a palette with light text tokens is refused at save rather than falling
+back on the signing page. An unreadable token pair refuses the save, an unreadable
+stylesheet pair is removed with a warning, and a colour the check cannot read counts as
+unreadable. The branding settings page shows why a save was refused, where it showed a generic
+error. Emails, which have no dark theme, use the default colour for each token in a pair below
+3:1, checked against each other and against the light defaults, as the signing page does. Gradients are not evaluated, so a text colour set with a gradient background is
+removed. A tenant background must be proven opaque: a `background-color`, `background` or
+`background-image` colour, gradient stops included, is kept only when the check reads it and its
+alpha is 1. One it cannot read, such as `color-mix()`, `hwb()`, `lab()`, a system colour or a
+relative colour, and one with alpha below 1 or written as `transparent`, `currentcolor`,
+`inherit`, `initial`, `unset`, `revert` or `revert-layer`, is removed with a warning when saved
+and when a page loads it, before the contrast check, so the rule's other declarations are judged
+as if it had never been written. A `background` shorthand that paints no colour, such as
+`background: none`, is removed too. The guard reads only an element's ancestors, so app paint
+behind them, such as the overlay behind a dialog, is invisible to it. Three rules keep a tenant
+from exposing that paint: backgrounds must be opaque, the radius properties
+(`border-radius` and the four corner properties) are refused, since a rounded corner clips an
+element's opaque background and shows what lies behind it, and the radius colour-token field,
+which sets every rounded corner in the app, is held to `0`, a `px` length up to 16px or a `rem`
+length up to 1rem. A larger radius, or one in `%`, `em`, `pt` or a bare number, is refused when
+saved and dropped when a stored row or an embed renders, so the default radius applies. A
+dialog rounds its corners with the radius itself (`rounded-lg`), so at most 16px, against padding
+of at least 16px (`packages/ui/primitives/dialog.tsx:64`). Text colours may still be
+translucent, since they are read against the background beneath them. A branding stylesheet may be at most 32,768 characters; a longer one is
+refused when saved, and a longer row stored before the limit was lowered renders without its
+CSS while its colours and logo still apply. That limit is the real bound on what a stylesheet
+can cost. Inside it, a scan of the text before it is parsed is a second layer: a stylesheet is
+refused whole when saved, and dropped when a page loads it, if it holds a control character
+other than tab, line feed, carriage return or form feed, nests rules more than eight levels
+deep, or holds more than 10,000 statements (the `;` and `{` outside strings and comments, plus
+each comment), more than 20,000 characters of selectors and at-rule conditions, or more than
+2,000 simple selectors. Comments do not count toward the selector characters. A rule selector
+the scan measures at over 1,000 characters, edge whitespace aside, is left out of them, since
+the sanitiser normally drops it before parsing it; a selector the scan misreads is not
+necessarily dropped. The scan is a second layer and not exact, and some unusual constructions can
+mislead it. The 32,768-character limit bounds what
+such a stylesheet costs, at about 50 ms and 55 MiB on each render-cache miss. A legacy property hack
+such as `*background` is removed. The
+check has a fixed budget of 5,000 declarations and 200,000 comparisons for each stylesheet, and
+past it the remaining rules lose their colours. A colour value or colour token longer than 1,000
+characters counts as unreadable, and a colour token left blank is not rendered. A rule is
+removed before its selector is parsed when the selector is over 1,000 characters or has more
+than 50 compound selectors, counted as CSS reads them, so brackets, quoted strings, escapes and
+the arguments of `:is()` and `:not()` add none. Each check returns at most 500 warnings and a
+count of the rest. A signing page caches the checked stylesheet for each stored stylesheet and
+colour set, up to 200 of them and 16 MiB per server process, and reuses the result while it
+is resident in the process cache rather than redoing the work on every page load. These are limits on this check, not a guarantee about
+every other cost of a large stylesheet. The save-time check cannot see every way the rules of a stylesheet combine in the browser.
+The signing page therefore guards
+the stylesheet as the browser applies it, and so that the guard never has to watch a state a tenant
+rule depends on, a selector may name no state at all. Each selector is checked on its raw text, as
+stored and together with anything written between it and its `{`, before any parser reads it, when the stylesheet is saved and when a page loads a
+stored one. It may contain only ASCII letters and digits, space, tab, line feed, carriage return
+and `- _ . # [ ] = ~ ^ $ * " ' , > + :`, so every escape, every parenthesised form such as
+`:is()` or `:not()`, comments, namespaces, `|=` and every non-ASCII character are refused; and
+once every `::placeholder`, in any letter case, is removed, no colon may remain. So no
+pseudo-class of any kind is kept, `:hover`, `:focus` and the structural ones included, and
+`::placeholder` is the one pseudo-element. A colon inside a quoted attribute value, as in
+`[href^="https:"]`, is refused too: that costs a tenant a selector it could write safely, and is
+accepted to keep the rule a check on characters. A refused selector drops its rule with a
+warning and the rest of the stylesheet is kept. The universal selector `*` stays refused, and a
+`;` in a selector still makes the whole stylesheet a parse error.
+The tenant stylesheet sits in its own element, apart
+from the colour tokens. The page applies it and, in the same task, measures what the signer
+reads: the text colour of every visible element with text of its own, the text and placeholder
+of every text box, and the fill and stroke of icons inside buttons, links and tabs, each against
+its background, found by compositing each ancestor's background colour over white, apart from
+elements inside an icon, whose backgrounds the browser never paints. A control that shows no text,
+value, placeholder or icon, such as an unchecked checkbox, is judged by its boundary, as WCAG 2.2
+success criterion 1.4.11 asks for non-text contrast: its border, on a side that paints, or its
+own background must reach 3:1 against the background behind it, or read no worse than it does in
+the default theme, with no margin, so a border made transparent, or painted to match what
+surrounds it, fails even where the default border is faint. A control that draws no boundary in
+the default theme at all, such as a transparent click overlay, is not judged by its boundary.
+Every visible, enabled text box, text area and select is also judged by its boundary
+whatever it holds, so a filled name field or a typed rejection reason keeps its border. An icon shape's fill is
+measured only where it paints: a shape that encloses no area, such as the lines of an X, at no
+point of a 7 by 7 grid inside its box, kept off the box's edges (where the browser reports an
+open line's endpoints as inside its fill), is not judged on a fill nobody sees. The
+grid can miss a filled shape whose painted area is very small, which then goes unmeasured. An element with an opacity
+below 1, or inside one, is painted as the browser paints it: the faded group is composited at
+that opacity over what lies beneath it, so the dialog close button, drawn at 70% opacity, is
+measured on the colour it shows. The default
+theme has placeholders and muted icons below 3:1 of its own, so an element below 3:1 is measured
+again in the default theme, with the stylesheet and the colour tokens switched off and the logo
+kept, in the same task with transitions paused, and its text counts against the branding only
+when the branding makes it more than 0.3 worse than the default theme does. A tenant rule cannot change with hover or focus, but the app's own state styles
+can. Since a tenant can no longer write a hover rule, the stylesheet is nested in the wrapper
+class repeated three times, `.documenso-branded.documenso-branded.documenso-branded`, so a
+tenant `button` rule weighs 0,3,1 and beats the app's state classes, such as
+`.hover\:bg-accent:hover` and `.hover\:bg-secondary\/80:hover` (0,2,0, from
+`packages/ui/primitives/button.tsx` lines 18 to 20) and the `group-hover:` forms (0,3,0). A
+colour the tenant sets therefore holds in every state; without the repeat, a dark theme with
+near-white button text read 1.29:1 on a hovered Cancel button, on the app's light hover
+background, and the guard disabled it. The colour tokens keep the single class. A tenant who
+sets only one of a control's two colours still meets the app's state colour for the other, so
+a hovered app control can pair an app colour with a tenant one. The page therefore
+measures again as a whole, at most once a frame, whenever its content changes, such as a dialog
+opening; whenever hover or focus starts or ends anywhere (`pointerover`, `pointerout`, `focusin`,
+`focusout`); when a pointer button or a key goes down or up (`pointerdown`, `pointerup`,
+`keydown`, `keyup`), for the app's `active:` and `focus-visible:` styles, although the
+signing-page buttons' `focus-visible:` classes today set only a ring, which is not measured; when the signer types
+(`input`); and when a transition ends. A `pointermove` event itself schedules nothing. A scan takes
+about 3 ms for 500 elements and 30 ms for 5,000. An element in a colour or opacity transition or animation, or inside
+one, is measured once it finishes, so a dialog's entrance fade is judged at its settled
+opacity; an element inside an opacity animation that never ends is not measured. The page also measures at once when one of the stylesheet's media conditions, print media or the colour scheme changes, or the
+window is resized; and before printing, with the stylesheet's print rules applied to a copy. If
+anything fails, the whole stylesheet is disabled for the rest of the visit, its print copy with
+it, and the page is measured again, so a failing print rule does not count against the tokens. If anything still fails, the colour tokens are disabled as well, which the
+save-time pairs cannot always prevent, since text colour is inherited and a text token can land on
+a background token no pair names. The page then shows the default theme with the tenant's logo.
+The guard runs whenever a page has a stylesheet or colour tokens, and measures again when a token
+style element changes. There is no limit on how often the page scans: a stylesheet can no
+longer restyle anything on hover, so the guard has no hover loop to stop. A failing stylesheet is not painted when the page loads, but the
+app's colour transitions run for 150 ms and the guard measures one only when it settles, so the
+colours a transition passes through are not measured, and an unreadable end state can show
+briefly before the stylesheet is disabled. The price is that a
+stylesheet appears only once the page's script has run, a moment after the first paint. The
+guard needs JavaScript: without it the stylesheet is served inside `<noscript>`, and the
+save-time check is the only layer. A broad `button` rule can pass when the page loads and be
+switched off once the signature dialog opens, because the dialog's muted labels, such as the
+pen colour and "Upload Signature", sit on buttons the rule repaints. The admin who saved the
+stylesheet is not warned at save time that the guard will disable it, in that case or any other. The guard reads background colours alone, so background
+images are not sampled. A visible, enabled text box is measured on its own text colour whether
+or not it holds a value, and on its placeholder while empty, so a value a script writes needs no
+event to be checked. It does not read elements marked decorative, of which there is one, the animated pen hint in an empty signature
+pad, where the whole pad is the button. What
+remains is an insider risk, open to a team or organisation admin. Outside the signing pages the
+guard covers, branding is checked only when it is saved, and that check does not catch every
+combination of rules, colours and saves that can leave text unreadable; border, outline and text
+decoration colours are not checked. On signing pages with JavaScript enabled, the check when a page loads
+adds the checks described above, within their stated limits. A listed font name is still resolved on the signer's device, so a
+device whose font of that name is something else shows that instead. The CSS an embedding host passes to an embedded
+signing page is not covered at all.
 
 ## Signing pages and staff screens
 
@@ -288,9 +560,9 @@ administrators' screens for billing plans, per-plan email transports and the sig
 blocklist are removed, since none of them can act on a deployment with no billing, one
 sending mailbox and sign-in through Entra alone, and the statistics page names the running
 release rather than upstream's version. Every page except an embedded one links to this
-repository, which is the offer of source that section 13 of the licence requires. All ten
-offered languages are fully translated, and a test fails if any message is left without a
-translation.
+repository, which is the offer of source that section 13 of the licence requires. The app
+offers English and ten translated languages, and a test fails if any entry in a catalog is left without a
+translation; two messages added in this release are not yet in the catalogs.
 
 When a team's "Send on Behalf of Team" setting is off, set on the team or inherited from its
 organisation, recipients are shown the team in place of the member who sent the document, with the team's
@@ -368,7 +640,8 @@ screen lists only the flags an administrator can set.
 
 ## Removal of features that sent data outside
 
-Every upstream feature that called a third party is removed. An optional feature sent an
+The upstream features below, which called third parties, are removed; webhook delivery,
+described above, remains. An optional feature sent an
 image of every page of a document to Google, with recipient names and addresses, to detect
 fields and recipients. Telemetry, analytics, the licence server check and the captcha went
 with it, as did upstream's public statistics service.

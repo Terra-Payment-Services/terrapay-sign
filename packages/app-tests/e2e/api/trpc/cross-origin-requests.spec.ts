@@ -10,8 +10,9 @@ const OWN_ORIGIN = new URL(WEBAPP_BASE_URL).origin;
 const OTHER_ORIGIN = 'https://attacker.example.net';
 
 /**
- * The session cookie is SameSite=None, so a page on any site could post to
- * tRPC or the auth routes with a signed-in user's session attached. Those
+ * A page on another host of the same site receives the SameSite=Lax session
+ * cookie, so it could post to tRPC or the auth routes with a signed-in user's
+ * session attached. Those
  * routes now refuse a state-changing request from another origin. The public
  * API is called from other sites with tokens and must stay open to them.
  */

@@ -12,6 +12,7 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { DocumentDataOwner } from '../../server-only/document-data/create-document-data';
 import { createDocumentData } from '../../server-only/document-data/create-document-data';
 import { normalizePdf } from '../../server-only/pdf/normalize-pdf';
+import { deleteFile } from './delete-file';
 import { uploadS3File } from './server-actions';
 
 type File = {
@@ -59,7 +60,7 @@ export const putPdfFileServerSide = async (file: File, { owner, initialData }: P
     pdf,
   );
 
-  const createdData = await createDocumentData({ type, data, initialData, owner });
+  const createdData = await createRowOrDiscardUpload({ type, data, initialData, owner });
 
   return {
     documentData: createdData,
@@ -89,12 +90,28 @@ export const putNormalizedPdfFileServerSide = async (
     arrayBuffer: async () => Promise.resolve(normalized),
   });
 
-  return await createDocumentData({
+  return await createRowOrDiscardUpload({
     type: documentData.type,
     data: documentData.data,
     initialData: options.initialData,
     owner: options.owner,
   });
+};
+
+/**
+ * Creates the row for an object just uploaded, deleting the object if the row cannot be created, so a failed
+ * insert leaves no stored object that nothing names (#122). Database-held data has nothing to delete.
+ */
+const createRowOrDiscardUpload = async (options: Parameters<typeof createDocumentData>[0]) => {
+  try {
+    return await createDocumentData(options);
+  } catch (error) {
+    await deleteFile({ type: options.type, data: options.data }).catch((deleteError) => {
+      console.error(`Could not delete an upload whose row was not created: ${options.data}`, deleteError);
+    });
+
+    throw error;
+  }
 };
 
 /**

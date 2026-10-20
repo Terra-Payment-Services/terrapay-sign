@@ -6,7 +6,7 @@ import {
   BRANDING_LOGO_MAX_SIZE_MB,
 } from '@documenso/lib/constants/branding';
 import { DEFAULT_BRAND_COLORS, DEFAULT_BRAND_RADIUS } from '@documenso/lib/constants/theme';
-import { ZCssVarsSchema } from '@documenso/lib/types/css-vars';
+import { ZCssVarsSchema, ZStoredCssVarsSchema } from '@documenso/lib/types/css-vars';
 import { normalizeBrandingColors } from '@documenso/lib/utils/normalize-branding-colors';
 import { cn } from '@documenso/ui/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@documenso/ui/primitives/accordion';
@@ -79,7 +79,7 @@ export function BrandingPreferencesForm({
   const [hasLoadedPreview, setHasLoadedPreview] = useState(false);
   const [colorPickerKey, setColorPickerKey] = useState(0);
 
-  const parsedColors = ZCssVarsSchema.safeParse(settings.brandingColors);
+  const parsedColors = ZStoredCssVarsSchema.safeParse(settings.brandingColors);
   const initialColors = parsedColors.success ? parsedColors.data : {};
 
   // The saved state the form maps to. Used both as the reactive `values` source and as

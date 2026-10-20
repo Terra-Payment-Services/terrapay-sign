@@ -21,15 +21,18 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import { jobs } from '../../jobs/client';
 import type { TRecipientAccessAuth } from '../../types/document-auth';
 import { DocumentAuth } from '../../types/document-auth';
+import { isTspEnvelope } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
 import { logger } from '../../utils/logger';
+import { getNextDictatableRecipient, getRecipientsInActiveSigningStep } from '../../utils/recipient-groups';
 import { assertRecipientNotExpired } from '../../utils/recipients';
 import { assertCompanySealApplicable } from '../company-seal/company-seal-field';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
+import { assertRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
 import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -334,24 +337,45 @@ export const completeDocumentWithToken = async ({
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  const { openedStepIds, isDictationEligible } = await prisma.$transaction(async (tx) => {
     await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
 
-    if (shouldInsertDateFields) {
-      await tx.field.updateMany({
+    // Again under the lock, so a reorder that commits after the check above is seen (#145).
+    await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
+    if (envelope.internalVersion === 2) {
+      // Worked out again under the lock, and each written only while still uninserted, so a DATE field the
+      // recipient inserted while this completion waited keeps its value and gets no second insert row (#131).
+      const lockedUninsertedDateFields = await tx.field.findMany({
         where: {
-          id: {
-            in: uninsertedDateFields.map((field) => field.id),
-          },
-        },
-        data: {
-          ...newDateFieldValues,
+          envelopeId: envelope.id,
+          recipientId: recipient.id,
+          type: FieldType.DATE,
+          inserted: false,
         },
       });
 
+      const insertedDateFields = [];
+
+      for (const field of lockedUninsertedDateFields) {
+        const { count } = await tx.field.updateMany({
+          where: {
+            id: field.id,
+            inserted: false,
+          },
+          data: {
+            ...newDateFieldValues,
+          },
+        });
+
+        if (count === 1) {
+          insertedDateFields.push(field);
+        }
+      }
+
       // Create audit log entries for each auto-inserted date field.
       await tx.documentAuditLog.createMany({
-        data: uninsertedDateFields.map((field) =>
+        data: insertedDateFields.map((field) =>
           createDocumentAuditLogData({
             type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
             envelopeId: envelope.id,
@@ -475,6 +499,29 @@ export const completeDocumentWithToken = async ({
         },
       }),
     });
+
+    // The members of the signing step this signature opens: active now and not before it. Decided here, in the
+    // transaction that writes SIGNED under the envelope lock, so of two completions of one step at once exactly
+    // one opens the next step; only that one invites it, or dictates to it (C109b).
+    const stepRecipients = await tx.recipient.findMany({
+      where: { envelopeId: envelope.id },
+      select: { id: true, role: true, signingStatus: true, signingOrder: true },
+    });
+    const sequencing = { strictlySequential: isTspEnvelope(envelope) };
+    const activeBefore = getRecipientsInActiveSigningStep(
+      stepRecipients.map((candidate) =>
+        candidate.id === recipient.id ? { ...candidate, signingStatus: SigningStatus.NOT_SIGNED } : candidate,
+      ),
+      sequencing,
+    ).map((candidate) => candidate.id);
+
+    const opened = getRecipientsInActiveSigningStep(stepRecipients, sequencing)
+      .map((candidate) => candidate.id)
+      .filter((id) => !activeBefore.includes(id));
+
+    // Dictation needs a one-recipient step, judged on the step as opened here: a reminded co-member who completes
+    // before the invitation transaction must not shrink the step and make a two-recipient step look dictatable (C109c).
+    return { openedStepIds: opened, isDictationEligible: opened.length === 1 };
   });
 
   const envelopeWithRelations = await prisma.envelope.findUniqueOrThrow({
@@ -532,65 +579,127 @@ export const completeDocumentWithToken = async ({
       envelope.documentMeta?.signingOrder === DocumentSigningOrder.SEQUENTIAL &&
       (await isLegacyPdfAcceptedForInvitation(envelope))
     ) {
-      const [nextRecipient] = pendingRecipients;
+      // Picked and written under the envelope lock, which rejection also takes, and written only while the
+      // chosen recipient is still NOT_SIGNED. A rejection that commits after this completion therefore leaves the
+      // rejecter's name and email alone and sends them no invitation, and once anyone has rejected nobody is
+      // invited (#123).
+      const dictatedSigner = envelope.documentMeta?.allowDictateNextSigner ? nextSigner : undefined;
 
-      await prisma.$transaction(async (tx) => {
-        if (nextSigner && envelope.documentMeta?.allowDictateNextSigner) {
-          await tx.documentAuditLog.create({
-            data: createDocumentAuditLogData({
-              type: DOCUMENT_AUDIT_LOG_TYPE.RECIPIENT_UPDATED,
-              envelopeId: envelope.id,
-              user: {
-                name: recipientName,
-                email: recipientEmail,
-              },
-              requestMetadata,
-              data: {
-                recipientEmail: nextRecipient.email,
-                recipientName: nextRecipient.name,
-                recipientId: nextRecipient.id,
-                recipientRole: nextRecipient.role,
-                changes: [
-                  {
-                    type: RECIPIENT_DIFF_TYPE.NAME,
-                    from: nextRecipient.name,
-                    to: nextSigner.name,
-                  },
-                  {
-                    type: RECIPIENT_DIFF_TYPE.EMAIL,
-                    from: nextRecipient.email,
-                    to: nextSigner.email,
-                  },
-                ],
-              },
-            }),
-          });
+      const invitedRecipientIds = await prisma.$transaction(async (tx) => {
+        const [lockedEnvelope] = await tx.$queryRaw<{ status: DocumentStatus }[]>`
+          SELECT "status" FROM "Envelope" WHERE "id" = ${envelope.id} FOR NO KEY UPDATE
+        `;
+
+        if (lockedEnvelope?.status !== DocumentStatus.PENDING) {
+          return [];
         }
 
-        await tx.recipient.update({
-          where: { id: nextRecipient.id },
-          data: {
-            sendStatus: SendStatus.SENT,
-            sentAt: new Date(),
-            ...(nextSigner && envelope.documentMeta?.allowDictateNextSigner
-              ? {
-                  name: nextSigner.name,
-                  email: nextSigner.email,
-                }
-              : {}),
+        const lockedRecipients = await tx.recipient.findMany({
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            signingStatus: true,
+            signingOrder: true,
+          },
+          where: {
+            envelopeId: envelope.id,
           },
         });
+
+        if (lockedRecipients.some((candidate) => candidate.signingStatus === SigningStatus.REJECTED)) {
+          return [];
+        }
+
+        // Only the completion that opened the step invites its members, each once (C109b), whatever their
+        // sendStatus: a reminder marks a recipient SENT whatever their turn (resendDocument checks none). The
+        // dictated signer is applied only when the step was opened as a single recipient (C109c), the one upstream's
+        // rule names.
+        const openedStep = getRecipientsInActiveSigningStep(lockedRecipients, {
+          strictlySequential: isTspEnvelope(envelope),
+        }).filter((candidate) => openedStepIds.includes(candidate.id));
+
+        const dictatableRecipient =
+          dictatedSigner && isDictationEligible
+            ? getNextDictatableRecipient({ recipients: lockedRecipients, currentRecipientId: recipient.id })
+            : null;
+
+        const invitedIds: number[] = [];
+
+        for (const nextRecipient of openedStep) {
+          const isDictated = dictatedSigner !== undefined && dictatableRecipient?.id === nextRecipient.id;
+
+          const { count } = await tx.recipient.updateMany({
+            where: {
+              id: nextRecipient.id,
+              signingStatus: SigningStatus.NOT_SIGNED,
+            },
+            data: {
+              sendStatus: SendStatus.SENT,
+              sentAt: new Date(),
+              ...(isDictated
+                ? {
+                    name: dictatedSigner.name,
+                    email: dictatedSigner.email,
+                  }
+                : {}),
+            },
+          });
+
+          if (count === 0) {
+            continue;
+          }
+
+          if (isDictated) {
+            await tx.documentAuditLog.create({
+              data: createDocumentAuditLogData({
+                type: DOCUMENT_AUDIT_LOG_TYPE.RECIPIENT_UPDATED,
+                envelopeId: envelope.id,
+                user: {
+                  name: recipientName,
+                  email: recipientEmail,
+                },
+                requestMetadata,
+                data: {
+                  recipientEmail: nextRecipient.email,
+                  recipientName: nextRecipient.name,
+                  recipientId: nextRecipient.id,
+                  recipientRole: nextRecipient.role,
+                  changes: [
+                    {
+                      type: RECIPIENT_DIFF_TYPE.NAME,
+                      from: nextRecipient.name,
+                      to: dictatedSigner.name,
+                    },
+                    {
+                      type: RECIPIENT_DIFF_TYPE.EMAIL,
+                      from: nextRecipient.email,
+                      to: dictatedSigner.email,
+                    },
+                  ],
+                },
+              }),
+            });
+          }
+
+          invitedIds.push(nextRecipient.id);
+        }
+
+        return invitedIds;
       });
 
-      await jobs.triggerJob({
-        name: 'send.signing.requested.email',
-        payload: {
-          userId: envelope.userId,
-          documentId: legacyDocumentId,
-          recipientId: nextRecipient.id,
-          requestMetadata,
-        },
-      });
+      for (const invitedRecipientId of invitedRecipientIds) {
+        await jobs.triggerJob({
+          name: 'send.signing.requested.email',
+          payload: {
+            userId: envelope.userId,
+            documentId: legacyDocumentId,
+            recipientId: invitedRecipientId,
+            requestMetadata,
+          },
+        });
+      }
     }
   }
 

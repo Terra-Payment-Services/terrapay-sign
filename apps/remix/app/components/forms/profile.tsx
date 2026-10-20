@@ -1,3 +1,4 @@
+import { useOfferedSignature } from '@documenso/lib/client-only/hooks/use-offered-signature';
 import { useSession } from '@documenso/lib/client-only/providers/session';
 import { ZNameSchema } from '@documenso/lib/types/name';
 import { trpc } from '@documenso/trpc/react';
@@ -36,12 +37,15 @@ export const ProfileForm = ({ className }: ProfileFormProps) => {
   const { toast } = useToast();
   const { user, refreshSession } = useSession();
 
+  // A legacy saved signature the ink rule refuses is not shown, and a name-only save sends '' in its place (#126).
+  const { signature: offeredSignature, isWithheld } = useOfferedSignature(user.signature || '');
+
   const form = useForm<TProfileFormSchema>({
     values: {
       name: user.name ?? '',
-      signature: user.signature || '',
+      signature: offeredSignature || '',
     },
-    resolver: zodResolver(ZProfileFormSchema),
+    resolver: zodResolver(isWithheld ? ZProfileFormSchema.extend({ signature: z.string() }) : ZProfileFormSchema),
   });
 
   const isSubmitting = form.formState.isSubmitting;

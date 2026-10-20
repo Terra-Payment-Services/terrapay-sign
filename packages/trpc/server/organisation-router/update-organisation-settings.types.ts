@@ -1,4 +1,4 @@
-import { BRANDING_CSS_MAX_LENGTH } from '@documenso/lib/constants/branding';
+import { BRANDING_CSS_MAX_LENGTH, BRANDING_CSS_TOO_LONG } from '@documenso/lib/constants/branding';
 import { ZEnvelopeExpirationPeriod } from '@documenso/lib/constants/envelope-expiration';
 import { ZEnvelopeReminderSettings } from '@documenso/lib/constants/envelope-reminder';
 import { SUPPORTED_LANGUAGE_CODES } from '@documenso/lib/constants/i18n';
@@ -35,7 +35,10 @@ export const ZUpdateOrganisationSettingsRequestSchema = z.object({
     brandingUrl: z.string().optional(),
     brandingCompanyDetails: z.string().optional(),
     brandingColors: ZCssVarsSchema.nullish(),
-    brandingCss: z.string().max(BRANDING_CSS_MAX_LENGTH).optional(),
+    brandingCss: z
+      .string()
+      .max(BRANDING_CSS_MAX_LENGTH, { message: `Branding stylesheet not saved: ${BRANDING_CSS_TOO_LONG}.` })
+      .optional(),
 
     // Email related settings.
     emailId: z.string().nullish(),

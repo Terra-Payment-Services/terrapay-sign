@@ -1,14 +1,17 @@
 /**
  * Maximum length (in characters) of the user-supplied custom CSS for branding.
- * Bound enforced at the TRPC request boundary on both the organisation and
- * team settings update routes. The sanitiser is run after this check; this
- * limit is purely a request-size guard.
+ * Enforced at the TRPC request boundary on both the organisation and team
+ * settings update routes, and again by the sanitiser, so a row stored before
+ * the limit was lowered renders without its CSS.
  *
- * 256 KB — generous enough for hand-written branding CSS and the occasional
- * compiled-from-Tailwind-or-similar paste, while still keeping a request
- * cap so a malicious or runaway payload can't exhaust PostCSS/server memory.
+ * 32 KiB. This is the real bound on the work a stylesheet can cause on
+ * every save and render-cache miss; the sanitiser's pre-parse scan is a second
+ * layer inside it.
  */
-export const BRANDING_CSS_MAX_LENGTH = 256 * 1024;
+export const BRANDING_CSS_MAX_LENGTH = 32 * 1024;
+
+/** The refusal when branding CSS is over BRANDING_CSS_MAX_LENGTH. */
+export const BRANDING_CSS_TOO_LONG = `the stylesheet is longer than the ${BRANDING_CSS_MAX_LENGTH.toLocaleString('en')}-character (32 KiB) limit`;
 
 /**
  * Branding logo upload constraints. Enforced server-side at the TRPC request

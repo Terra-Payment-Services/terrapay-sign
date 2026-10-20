@@ -9,6 +9,7 @@ import { canRecipientFieldsBeModified } from '../../utils/recipients';
 import { lockFieldsSparingSeals, refuseCompanySeal } from '../company-seal/company-seal-field';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { assertRecipientFieldsModifiableUnderLock } from '../recipient/lock-envelope-for-owner-edit';
 
 export interface DeleteDocumentFieldOptions {
   userId: number;
@@ -91,6 +92,7 @@ export const deleteDocumentField = async ({ userId, teamId, fieldId, requestMeta
 
   return await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+    await assertRecipientFieldsModifiableUnderLock(tx, envelope.id, [field.recipientId]);
     await lockFieldsSparingSeals(tx, [field]);
 
     const deletedField = await tx.field.delete({

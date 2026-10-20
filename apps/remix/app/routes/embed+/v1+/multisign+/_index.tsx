@@ -2,6 +2,7 @@ import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session
 import { captureServerEvent } from '@documenso/lib/server-only/analytics/capture-server-event';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
+import { getIsRecipientsTurnToSign } from '@documenso/lib/server-only/recipient/get-is-recipient-turn';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { ZSignDocumentEmbedDataSchema } from '@documenso/lib/types/embed-document-sign-schema';
 import { fireAndForget } from '@documenso/lib/universal/fire-and-forget';
@@ -36,10 +37,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         token,
       });
 
+      // Multi-sign signs through the V1 field routes, which refuse V2 envelopes (#142).
+      if (document.internalVersion !== 1) {
+        throw new Response('V2 envelopes cannot be multi signed', { status: 400 });
+      }
+
       const recipient = await getRecipientByToken({ token });
 
-      // Multi-sign cannot satisfy access auth, and applyMultiSignSignature
-      // refuses these documents, so do not hand out their contents either.
+      // Out-of-turn recipients wait, as on the V0 embed (#145).
+      if (!(await getIsRecipientsTurnToSign({ token }))) {
+        throw new Response('It is not your turn to sign yet', { status: 403 });
+      }
+
+      // Multi-sign cannot satisfy access auth, so do not hand out the contents of documents that require it.
       const { recipientAccessAuthRequired } = extractDocumentAuthMethods({
         documentAuth: document.authOptions,
         recipientAuth: recipient.authOptions,

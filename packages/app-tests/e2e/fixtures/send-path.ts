@@ -40,22 +40,31 @@ export const addressFor = (localPart: string) => `${localPart}@test.documenso.co
 
 export type InbucketMessage = { id: string; subject: string; to: string[] };
 
+/**
+ * The catcher is read with Node's fetch, not the test's APIRequestContext, which a retained trace records
+ * response by response. Inbucket's listing names each message's sender, NEXT_PRIVATE_SMTP_FROM_ADDRESS, which the
+ * artifact secret scan counts as a secret (NEXT_PRIVATE_*), so a failed mail-reading test's trace failed the scan
+ * of CI pipeline 55464. Only id, subject and to are returned, so no assertion message prints the sender either.
+ * The `request` parameters stay for the callers.
+ */
+const fetchMailbox = async (localPart: string) => await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
+
 /** Fails the run, rather than every assertion, when the catcher is not reachable. */
-export const assertMailCatcherReachable = async (request: APIRequestContext) => {
-  const res = await request.get(`${INBUCKET_URL}/api/v1/mailbox/spt-reachability-probe`).catch(() => null);
+export const assertMailCatcherReachable = async (_request: APIRequestContext) => {
+  const res = await fetchMailbox('spt-reachability-probe').catch(() => null);
 
   expect(
-    res?.ok(),
+    res?.ok,
     `the Inbucket web API must be reachable at ${INBUCKET_URL} (set E2E_INBUCKET_URL); these specs observe email there`,
   ).toBe(true);
 };
 
-export const readMailbox = async (request: APIRequestContext, localPart: string) => {
-  const res = await request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
+export const readMailbox = async (_request: APIRequestContext, localPart: string): Promise<InbucketMessage[]> => {
+  const res = await fetchMailbox(localPart);
 
-  expect(res.ok(), `reading mailbox ${localPart}: ${res.status()}`).toBe(true);
+  expect(res.ok, `reading mailbox ${localPart}: ${res.status}`).toBe(true);
 
-  return (await res.json()) as InbucketMessage[];
+  return ((await res.json()) as InbucketMessage[]).map(({ id, subject, to }) => ({ id, subject, to }));
 };
 
 /** Waits until the mailbox holds at least `count` messages and returns them. */

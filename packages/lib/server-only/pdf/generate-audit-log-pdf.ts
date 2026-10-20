@@ -79,9 +79,8 @@ const getAuditLogs = async (envelopeId: string) => {
     where: {
       envelopeId,
     },
-    orderBy: {
-      createdAt: 'desc',
-    },
+    // id breaks createdAt ties, which writes in one millisecond produce, so the pages render in one fixed order (#178).
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
 
   return auditLogs.map((auditLog) => parseDocumentAuditLogData(auditLog));

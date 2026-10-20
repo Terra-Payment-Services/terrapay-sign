@@ -156,7 +156,7 @@ test.afterEach(async () => {
 });
 
 /**
- * C1: a hostile page visited by a signed-in admin can send the SameSite=None session cookie with a text/plain POST,
+ * C1: a hostile page on a sibling host visited by a signed-in admin can send the Lax session cookie with a text/plain POST,
  * which needs no preflight. The same-origin check must answer it 403, and the job in its body must not exist.
  */
 test('C1: a cross-site text/plain add from an admin is refused 403 and adds no job', async () => {

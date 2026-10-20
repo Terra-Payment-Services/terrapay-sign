@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { createSameOriginMiddleware } from './same-origin-middleware';
 
 /**
- * The session cookie is SameSite=None, so a page on any site could post to
- * the tRPC endpoint with the signed-in user's session attached. These cases
+ * A page on another host of the same site receives the SameSite=Lax session
+ * cookie, and the access code cookie is SameSite=None, so such pages could post
+ * to the tRPC endpoint with credentials attached. These cases
  * drive the guard through a real Hono app, as the server mounts it.
  */
 

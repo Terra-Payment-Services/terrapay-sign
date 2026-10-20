@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { SanitizeBrandingCssWarning } from '@documenso/lib/utils/sanitize-branding-css';
 import { trpc } from '@documenso/trpc/react';
 import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
@@ -84,9 +85,15 @@ export default function TeamsSettingsPage() {
         });
       }
     } catch (err) {
+      const error = AppError.parseError(err);
+
+      // A refused contrast check is permanent until the colours change, so show its reason.
       toast({
-        title: t`Something went wrong`,
-        description: t`We were unable to update your branding preferences at this time, please try again later`,
+        title: error.code === AppErrorCode.INVALID_BODY ? t`Branding preferences not saved` : t`Something went wrong`,
+        description:
+          error.code === AppErrorCode.INVALID_BODY && error.message
+            ? error.message
+            : t`We were unable to update your branding preferences at this time, please try again later`,
         variant: 'destructive',
       });
 

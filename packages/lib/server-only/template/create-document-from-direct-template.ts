@@ -46,6 +46,7 @@ import { validateFieldAuth } from '../document/validate-field-auth';
 import { incrementDocumentId } from '../envelope/increment-id';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
+import { assertValidSignatureValue } from '../signature/assert-valid-signature-value';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
 import { getTeamSettings } from '../team/get-team-settings';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -270,7 +271,7 @@ export const createDocumentFromDirectTemplate = async ({
       }
 
       if (templateField.type === FieldType.NAME && directRecipientName === undefined) {
-        directRecipientName = signedFieldValue?.value;
+        directRecipientName = signedFieldValue?.value?.trim();
       }
 
       const derivedRecipientActionAuth = await validateFieldAuth({
@@ -299,17 +300,11 @@ export const createDocumentFromDirectTemplate = async ({
       const isSignatureField =
         templateField.type === FieldType.SIGNATURE || templateField.type === FieldType.FREE_SIGNATURE;
 
-      let customText = !isSignatureField ? value : '';
-
-      const signatureImageAsBase64 = isSignatureField && isBase64 ? value : undefined;
-      const typedSignature = isSignatureField && !isBase64 ? value : undefined;
+      // The schema no longer trims, so a typed signature reaches its validator as received (G4 C105b, C105c).
+      let customText = !isSignatureField ? value?.trim() : '';
 
       if (templateField.type === FieldType.DATE) {
         customText = DateTime.now().setZone(derivedDocumentMeta.timezone).toFormat(derivedDocumentMeta.dateFormat);
-      }
-
-      if (isSignatureField && !signatureImageAsBase64 && !typedSignature) {
-        throw new Error('Signature field must have a signature');
       }
 
       return {
@@ -317,10 +312,7 @@ export const createDocumentFromDirectTemplate = async ({
         customText,
         derivedRecipientActionAuth,
         signature: isSignatureField
-          ? {
-              signatureImageAsBase64,
-              typedSignature,
-            }
+          ? await assertValidSignatureValue({ value: value ?? '', isBase64, methods: derivedDocumentMeta })
           : null,
       };
     }),

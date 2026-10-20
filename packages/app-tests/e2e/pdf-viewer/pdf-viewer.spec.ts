@@ -270,21 +270,17 @@ test.describe('PDF Viewer Rendering', () => {
       });
       await addSecondEnvelopeItem(documentV2.id);
 
+      // The PDF renders for the V1 document, which has one envelope item.
       await page.goto(`/embed/v1/multisign?token=${recipientsV1[0].token}`);
-      await expect(page.getByText('Sign Documents')).toBeVisible({ timeout: 15_000 });
-
-      // Todo: Multisign does not support multiple envelope items.
-      // await page.getByRole('button', { name: /View/i }).first().click();
-      // await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
-
-      await page.goto(`/embed/v1/multisign?token=${recipientsV2[0].token}`);
       await expect(page.getByText('Sign Documents')).toBeVisible({ timeout: 15_000 });
       await page.getByRole('button', { name: /View/i }).first().click();
       await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
 
-      // Todo: Multisign does not support multiple envelope items.
-      // await page.getByRole('button', { name: /Page 2/ }).click();
-      // await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
+      // Multi-sign signs through the V1 field routes, so a V2 token is refused rather than offered (G4 C66, #142).
+      const refusedV2 = await page.goto(`/embed/v1/multisign?token=${recipientsV2[0].token}`);
+
+      expect(refusedV2?.status(), 'C66: the multi-sign embed refuses a V2 token').toBe(400);
+      await expect(page.getByText('Sign Documents')).toHaveCount(0);
     });
   });
 });

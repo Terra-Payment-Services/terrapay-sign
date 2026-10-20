@@ -47,6 +47,7 @@ import {
 import { buildTeamWhereQuery } from '../../utils/teams';
 import { resolveCompanySealFieldMeta } from '../company-seal/company-seal-field';
 import { assertDocumentDataAccess } from '../document-data/assert-document-data-access';
+import { assertSignatureMethodsEnabled } from '../document-meta/assert-signature-methods-enabled';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
@@ -380,16 +381,20 @@ export const createEnvelope = async ({
     }
   }
 
+  const derivedDocumentMeta = extractDerivedDocumentMeta(
+    settings,
+    {
+      ...meta,
+      timezone: timezoneToUse,
+    },
+    signatureLevel,
+  );
+
+  assertSignatureMethodsEnabled(derivedDocumentMeta);
+
   const [documentMeta, secondaryId, delegatedOwner] = await Promise.all([
     prisma.documentMeta.create({
-      data: extractDerivedDocumentMeta(
-        settings,
-        {
-          ...meta,
-          timezone: timezoneToUse,
-        },
-        signatureLevel,
-      ),
+      data: derivedDocumentMeta,
     }),
     type === EnvelopeType.DOCUMENT
       ? incrementDocumentId().then((v) => v.formattedDocumentId)

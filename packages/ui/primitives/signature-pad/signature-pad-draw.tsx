@@ -6,7 +6,7 @@ import { Undo2 } from 'lucide-react';
 import type { StrokeOptions } from 'perfect-freehand';
 import { getStroke } from 'perfect-freehand';
 import type { MouseEvent, PointerEvent, TouchEvent } from 'react';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../../lib/utils';
 import { checkSignatureValidity, getSvgPathFromStroke } from './helper';
@@ -35,6 +35,9 @@ export const SignaturePadDraw = ({
 
   const $imageData = useRef<ImageData | null>(null);
   const $fileInput = useRef<HTMLInputElement>(null);
+  // Whether the button now held went down on this canvas, so a press that opened the dialog or began
+  // elsewhere never starts a stroke when it enters the pad (#103).
+  const $isPressFromCanvas = useRef(false);
 
   const [isPressed, setIsPressed] = useState(false);
   const [lines, setLines] = useState<Point[][]>([]);
@@ -156,7 +159,7 @@ export const SignaturePadDraw = ({
       event.preventDefault();
     }
 
-    if ('buttons' in event && event.buttons === 1) {
+    if ('buttons' in event && event.buttons === 1 && $isPressFromCanvas.current) {
       onMouseDown(event);
     }
   };
@@ -222,6 +225,20 @@ export const SignaturePadDraw = ({
     onChange?.(isValidSignature ? $el.current.toDataURL() : '');
   };
 
+  useEffect(() => {
+    const onPressEnd = () => {
+      $isPressFromCanvas.current = false;
+    };
+
+    window.addEventListener('pointerup', onPressEnd);
+    window.addEventListener('pointercancel', onPressEnd);
+
+    return () => {
+      window.removeEventListener('pointerup', onPressEnd);
+      window.removeEventListener('pointercancel', onPressEnd);
+    };
+  }, []);
+
   unsafe_useEffectOnce(() => {
     if ($el.current) {
       $el.current.width = $el.current.clientWidth * SIGNATURE_CANVAS_DPI;
@@ -260,7 +277,10 @@ export const SignaturePadDraw = ({
         })}
         style={{ touchAction: 'none' }}
         onPointerMove={(event) => onMouseMove(event)}
-        onPointerDown={(event) => onMouseDown(event)}
+        onPointerDown={(event) => {
+          $isPressFromCanvas.current = true;
+          onMouseDown(event);
+        }}
         onPointerUp={(event) => onMouseUp(event)}
         onPointerLeave={(event) => onMouseLeave(event)}
         onPointerEnter={(event) => onMouseEnter(event)}

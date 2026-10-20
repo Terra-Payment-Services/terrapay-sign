@@ -30,7 +30,7 @@ import {
   ZRadioFieldMeta,
   ZTextFieldMeta,
 } from '../../types/field-meta';
-import { SignatureLevel } from '../../types/signature-level';
+import { isTspEnvelope, SignatureLevel } from '../../types/signature-level';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { deleteFile } from '../../universal/upload/delete-file';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
@@ -40,6 +40,7 @@ import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { type EnvelopeIdOptions, mapSecondaryIdToDocumentId } from '../../utils/envelope';
 import { toCheckboxCustomText, toRadioCustomText } from '../../utils/fields';
 import { logger } from '../../utils/logger';
+import { getRecipientsInActiveSigningStep } from '../../utils/recipient-groups';
 import {
   assertNoPlaceholderRecipients,
   getRecipientsWithMissingFields,
@@ -163,10 +164,10 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   let recipientsToNotify = envelope.recipients;
 
   if (signingOrder === DocumentSigningOrder.SEQUENTIAL) {
-    // Get the currently active recipient.
-    recipientsToNotify = envelope.recipients
-      .filter((r) => r.signingStatus === SigningStatus.NOT_SIGNED && r.role !== RecipientRole.CC)
-      .slice(0, 1);
+    // Every member of the first unsigned step is invited, as each may sign now (#145).
+    recipientsToNotify = getRecipientsInActiveSigningStep(envelope.recipients, {
+      strictlySequential: isTspEnvelope(envelope),
+    });
   }
 
   if (envelope.envelopeItems.length === 0) {
@@ -297,6 +298,18 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
 
   const updatedEnvelope = await prisma
     .$transaction(async (tx) => {
+      // The status checked above is read again under the envelope lock that cancel, the seal and every
+      // recipient action contend for, so a send that loses to a cancel cannot write PENDING over it (#122).
+      const [lockedEnvelope] = await tx.$queryRaw<{ status: DocumentStatus }[]>`
+        SELECT "status" FROM "Envelope" WHERE "id" = ${envelope.id} FOR NO KEY UPDATE
+      `;
+
+      if (lockedEnvelope?.status !== envelope.status) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} changed status while it was being sent`,
+        });
+      }
+
       await commitStagedPdfs(tx, envelope.id, stagedPdfs);
 
       if (envelope.status === DocumentStatus.DRAFT) {
@@ -364,12 +377,25 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
         });
       }
 
-      return await tx.envelope.update({
+      const { count } = await tx.envelope.updateMany({
         where: {
           id: envelope.id,
+          status: envelope.status,
         },
         data: {
           status: DocumentStatus.PENDING,
+        },
+      });
+
+      if (count === 0) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} changed status while it was being sent`,
+        });
+      }
+
+      return await tx.envelope.findUniqueOrThrow({
+        where: {
+          id: envelope.id,
         },
         include: {
           documentMeta: true,

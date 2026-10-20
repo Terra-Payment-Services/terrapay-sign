@@ -58,6 +58,31 @@ export const DEFAULT_BRAND_COLORS = {
 export const DEFAULT_BRAND_RADIUS = '0.5rem';
 
 /**
+ * The dark-mode defaults, from `.dark:not(.dark-mode-disabled)` in `theme.css`, for the tokens
+ * the branding contrast check pairs. A token missing here has no dark override and keeps
+ * its light value. KEEP IN SYNC WITH `theme.css`, as above.
+ */
+export const DARK_BRAND_COLORS: Partial<Record<keyof typeof DEFAULT_BRAND_COLORS, string>> = {
+  background: 'hsl(222 25% 11%)',
+  foreground: 'hsl(0 0% 97%)',
+  muted: 'hsl(222 18% 19%)',
+  mutedForeground: 'hsl(222 12% 72%)',
+  popover: 'hsl(222 25% 13%)',
+  popoverForeground: 'hsl(0 0% 92%)',
+  card: 'hsl(222 25% 13%)',
+  cardForeground: 'hsl(0 0% 95%)',
+  widget: 'hsl(222 25% 13%)',
+  primary: 'hsl(223 100% 69%)',
+  primaryForeground: 'hsl(223 54.8% 12%)',
+  secondary: 'hsl(222 18% 19%)',
+  secondaryForeground: 'hsl(223 100% 69%)',
+  accent: 'hsl(222 15% 26%)',
+  accentForeground: 'hsl(223 100% 69%)',
+  destructive: 'hsl(3 54.5% 52.5%)',
+  destructiveForeground: 'hsl(0 0% 100%)',
+};
+
+/**
  * `--destructive-text` in `theme.css`: 2 58.6% 45.5%, TOPS coral-text.
  *
  * Kept out of `DEFAULT_BRAND_COLORS` because that record is typed against the

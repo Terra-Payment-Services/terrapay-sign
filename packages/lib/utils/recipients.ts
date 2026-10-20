@@ -23,6 +23,89 @@ export const isCcRecipient = (recipient: Pick<Recipient, 'role'>) => {
   return recipient.role === RecipientRole.CC;
 };
 
+/**
+ * Recipients sharing an explicit signing order form a step and may act in
+ * parallel. A recipient without one (legacy rows predating automatic
+ * numbering) never shares a step: unordered recipients sort after every
+ * numbered recipient and among themselves by id, matching how the server has
+ * always processed them (`ORDER BY signingOrder NULLS LAST, id`).
+ *
+ * Ported from upstream 573c928a0 (#3319) for the order gate (#145).
+ */
+export type PositionedRecipient = {
+  id?: number | null;
+  signingOrder?: number | null;
+};
+
+export const hasSigningOrder = (recipient: PositionedRecipient): recipient is { signingOrder: number } =>
+  typeof recipient.signingOrder === 'number';
+
+const hasPersistedId = (recipient: PositionedRecipient): recipient is { id: number } =>
+  typeof recipient.id === 'number';
+
+/**
+ * Orders recipients by signing position. Unsaved (id-less) unordered recipients sort last, in input order.
+ */
+export const compareRecipientSigningPosition = (a: PositionedRecipient, b: PositionedRecipient): number => {
+  const aIsNumbered = hasSigningOrder(a);
+  const bIsNumbered = hasSigningOrder(b);
+
+  if (aIsNumbered && bIsNumbered) {
+    return a.signingOrder - b.signingOrder;
+  }
+
+  if (aIsNumbered !== bIsNumbered) {
+    return aIsNumbered ? -1 : 1;
+  }
+
+  const aHasId = hasPersistedId(a);
+  const bHasId = hasPersistedId(b);
+
+  if (aHasId && bHasId) {
+    return a.id - b.id;
+  }
+
+  if (aHasId !== bHasId) {
+    return aHasId ? -1 : 1;
+  }
+
+  return 0;
+};
+
+/** A copy of `recipients` sorted by signing position. */
+export const sortRecipientsBySigningPosition = <T extends PositionedRecipient>(recipients: T[]): T[] =>
+  [...recipients].sort(compareRecipientSigningPosition);
+
+/** Whether two recipients share a numbered signing order, and so one step. */
+export const isSameSigningStep = (a: PositionedRecipient, b: PositionedRecipient): boolean =>
+  hasSigningOrder(a) && hasSigningOrder(b) && a.signingOrder === b.signingOrder;
+
+/**
+ * Whether `recipient` must act before `other`.
+ *
+ * `strictlySequential` also orders group members by id so no two recipients
+ * are ever eligible at once — required on AES/QES, where a TSP signature is
+ * computed over a document snapshot and overlapping signers would invalidate
+ * each other's /ByteRange.
+ */
+export const isRecipientBefore = (
+  recipient: PositionedRecipient,
+  other: PositionedRecipient,
+  options: { strictlySequential?: boolean } = {},
+): boolean => {
+  const comparison = compareRecipientSigningPosition(recipient, other);
+
+  if (comparison !== 0) {
+    return comparison < 0;
+  }
+
+  if (!options.strictlySequential || !isSameSigningStep(recipient, other)) {
+    return false;
+  }
+
+  return hasPersistedId(recipient) && hasPersistedId(other) && recipient.id < other.id;
+};
+
 export const isAssistantLastSigner = (recipients: Pick<Recipient, 'role'>[]) => {
   const nonCcRecipients = recipients.filter((recipient) => !isCcRecipient(recipient));
   const lastNonCcRecipient = nonCcRecipients[nonCcRecipients.length - 1];
@@ -103,18 +186,26 @@ export const canRecipientBeModified = (
     return false;
   }
 
-  // CCers can always be modified (unless document is completed).
+  // A rejection stays PENDING until the seal job runs, and editing or deleting the rejecter in that window would
+  // erase it, whatever their role (#121).
+  if (recipient.signingStatus === SigningStatus.REJECTED) {
+    return false;
+  }
+
+  // Deny if the recipient has inserted any fields, whatever their role: a signer who inserted a field and was then
+  // switched to CC keeps those fields and their signatures (#121).
+  if (fields.some((field) => field.recipientId === recipient.id && field.inserted)) {
+    return false;
+  }
+
+  // CCers can otherwise be modified (unless document is completed). A CC is stored SIGNED from creation, so the
+  // status check below does not apply to them.
   if (recipient.role === RecipientRole.CC) {
     return true;
   }
 
   // Deny if the recipient has already signed the document.
   if (recipient.signingStatus === SigningStatus.SIGNED) {
-    return false;
-  }
-
-  // Deny if the recipient has inserted any fields.
-  if (fields.some((field) => field.recipientId === recipient.id && field.inserted)) {
     return false;
   }
 

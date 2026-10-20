@@ -152,7 +152,8 @@ export const ZSetFieldsForTemplateResponseSchema = z.object({
 export const ZSignFieldWithTokenMutationSchema = z.object({
   token: z.string(),
   fieldId: z.number(),
-  value: z.string().trim().optional(),
+  // Untrimmed: a typed signature is checked for control characters as received (G4 C105b).
+  value: z.string().optional(),
   isBase64: z.boolean().optional(),
   authOptions: ZRecipientActionAuthSchema.optional(),
 });

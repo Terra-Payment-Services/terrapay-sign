@@ -4,8 +4,16 @@ import selectorParser from 'postcss-selector-parser';
 import valueParser from 'postcss-value-parser';
 import { z } from 'zod';
 
+import { BRANDING_CSS_MAX_LENGTH, BRANDING_CSS_TOO_LONG } from '../constants/branding';
+
+import { findSeeThroughBackground } from './branding-background';
+import { createWarningList, findSelectorComplexityProblem, finishWarnings, removeNodes } from './branding-css-bounds';
+import { findBrandingCssBudgetProblem } from './branding-css-budget';
+import { exceedsBrandingCssDepth, MAX_BRANDING_CSS_DEPTH } from './branding-css-depth';
+import { asciiLowerCase } from './parse-css-colour';
+
 export const ZSanitizeBrandingCssWarningSchema = z.object({
-  kind: z.enum(['selector', 'property', 'value', 'at-rule', 'parse-error']),
+  kind: z.enum(['selector', 'property', 'value', 'at-rule', 'parse-error', 'contrast']),
   detail: z.string(),
   line: z.number().optional(),
 });
@@ -15,56 +23,40 @@ export type SanitizeBrandingCssWarning = z.infer<typeof ZSanitizeBrandingCssWarn
 export type SanitizeBrandingCssResult = {
   css: string;
   warnings: SanitizeBrandingCssWarning[];
+  /** Set when the whole stylesheet is refused; a save answers 4xx with it and a page drops the CSS. */
+  refused?: string;
 };
 
 /**
  * The class name the sanitised CSS will be wrapped in at render time using
- * CSS nesting (`.documenso-branded { <user css> }`). The sanitiser itself
+ * CSS nesting (`.documenso-branded.documenso-branded.documenso-branded { <user css> }`,
+ * the class repeated for specificity). The sanitiser itself
  * does NOT prefix selectors — the wrapper is applied by `RecipientBranding`
  * on every render so we keep the user's original CSS intact in the database.
  */
 export const SANITIZE_BRANDING_SCOPE_CLASS = 'documenso-branded';
 
 /**
- * The properties branding may set: colours, backgrounds, borders, outlines and fonts. A
+ * The properties branding may set: colours, backgrounds, border and outline colours, and fonts. A
  * blocklist cannot keep up with every property that hides, moves or resizes a control
  * (`filter`, `translate`, negative margins, `all`, custom properties the app reads), so
- * anything else is refused.
+ * anything else is refused. The radius properties are refused too (round 17): a corner
+ * clips the element's background, which shows app paint behind it that the guard does not read.
+ * Border and outline shorthands, styles and widths are refused (round 19): nested borders
+ * add up and can erase an icon, so a tenant recolours a border the app draws and cannot create,
+ * widen or restyle one.
  */
 const ALLOWED_PROPERTIES = new Set([
   'color',
   'background',
   'background-color',
   'background-image',
-  'border',
-  'border-top',
-  'border-right',
-  'border-bottom',
-  'border-left',
   'border-color',
-  'border-style',
-  'border-width',
   'border-top-color',
   'border-right-color',
   'border-bottom-color',
   'border-left-color',
-  'border-top-style',
-  'border-right-style',
-  'border-bottom-style',
-  'border-left-style',
-  'border-top-width',
-  'border-right-width',
-  'border-bottom-width',
-  'border-left-width',
-  'border-radius',
-  'border-top-left-radius',
-  'border-top-right-radius',
-  'border-bottom-left-radius',
-  'border-bottom-right-radius',
-  'outline',
   'outline-color',
-  'outline-style',
-  'outline-width',
   'font-family',
   'font-weight',
   'font-style',
@@ -103,23 +95,7 @@ const ALLOWED_FUNCTIONS = new Set([
   'repeating-conic-gradient',
 ]);
 
-/**
- * A border or outline wide enough could cover the page, so widths are held to a button's
- * scale: at most 16px, or 1em/1rem.
- */
-const MAX_WIDTH_BY_UNIT: Record<string, number> = { px: 16, em: 1, rem: 1 };
-
 const BLOCKED_VALUE_SUBSTRINGS = ['url(', 'expression(', '@import', 'javascript:'];
-
-const BLOCKED_PSEUDO_ELEMENTS = new Set([
-  '::before',
-  '::after',
-  '::backdrop',
-  '::marker',
-  // Single-colon legacy forms.
-  ':before',
-  ':after',
-]);
 
 const BLOCKED_AT_RULES = new Set([
   'import',
@@ -137,7 +113,7 @@ const BLOCKED_AT_RULES = new Set([
  * Decode CSS escapes (`\\75` or `\\000075 ` for `u`, `\\i` for `i`) so a property or value is
  * checked as the browser reads it.
  */
-const decodeCssEscapes = (raw: string): string =>
+export const decodeCssEscapes = (raw: string): string =>
   raw.replace(/\\(?:([0-9a-fA-F]{1,6})(?:\r\n|[ \t\r\n\f])?|([^\r\n\f]))/g, (_match, hex?: string, char?: string) => {
     if (hex === undefined) {
       return char ?? '';
@@ -155,24 +131,56 @@ const decodeCssEscapes = (raw: string): string =>
 type SelectorValidationResult = { kind: 'ok' } | { kind: 'drop'; reason: string };
 
 /**
+ * The characters a selector may contain (round 14). Escapes, functional forms, comments,
+ * namespaces and non-ASCII are all refused on the raw text, before any parser reads it, so the
+ * server never has to agree with the browser about how they decode.
+ */
+const SELECTOR_CHARACTERS = /^[A-Za-z0-9 \t\n\r\-_.#[\]=~^$*"',>+:]*$/;
+
+/**
+ * Why a selector's raw text is refused, or null. Once every `::placeholder` is removed no colon may
+ * remain, so no selector names an interaction or structural state the signing-page guard would
+ * have to watch; a colon inside a quoted attribute value (`[href^="https:"]`) is refused too.
+ */
+const findSelectorTextProblem = (raw: string): string | null => {
+  if (!SELECTOR_CHARACTERS.test(raw)) {
+    return 'selector contains a character that is not allowed';
+  }
+
+  if (raw.replace(/::placeholder/gi, '').includes(':')) {
+    return 'pseudo-classes and pseudo-elements other than "::placeholder" are not allowed';
+  }
+
+  return null;
+};
+
+/**
  * Validate a selector for the rules we care about, but DO NOT rewrite it.
- * The sanitised output is later wrapped in `.documenso-branded { ... }` via
+ * The sanitised output is later wrapped in the repeated `.documenso-branded` class via
  * native CSS nesting by `RecipientBranding`, so scoping happens at render.
  */
-const validateSelector = (rawSelector: string): SelectorValidationResult => {
+const validateSelector = (rawSelector: string, rawText: string): SelectorValidationResult => {
+  const textProblem = findSelectorTextProblem(rawText);
+
+  if (textProblem !== null) {
+    return { kind: 'drop', reason: textProblem };
+  }
+
+  const complexity = findSelectorComplexityProblem(rawSelector);
+
+  if (complexity !== null) {
+    return { kind: 'drop', reason: complexity };
+  }
+
   let dropReason: string | null = null;
 
   const transform = selectorParser((selectors) => {
     selectors.each((selector) => {
       selector.walk((node) => {
-        // Pseudo-element check (works at any depth — even nested pseudos like
-        // `:is(::before)` should be rejected).
-        if (node.type === 'pseudo') {
-          const value = decodeCssEscapes(node.value).toLowerCase();
-
-          if (BLOCKED_PSEUDO_ELEMENTS.has(value)) {
-            dropReason = `pseudo-element "${value}" not allowed`;
-          }
+        // The text check leaves `::placeholder` as the only possible pseudo, but `::placeholderx`
+        // passes it, so the parsed name must be exactly that (round 14).
+        if (node.type === 'pseudo' && asciiLowerCase(node.value) !== '::placeholder') {
+          dropReason = `pseudo-element "${node.value}" not allowed`;
         }
 
         // `&` names the wrapper itself, and `html:has(&)` reaches outside it.
@@ -216,11 +224,84 @@ const validateSelector = (rawSelector: string): SelectorValidationResult => {
 };
 
 /**
- * Why a value is refused, or null. The value is parsed into tokens so a function, a width or
- * a stray `!` is seen however it is spelt.
+ * The font families a tenant may name (round 19), lowercase. Any other family, a symbol font
+ * such as Wingdings included, could turn a label into pictures on a device that has it.
+ */
+const ALLOWED_FONT_FAMILIES = new Set([
+  'serif',
+  'sans-serif',
+  'monospace',
+  'system-ui',
+  'ui-sans-serif',
+  'ui-serif',
+  'ui-monospace',
+  'arial',
+  'helvetica',
+  'helvetica neue',
+  'verdana',
+  'tahoma',
+  'trebuchet ms',
+  'segoe ui',
+  'roboto',
+  'inter',
+  'open sans',
+  'lato',
+  'georgia',
+  'times new roman',
+  'times',
+  'garamond',
+  'palatino',
+  'courier new',
+  'courier',
+  'consolas',
+  'menlo',
+  'monaco',
+]);
+
+/** A lone CSS-wide keyword resolves to the app's font or a parent's, so it is kept. */
+const CSS_WIDE_KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert', 'revert-layer']);
+
+/**
+ * Why a `font-family` value is refused, or null: every family, compared without letter case, must
+ * be on `ALLOWED_FONT_FAMILIES`, unless the value is one unquoted CSS-wide keyword. Any backslash
+ * refuses the value (round 20), since an escape can join or rename families in ways a split
+ * after decoding does not see; families are split at top-level commas on the raw text, and a
+ * quoted string is always a family name, so `"inherit"` names a font and is refused.
+ *
+ * @param value the declared value as written
+ */
+const findFontFamilyProblem = (value: string): string | null => {
+  if (value.includes('\\')) {
+    return 'a backslash is not allowed in a font family';
+  }
+
+  const families: valueParser.Node[][] = [[]];
+
+  for (const node of valueParser(value).nodes) {
+    if (node.type === 'div' && node.value === ',') {
+      families.push([]);
+    } else if (node.type === 'word' || node.type === 'string') {
+      families[families.length - 1].push(node);
+    }
+  }
+
+  const names = families.map((nodes) => asciiLowerCase(nodes.map((node) => node.value).join(' ')));
+  const isLoneKeyword = families.length === 1 && families[0].length === 1 && families[0][0].type === 'word';
+
+  if (isLoneKeyword && CSS_WIDE_KEYWORDS.has(names[0])) {
+    return null;
+  }
+
+  const refused = names.find((name) => !ALLOWED_FONT_FAMILIES.has(name));
+
+  return refused === undefined ? null : `font family "${refused}" is not allowed`;
+};
+
+/**
+ * Why a value is refused, or null. The value is parsed into tokens so a function or a stray `!`
+ * is seen however it is spelt.
  */
 const findValueProblem = (prop: string, rawValue: string): string | null => {
-  const isWidth = (prop.startsWith('border') || prop.startsWith('outline')) && !prop.endsWith('radius');
   let problem: string | null = null;
 
   valueParser(rawValue).walk((node) => {
@@ -265,16 +346,6 @@ const findValueProblem = (prop: string, rawValue: string): string | null => {
 
       return;
     }
-
-    if (!isWidth || !dimension || dimension.unit === '') {
-      return;
-    }
-
-    const max = MAX_WIDTH_BY_UNIT[dimension.unit.toLowerCase()];
-
-    if (max === undefined || Math.abs(Number(dimension.number)) > max) {
-      problem = `width "${word}" is too large`;
-    }
   });
 
   return problem;
@@ -296,7 +367,7 @@ const valueIsBlocked = (rawValue: string): boolean => {
  * dropped, since CSS nesting would otherwise carry declarations past this check.
  */
 const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCssWarning[]): void => {
-  const toRemove: ChildNode[] = [];
+  const toRemove = new Set<ChildNode>();
 
   container.each((node) => {
     if (node.type === 'rule') {
@@ -305,7 +376,7 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
         detail: `nested rule "${node.selector}" is not allowed`,
         line: node.source?.start?.line,
       });
-      toRemove.push(node);
+      toRemove.add(node);
 
       return;
     }
@@ -316,7 +387,7 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
         detail: `nested at-rule "@${node.name}" is not allowed`,
         line: node.source?.start?.line,
       });
-      toRemove.push(node);
+      toRemove.add(node);
 
       return;
     }
@@ -326,6 +397,18 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
     }
 
     const decl = node;
+
+    if (!isWrittenAsParsed(decl)) {
+      warnings.push({
+        kind: 'property',
+        detail: `property "${(decl.raws.before ?? '').trim()}${decl.prop}" is written in a form the browser ignores`,
+        line: decl.source?.start?.line,
+      });
+      toRemove.add(decl);
+
+      return;
+    }
+
     const propLower = decodeCssEscapes(decl.prop).toLowerCase();
 
     if (!ALLOWED_PROPERTIES.has(propLower)) {
@@ -334,7 +417,7 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
         detail: `property "${decl.prop}" is not allowed`,
         line: decl.source?.start?.line,
       });
-      toRemove.push(decl);
+      toRemove.add(decl);
 
       return;
     }
@@ -345,7 +428,7 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
         detail: `value of "${decl.prop}" contains a disallowed token`,
         line: decl.source?.start?.line,
       });
-      toRemove.push(decl);
+      toRemove.add(decl);
 
       return;
     }
@@ -358,7 +441,33 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
         detail: `value of "${decl.prop}": ${valueProblem}`,
         line: decl.source?.start?.line,
       });
-      toRemove.push(decl);
+      toRemove.add(decl);
+
+      return;
+    }
+
+    const fontProblem = propLower === 'font-family' ? findFontFamilyProblem(decl.value) : null;
+
+    if (fontProblem !== null) {
+      warnings.push({
+        kind: 'value',
+        detail: `value of "${decl.prop}": ${fontProblem}`,
+        line: decl.source?.start?.line,
+      });
+      toRemove.add(decl);
+
+      return;
+    }
+
+    const seeThrough = findSeeThroughBackground(propLower, decodeCssEscapes(decl.value));
+
+    if (seeThrough !== null) {
+      warnings.push({
+        kind: 'value',
+        detail: `value of "${decl.prop}": ${seeThrough}`,
+        line: decl.source?.start?.line,
+      });
+      toRemove.add(decl);
 
       return;
     }
@@ -368,46 +477,79 @@ const sanitizeDeclarations = (container: Container, warnings: SanitizeBrandingCs
     }
   });
 
-  for (const node of toRemove) {
-    node.remove();
-  }
+  removeNodes(container, toRemove);
 };
 
-const sanitizeRule = (rule: Rule, warnings: SanitizeBrandingCssWarning[]): void => {
+/**
+ * PostCSS keeps a legacy hack such as `*background` or `_background` in `raws.before` and reports
+ * the property as `background`, which the browser ignores as written. A declaration is kept
+ * only if nothing but CSS whitespace precedes the property and nothing but a colon, comments and
+ * CSS whitespace separates it from the value.
+ */
+const isWrittenAsParsed = (decl: Declaration): boolean => {
+  const before = decl.raws.before ?? '';
+  const between = (decl.raws.between ?? ':').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  return /^[ \t\n\r\f]*$/.test(before) && /^[ \t\n\r\f]*:[ \t\n\r\f]*$/.test(between);
+};
+
+/** @returns true when the rule must be removed; the caller removes it with its siblings. */
+const sanitizeRule = (rule: Rule, warnings: SanitizeBrandingCssWarning[]): boolean => {
   const line = rule.source?.start?.line;
-  const validation = validateSelector(rule.selector);
+  // `rule.selector` has comments removed; the character check reads the selector as stored, with
+  // what postcss keeps between it and its `{` (round 15).
+  const rawText = (rule.raws.selector?.raw ?? rule.selector) + (rule.raws.between ?? '');
+  const validation = validateSelector(rule.selector, rawText);
 
   if (validation.kind === 'drop') {
     warnings.push({ kind: 'selector', detail: validation.reason, line });
-    rule.remove();
 
-    return;
+    return true;
   }
 
   // Selector is left as-is. Scoping is applied at render time by wrapping
-  // the entire sanitised CSS in `.documenso-branded { ... }` (CSS nesting).
+  // the entire sanitised CSS in the repeated `.documenso-branded` class (CSS nesting).
 
   sanitizeDeclarations(rule, warnings);
 
   // If the rule has no declarations left, leave the empty rule in place — the
   // output is still valid CSS and the user can see what happened. (Removing
   // it would also be acceptable; we keep it to make warnings easier to map.)
+  return false;
 };
 
 /**
  * A declaration outside any rule, at the top level or directly inside `@media`, would apply
  * to the wrapper element itself once the CSS is nested in it, so it is dropped.
  */
-const dropStrayDeclaration = (decl: Declaration, warnings: SanitizeBrandingCssWarning[]): void => {
+const warnStrayDeclaration = (decl: Declaration, warnings: SanitizeBrandingCssWarning[]): void => {
   warnings.push({
     kind: 'property',
     detail: `declaration "${decl.prop}" must be inside a rule`,
     line: decl.source?.start?.line,
   });
-  decl.remove();
 };
 
-const sanitizeAtRule = (atRule: AtRule, warnings: SanitizeBrandingCssWarning[]): void => {
+/** Sanitises the children of the root or of an `@media`, removing the refused ones in one pass. */
+const sanitizeChildren = (container: Container, warnings: SanitizeBrandingCssWarning[]): void => {
+  const drop = new Set<ChildNode>();
+
+  for (const child of container.nodes ?? []) {
+    if (child.type === 'rule' && sanitizeRule(child, warnings)) {
+      drop.add(child);
+    } else if (child.type === 'atrule' && sanitizeAtRule(child, warnings)) {
+      drop.add(child);
+    } else if (child.type === 'decl') {
+      warnStrayDeclaration(child, warnings);
+      drop.add(child);
+    }
+  }
+
+  removeNodes(container, drop);
+};
+
+/** @returns true when the at-rule must be removed; the caller removes it with its siblings. */
+const sanitizeAtRule = (atRule: AtRule, warnings: SanitizeBrandingCssWarning[]): boolean => {
   const name = atRule.name.toLowerCase();
   const line = atRule.source?.start?.line;
 
@@ -417,9 +559,8 @@ const sanitizeAtRule = (atRule: AtRule, warnings: SanitizeBrandingCssWarning[]):
       detail: `at-rule "@${atRule.name}" is not allowed`,
       line,
     });
-    atRule.remove();
 
-    return;
+    return true;
   }
 
   if (name !== 'media') {
@@ -428,23 +569,14 @@ const sanitizeAtRule = (atRule: AtRule, warnings: SanitizeBrandingCssWarning[]):
       detail: `at-rule "@${atRule.name}" is not allowed`,
       line,
     });
-    atRule.remove();
 
-    return;
+    return true;
   }
 
   // Recurse into @media children.
-  const children = atRule.nodes ? [...atRule.nodes] : [];
+  sanitizeChildren(atRule, warnings);
 
-  for (const child of children) {
-    if (child.type === 'rule') {
-      sanitizeRule(child, warnings);
-    } else if (child.type === 'atrule') {
-      sanitizeAtRule(child, warnings);
-    } else if (child.type === 'decl') {
-      dropStrayDeclaration(child, warnings);
-    }
-  }
+  return false;
 };
 
 /**
@@ -465,11 +597,67 @@ const sanitizeAtRule = (atRule: AtRule, warnings: SanitizeBrandingCssWarning[]):
  */
 const STYLE_CLOSE_TAG_REGEX = /<\s*\/\s*style/i;
 
+/**
+ * Control characters other than tab, LF, CR and FF are not CSS whitespace, but the value parser
+ * splits on them, so a declaration the browser rejects could read as valid. Postgres also
+ * refuses U+0000 in text columns. Any of them refuses the whole stylesheet before parsing.
+ */
+const findControlCharacter = (input: string): number | null => {
+  for (let index = 0; index < input.length; index++) {
+    const code = input.charCodeAt(index);
+    const isCssWhitespace = code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
+
+    if ((code < 0x20 && !isCssWhitespace) || code === 0x7f) {
+      return code;
+    }
+  }
+
+  return null;
+};
+
+const refuseStylesheet = (reason: string): SanitizeBrandingCssResult => ({
+  css: '',
+  warnings: [{ kind: 'parse-error', detail: reason }],
+  refused: reason,
+});
+
+/**
+ * Sanitises branding CSS. Any unexpected failure refuses the stylesheet rather than reaching the
+ * caller, so neither a save nor a signing page can fail on it.
+ */
 export const sanitizeBrandingCss = (input: string): SanitizeBrandingCssResult => {
-  const warnings: SanitizeBrandingCssWarning[] = [];
+  try {
+    return sanitize(input);
+  } catch {
+    return refuseStylesheet('the stylesheet could not be processed');
+  }
+};
+
+const sanitize = (input: string): SanitizeBrandingCssResult => {
+  const warnings = createWarningList();
+
+  // The request limit, applied again so a row stored before it was lowered renders without CSS.
+  if (input.length > BRANDING_CSS_MAX_LENGTH) {
+    return refuseStylesheet(BRANDING_CSS_TOO_LONG);
+  }
+
+  // Before the empty check, which `trim()` would pass for a stylesheet of only U+000B.
+  const control = findControlCharacter(input);
+
+  if (control !== null) {
+    const code = control.toString(16).toUpperCase().padStart(4, '0');
+
+    return refuseStylesheet(`the stylesheet contains the control character U+${code}, which is not allowed`);
+  }
 
   if (input.trim() === '') {
-    return { css: '', warnings };
+    return { css: '', warnings: [] };
+  }
+
+  const budgetProblem = findBrandingCssBudgetProblem(input);
+
+  if (budgetProblem !== null) {
+    return refuseStylesheet(budgetProblem.detail);
   }
 
   let root;
@@ -488,19 +676,11 @@ export const sanitizeBrandingCss = (input: string): SanitizeBrandingCssResult =>
     };
   }
 
-  // Iterate over a snapshot of top-level children so removal during the loop
-  // is safe.
-  const topLevelChildren = root.nodes ? [...root.nodes] : [];
-
-  for (const node of topLevelChildren) {
-    if (node.type === 'rule') {
-      sanitizeRule(node, warnings);
-    } else if (node.type === 'atrule') {
-      sanitizeAtRule(node, warnings);
-    } else if (node.type === 'decl') {
-      dropStrayDeclaration(node, warnings);
-    }
+  if (exceedsBrandingCssDepth(root)) {
+    return refuseStylesheet(`the stylesheet nests rules more than ${MAX_BRANDING_CSS_DEPTH} levels deep`);
   }
+
+  sanitizeChildren(root, warnings);
 
   const output = root.toString();
 
@@ -508,7 +688,7 @@ export const sanitizeBrandingCss = (input: string): SanitizeBrandingCssResult =>
     return {
       css: '',
       warnings: [
-        ...warnings,
+        ...finishWarnings(warnings),
         {
           kind: 'parse-error',
           detail: 'output contained a literal </style sequence and was rejected',
@@ -517,5 +697,5 @@ export const sanitizeBrandingCss = (input: string): SanitizeBrandingCssResult =>
     };
   }
 
-  return { css: output, warnings };
+  return { css: output, warnings: finishWarnings(warnings) };
 };

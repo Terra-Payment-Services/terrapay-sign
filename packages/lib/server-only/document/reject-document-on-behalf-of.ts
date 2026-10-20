@@ -8,7 +8,7 @@
 // relation to the jobs triggered after a rejection.
 import { jobs } from '@documenso/lib/jobs/client';
 import { prisma } from '@documenso/prisma';
-import { DocumentStatus, EnvelopeType, SigningStatus } from '@prisma/client';
+import { DocumentStatus, EnvelopeType, RecipientRole, SigningStatus } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
@@ -122,9 +122,13 @@ export async function rejectDocumentOnBehalfOf({
       });
     }
 
-    const rejected = await tx.recipient.update({
+    // Conditional: a CC recipient has nothing to reject, and a role changed to CC since the read above must not
+    // turn into a rejection the seal then overwrites (#121).
+    const { count } = await tx.recipient.updateMany({
       where: {
         id: recipient.id,
+        signingStatus: SigningStatus.NOT_SIGNED,
+        role: { not: RecipientRole.CC },
       },
       data: {
         signedAt: new Date(),
@@ -132,6 +136,14 @@ export async function rejectDocumentOnBehalfOf({
         rejectionReason: reason,
       },
     });
+
+    if (count === 0) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} cannot reject this document`,
+      });
+    }
+
+    const rejected = await tx.recipient.findUniqueOrThrow({ where: { id: recipient.id } });
 
     await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({
@@ -169,24 +181,8 @@ export async function rejectDocumentOnBehalfOf({
     },
   });
 
-  // Send email notifications to the rejecting recipient.
-  await jobs.triggerJob({
-    name: 'send.signing.rejected.emails',
-    payload: {
-      recipientId: recipient.id,
-      documentId: legacyDocumentId,
-    },
-  });
-
-  // Send cancellation emails to other recipients.
-  await jobs.triggerJob({
-    name: 'send.document.cancelled.emails',
-    payload: {
-      documentId: legacyDocumentId,
-      cancellationReason: reason,
-      requestMetadata: requestMetadata.requestMetadata,
-    },
-  });
+  // The rejection and cancellation emails are queued by the seal once it commits, so a seal that stops sends
+  // none (G4 D2).
 
   return updatedRecipient;
 }

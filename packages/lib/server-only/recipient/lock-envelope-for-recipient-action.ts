@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { SigningStatus } from '@prisma/client';
+import { DocumentStatus, SigningStatus } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 
@@ -29,7 +29,17 @@ export const lockEnvelopeForRecipientAction = async (
   // FOR NO KEY UPDATE still serialises these actions against each other, but not against the key-share
   // lock a foreign key takes, so an owner's field edit that holds Field rows and writes an audit row
   // cannot deadlock against a signer waiting on one of those fields.
-  await tx.$queryRaw`SELECT "id" FROM "Envelope" WHERE "id" = ${envelopeId} FOR NO KEY UPDATE`;
+  const [envelope] = await tx.$queryRaw<{ status: DocumentStatus }[]>`
+    SELECT "status" FROM "Envelope" WHERE "id" = ${envelopeId} FOR NO KEY UPDATE
+  `;
+
+  // Callers check PENDING before their transaction; a cancel that commits while they wait here must still stop
+  // them (#134).
+  if (envelope?.status !== DocumentStatus.PENDING) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'Document is no longer pending',
+    });
+  }
 
   const recipients = await tx.recipient.findMany({
     where: { envelopeId },

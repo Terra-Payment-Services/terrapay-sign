@@ -1,7 +1,8 @@
 import type { TCssVarsSchema } from '../../types/css-vars';
-import { ZCssVarsSchema } from '../../types/css-vars';
-import { sanitizeBrandingCss } from '../../utils/sanitize-branding-css';
+import { ZStoredCssVarsSchema } from '../../types/css-vars';
+import { dropUnreadableBrandingTokens } from '../../utils/branding-contrast';
 import { getTeamSettings } from '../team/get-team-settings';
+import { renderStoredBrandingCss } from './branding-css-cache';
 
 export type RecipientBrandingPayload = {
   allowCustomBranding: boolean;
@@ -43,16 +44,19 @@ export const loadRecipientBrandingByTeamId = async ({
   }
 
   // brandingColors is stored as JSON; parse defensively. Drop unknown keys via Zod.
-  const parsedColors = settings.brandingColors ? ZCssVarsSchema.safeParse(settings.brandingColors) : null;
+  const parsedColors = settings.brandingColors ? ZStoredCssVarsSchema.safeParse(settings.brandingColors) : null;
+
+  // Rows saved before the contrast check may hold unreadable pairs; leave those out.
+  const colors = dropUnreadableBrandingTokens(parsedColors?.success ? parsedColors.data : null);
 
   // Sanitise again on the way out: CSS saved before the sanitiser tightened is still in the
-  // database, and this keeps every stored row to today's rules.
-  const css = settings.brandingCss ? sanitizeBrandingCss(settings.brandingCss).css : '';
+  // database, and this keeps every stored row to today's rules. The result is cached.
+  const css = settings.brandingCss ? renderStoredBrandingCss(settings.brandingCss, colors) : '';
 
   return {
     allowCustomBranding: true,
     hidePoweredBy,
-    colors: parsedColors?.success ? parsedColors.data : null,
+    colors,
     css: css.length > 0 ? css : null,
   };
 };

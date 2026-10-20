@@ -18,6 +18,7 @@ import {
 } from '../../utils/document-auth';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { buildTeamWhereQuery, canAccessTeamDocument } from '../../utils/teams';
+import { assertMergedDocumentMetaMethodsEnabled } from '../document-meta/assert-signature-methods-enabled';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { recomputeNextReminderForEnvelope } from '../recipient/update-recipient-next-reminder';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
@@ -311,6 +312,9 @@ export const updateEnvelope = async ({
 
   const updatedEnvelope = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    // Checked on the locked row, so two updates cannot together turn all three methods off (C94).
+    await assertMergedDocumentMetaMethodsEnabled(tx, envelope.documentMetaId, meta);
 
     const result = await tx.envelope.update({
       where: {

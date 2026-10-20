@@ -148,11 +148,12 @@ const readSavedMeta = async (envelopeId: string) =>
     .documentMeta;
 
 /** The text and HTML of the first message in the mailbox, from Inbucket's web API. */
-const readFirstMessageBody = async (page: Page, localPart: string) => {
-  const list = await page.request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
+const readFirstMessageBody = async (localPart: string) => {
+  // Node fetch, untraced: a trace would record the sender address, which the artifact scan refuses (#176).
+  const list = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
   const [first] = (await list.json()) as { id: string }[];
 
-  const res = await page.request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${first.id}`);
+  const res = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${first.id}`);
   const message = (await res.json()) as { body?: { text?: string; html?: string } };
 
   return `${message.body?.text ?? ''}\n${message.body?.html ?? ''}`;
@@ -184,7 +185,7 @@ test.describe('send dialog uses the subject and message saved in Settings', () =
 
     expect(messages).toHaveLength(1);
     expect(messages[0].subject).toBe(SUBJECT_2);
-    expect(await readFirstMessageBody(page, localPart)).toContain(MESSAGE_2);
+    expect(await readFirstMessageBody(localPart)).toContain(MESSAGE_2);
 
     const meta = await readSavedMeta(envelopeId);
 

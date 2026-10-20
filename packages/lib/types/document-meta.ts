@@ -5,7 +5,6 @@ import { SUPPORTED_LANGUAGE_CODES } from '@documenso/lib/constants/i18n';
 import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { DocumentMetaSchema } from '@documenso/prisma/generated/zod/modelSchema/DocumentMetaSchema';
-import { msg } from '@lingui/core/macro';
 import { DocumentDistributionMethod, DocumentSigningOrder } from '@prisma/client';
 import { z } from 'zod';
 
@@ -33,28 +32,6 @@ export const ZDocumentMetaSchema = DocumentMetaSchema.pick({
 });
 
 export type TDocumentMeta = z.infer<typeof ZDocumentMetaSchema>;
-
-/**
- * If you update this, you must also update the schema.prisma @default value for
- * - Template meta
- * - Document meta
- */
-export const ZDocumentSignatureSettingsSchema = z
-  .object({
-    typedSignatureEnabled: z.boolean(),
-    uploadSignatureEnabled: z.boolean(),
-    drawnSignatureEnabled: z.boolean(),
-  })
-  .refine(
-    (data) => {
-      return data.typedSignatureEnabled || data.uploadSignatureEnabled || data.drawnSignatureEnabled;
-    },
-    {
-      message: msg`At least one signature type must be enabled`.id,
-    },
-  );
-
-export type TDocumentSignatureSettings = z.infer<typeof ZDocumentSignatureSettingsSchema>;
 
 export const ZDocumentMetaTimezoneSchema = z
   .string()

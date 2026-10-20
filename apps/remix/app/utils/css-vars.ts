@@ -1,5 +1,5 @@
-import { CSS_LENGTH_REGEX, type TCssVarsSchema } from '@documenso/lib/types/css-vars';
-import { colord } from 'colord';
+import { isBrandingRadius, type TCssVarsSchema } from '@documenso/lib/types/css-vars';
+import { brandingTokenToHslTriplet } from '@documenso/lib/utils/branding-token-colour';
 import { toKebabCase } from 'remeda';
 
 export const toNativeCssVars = (vars: TCssVarsSchema) => {
@@ -9,23 +9,21 @@ export const toNativeCssVars = (vars: TCssVarsSchema) => {
 
   for (const [key, value] of Object.entries(colorVars)) {
     if (value) {
-      const color = colord(value);
-      const { h, s, l } = color.toHsl();
-
       // Tailwind's theme.css consumes these via `hsl(var(--token))`. CSS
       // Color 4 space-separated `hsl()` requires `%` on saturation and
       // lightness — without it, the function is invalid and the property
       // falls back to its initial value (which is why bare numeric output
       // here used to silently break customer colours).
-      cssVars[`--${toKebabCase(key)}`] = `${h} ${s}% ${l}%`;
+      cssVars[`--${toKebabCase(key)}`] = brandingTokenToHslTriplet(value);
     }
   }
 
   // Defence in depth: radius is interpolated raw into the rendered <style>
   // block, so anything outside the length pattern is a CSS-injection vector.
   // The Zod schema rejects bad values at the API boundary; this re-check
-  // protects against schema drift and any path that bypasses validation.
-  if (radius && CSS_LENGTH_REGEX.test(radius)) {
+  // protects against schema drift and any path that bypasses validation. A radius outside
+  // `isBrandingRadius` is dropped, so the default applies (round 23).
+  if (radius && isBrandingRadius(radius)) {
     cssVars[`--radius`] = radius;
   }
 

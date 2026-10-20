@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
+import { assertRecipientFieldsModifiableUnderLock } from '@documenso/lib/server-only/recipient/lock-envelope-for-owner-edit';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
@@ -89,6 +90,9 @@ export const deleteEnvelopeFieldRoute = authenticatedProcedure
     }
 
     await prisma.$transaction(async (tx) => {
+      // Checked again under the envelope lock that rejection and signing take (#121).
+      await assertRecipientFieldsModifiableUnderLock(tx, envelope.id, [recipientWithFields.id]);
+
       const deletedField = await tx.field.delete({
         where: {
           id: fieldToDelete.id,

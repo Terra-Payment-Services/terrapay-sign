@@ -71,9 +71,8 @@ import { seedDirectTemplate } from '@documenso/prisma/seed/templates';
 import { seedUser } from '@documenso/prisma/seed/users';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
 import { FieldType, Prisma, RecipientRole, SigningStatus } from '@prisma/client';
-
+import { auditEntry, rawPdfText } from '../fixtures/audit-pages';
 import { apiSignin } from '../fixtures/authentication';
-import { flatPdfText } from '../fixtures/company-seals';
 import { openDropdownMenu } from '../fixtures/generic';
 import {
   addressFor,
@@ -173,14 +172,11 @@ const apiTokenFor = async (scenario: Scenario) => {
 type MailContent = { subject: string; html: string; text: string };
 
 /** Fetches one message's subject and both bodies. Throws if Inbucket returns neither body field. */
-const readMessage = async (
-  request: APIRequestContext,
-  localPart: string,
-  entry: { id: string; subject: string },
-): Promise<MailContent> => {
-  const res = await request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${entry.id}`);
+const readMessage = async (localPart: string, entry: { id: string; subject: string }): Promise<MailContent> => {
+  // Node fetch, untraced: a trace would record the sender address, which the artifact scan refuses (#176).
+  const res = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${entry.id}`);
 
-  expect(res.ok(), `reading message ${entry.id} in ${localPart}: ${res.status()}`).toBe(true);
+  expect(res.ok, `reading message ${entry.id} in ${localPart}: ${res.status}`).toBe(true);
 
   const message = (await res.json()) as {
     subject?: string;
@@ -211,7 +207,7 @@ const readNthMail = async (request: APIRequestContext, localPart: string, count:
 
   expect(messages, `${localPart} holds exactly ${count} email(s)`).toHaveLength(count);
 
-  return await readMessage(request, localPart, messages[count - 1]);
+  return await readMessage(localPart, messages[count - 1]);
 };
 
 const collapse = (value: string) => value.replace(/\s+/g, ' ');
@@ -629,7 +625,8 @@ test('C11 team value false over organisation true hides the sender on the remind
 test('C12 the multisign embed contains no sender', async ({ page }) => {
   const scenario = await seedScenario(SETTING_FALSE);
   const first = await seedPending(scenario, 'c12a', 1);
-  const second = await seedPending(scenario, 'c12b', 2);
+  // Multi-sign offers V1 envelopes only since #142, so both envelopes are V1.
+  const second = await seedPending(scenario, 'c12b', 1);
 
   await page.goto(`/embed/v1/multisign?token=${first.recipient.token}&token=${second.recipient.token}`);
 
@@ -638,11 +635,19 @@ test('C12 the multisign embed contains no sender', async ({ page }) => {
   await expectPageHasNoSender(page, scenario, '/embed/v1/multisign list');
 
   for (const { title } of [first, second]) {
-    await page
-      .locator('div', { has: page.getByText(title, { exact: true }) })
-      .getByRole('button', { name: 'View' })
+    // The innermost div holding both the title and its View button is the row. An unhydrated click is a no-op,
+    // so retry until the signing view for this title opens.
+    const viewButton = page
+      .locator('div')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .filter({ has: page.getByRole('button', { name: 'View', exact: true }) })
       .last()
-      .click();
+      .getByRole('button', { name: 'View', exact: true });
+
+    await expect(async () => {
+      await viewButton.click();
+      await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
 
     await expect(page.locator(PDF_PAGE_SELECTOR).first()).toBeVisible({ timeout: 30_000 });
     await expectPageHasNoSender(page, scenario, `/embed/v1/multisign document ${title}`);
@@ -738,7 +743,7 @@ test('C15 the owner added as a recipient can sign and receives the completed-doc
     .poll(
       async () => {
         for (const entry of await readMailbox(request, ownerLocalPart)) {
-          const mail = await readMessage(request, ownerLocalPart, entry);
+          const mail = await readMessage(ownerLocalPart, entry);
 
           if (`${mail.subject}\n${mail.html}\n${mail.text}`.includes(title)) {
             found = mail;
@@ -821,7 +826,7 @@ const waitForMailWithSubject = async (
     throw new Error(`${context}: the email matching ${subject} is no longer in ${localPart}`);
   }
 
-  return await readMessage(request, localPart, entry);
+  return await readMessage(localPart, entry);
 };
 
 const expectMailIsAbout = (mail: MailContent, title: string, context: string) => {
@@ -1140,9 +1145,10 @@ const downloadSignedWithToken = async (request: APIRequestContext, token: string
  * Negative checks run against both; positive anchors against the second.
  */
 const pdfTexts = (bytes: Uint8Array) => {
-  const flat = flatPdfText(bytes);
+  const raw = rawPdfText(bytes);
+  const flat = raw.replace(/\s+/g, ' ');
 
-  return { flat, joined: flat.replace(/\s+/g, '') };
+  return { raw, flat, joined: flat.replace(/\s+/g, '') };
 };
 
 /*
@@ -1290,36 +1296,6 @@ const rejectOnBehalfOfAndReadSealed = async (
     envelopeItemId: options.envelopeItemId,
     title: options.title,
   });
-};
-
-/**
- * One entry of the audit pages in the whitespace-collapsed PDF text: from its
- * event heading ("DOCUMENT RECIPIENT REJECTED") to its USER AGENT label, which
- * spans the description and the USER row. Throws unless the heading occurs
- * exactly once and the slice holds the USER and IP ADDRESS labels, so a changed
- * layout fails loudly rather than letting the negative checks pass on a wrong
- * slice.
- */
-const auditEntry = (flat: string, heading: string) => {
-  const start = flat.indexOf(heading);
-
-  if (start < 0 || flat.indexOf(heading, start + heading.length) >= 0) {
-    throw new Error(`audit pages: expected exactly one "${heading}" entry`);
-  }
-
-  const end = flat.indexOf('USER AGENT', start);
-
-  if (end < 0) {
-    throw new Error(`audit pages: no USER AGENT label after "${heading}"`);
-  }
-
-  const entry = flat.slice(start, end);
-
-  if (!entry.includes('USER') || !entry.includes('IP ADDRESS')) {
-    throw new Error(`audit pages: the "${heading}" entry has no USER row: ${entry}`);
-  }
-
-  return { flat: entry, joined: entry.replace(/\s+/g, '') };
 };
 
 /**
@@ -1472,7 +1448,7 @@ const expectExternalRejectionNamesNoMember = async (request: APIRequestContext, 
     `${label}: the audit pages still name the recipients`,
   ).toBe(true);
 
-  const entry = auditEntry(sealed.flat, 'DOCUMENT RECIPIENT REJECTED');
+  const entry = auditEntry(sealed.raw, 'DOCUMENT RECIPIENT REJECTED');
 
   expect(entry.joined.includes('rejectedexternally'), `${label}: the entry is the external rejection`).toBe(true);
 
@@ -1603,7 +1579,7 @@ test('C26 a document created through API v2 with a delegated owner names neither
   expect(sealed.joined.includes(scenario.teamName), 'C26: the audit pages name the team').toBe(true);
   expect(sealed.joined.includes(signers[0].name), 'C26: the audit pages still name the recipients').toBe(true);
 
-  const entry = auditEntry(sealed.flat, 'DOCUMENT DELEGATED OWNER CREATED');
+  const entry = auditEntry(sealed.raw, 'DOCUMENT DELEGATED OWNER CREATED');
 
   for (const [who, person] of [
     ['delegated owner', delegate],

@@ -56,10 +56,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       .catch(() => false);
 
     if (document.teamId) {
+      // A signed-in visitor outside the team still sees the waiting page, as the owner check above allows (G4 C106).
       team = await getTeamById({
         userId: user.id,
         teamId: document.teamId,
-      });
+      }).catch(() => null);
     }
   }
 

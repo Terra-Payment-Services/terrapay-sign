@@ -52,8 +52,8 @@ export const createRecipientAccess2FACookie = async ({
     {
       httpOnly: true,
       path: '/',
-      // The embedded signing page reads it inside a third-party iframe, as it
-      // does the session cookie.
+      // The embedded signing page reads it inside a third-party iframe, so it
+      // is SameSite=None and partitioned, unlike the Lax session cookie.
       sameSite: useSecureCookies ? 'None' : 'Lax',
       secure: useSecureCookies,
       partitioned: useSecureCookies ? true : undefined,

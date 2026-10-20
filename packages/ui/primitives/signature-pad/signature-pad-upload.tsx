@@ -105,6 +105,23 @@ export const SignaturePadUpload = ({ className, value, onChange, ...props }: Sig
   const getFitScale = (image: HTMLImageElement, canvas: HTMLCanvasElement) =>
     Math.min(canvas.width / image.width, canvas.height / image.height);
 
+  /** Where the image is drawn on the canvas, after the fit, the zoom and the drag. */
+  const getDrawRect = (image: HTMLImageElement, canvas: HTMLCanvasElement) => {
+    const { zoom: currentZoom, offsetX, offsetY } = $transform.current;
+
+    const scale = getFitScale(image, canvas) * currentZoom;
+
+    const width = image.width * scale;
+    const height = image.height * scale;
+
+    return {
+      x: (canvas.width - width) / 2 + offsetX,
+      y: (canvas.height - height) / 2 + offsetY,
+      width,
+      height,
+    };
+  };
+
   const draw = () => {
     const canvas = $el.current;
     const image = $sourceImage.current;
@@ -119,22 +136,14 @@ export const SignaturePadUpload = ({ className, value, onChange, ...props }: Sig
       return;
     }
 
-    const { zoom: currentZoom, offsetX, offsetY } = $transform.current;
-
-    const scale = getFitScale(image, canvas) * currentZoom;
-
-    const drawWidth = image.width * scale;
-    const drawHeight = image.height * scale;
-
-    const x = (canvas.width - drawWidth) / 2 + offsetX;
-    const y = (canvas.height - drawHeight) / 2 + offsetY;
+    const { x, y, width, height } = getDrawRect(image, canvas);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    ctx.drawImage(image, x, y, drawWidth, drawHeight);
+    ctx.drawImage(image, x, y, width, height);
   };
 
   const requestDraw = () => {
@@ -149,22 +158,40 @@ export const SignaturePadUpload = ({ className, value, onChange, ...props }: Sig
   };
 
   /**
-   * Export the canvas exactly as displayed, so the frame is the signature.
+   * Export the part of the canvas the image covers, as displayed, so the stored
+   * signature keeps the image's shape rather than the pad's 16:7 margins.
    *
-   * The signature is only committed when it covers enough of the canvas to be
-   * considered valid, otherwise the value is cleared so an invalid signature
-   * cannot be submitted.
+   * The signature is only committed when it has enough ink to be considered
+   * valid, otherwise the value is cleared so an invalid signature cannot be
+   * submitted.
    */
   const commitChange = () => {
-    if (!$el.current) {
+    const canvas = $el.current;
+    const image = $sourceImage.current;
+
+    if (!canvas || !image) {
       return;
     }
 
-    const isValid = checkSignatureValidity($el);
+    const rect = getDrawRect(image, canvas);
+    const left = clamp(Math.floor(rect.x), 0, canvas.width);
+    const top = clamp(Math.floor(rect.y), 0, canvas.height);
+    const right = clamp(Math.ceil(rect.x + rect.width), 0, canvas.width);
+    const bottom = clamp(Math.ceil(rect.y + rect.height), 0, canvas.height);
+
+    const output = document.createElement('canvas');
+
+    output.width = Math.max(right - left, 1);
+    output.height = Math.max(bottom - top, 1);
+    output
+      .getContext('2d')
+      ?.drawImage(canvas, left, top, output.width, output.height, 0, 0, output.width, output.height);
+
+    const isValid = checkSignatureValidity({ current: output });
 
     setIsSignatureValid(isValid);
 
-    onChange?.(isValid ? $el.current.toDataURL() : '');
+    onChange?.(isValid ? output.toDataURL() : '');
   };
 
   const applyZoom = (nextZoom: number) => {

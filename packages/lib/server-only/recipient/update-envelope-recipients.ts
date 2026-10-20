@@ -15,6 +15,7 @@ import { canRecipientBeModified } from '../../utils/recipients';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
+import { lockEnvelopeForOwnerEdit } from './lock-envelope-for-owner-edit';
 
 export interface UpdateEnvelopeRecipientsOptions {
   userId: number;
@@ -128,8 +129,24 @@ export const updateEnvelopeRecipients = async ({
   const updatedRecipients = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
 
+    // Checked again under the envelope lock, which rejection and signing also take, so a recipient who rejected
+    // or signed after the read above is not reset by this update (#121).
+    const locked = await lockEnvelopeForOwnerEdit(tx, envelope.id);
+
+    const lockedRecipientsToUpdate = recipientsToUpdate.map(({ originalRecipient, updateData }) => {
+      const lockedRecipient = locked.recipients.find((candidate) => candidate.id === originalRecipient.id);
+
+      if (!lockedRecipient || !canRecipientBeModified(lockedRecipient, locked.fields)) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot modify a recipient who has already interacted with the document',
+        });
+      }
+
+      return { originalRecipient: lockedRecipient, updateData };
+    });
+
     return await Promise.all(
-      recipientsToUpdate.map(async ({ originalRecipient, updateData }) => {
+      lockedRecipientsToUpdate.map(async ({ originalRecipient, updateData }) => {
         let authOptions = ZRecipientAuthOptionsSchema.parse(originalRecipient.authOptions);
 
         if (updateData.actionAuth !== undefined || updateData.accessAuth !== undefined) {
@@ -144,10 +161,14 @@ export const updateEnvelopeRecipients = async ({
           ...updateData,
         };
 
-        const updatedRecipient = await tx.recipient.update({
+        const { count: updatedCount } = await tx.recipient.updateMany({
           where: {
             id: originalRecipient.id,
             envelopeId: envelope.id,
+            OR: [
+              { role: RecipientRole.CC, signingStatus: { not: SigningStatus.REJECTED } },
+              { signingStatus: SigningStatus.NOT_SIGNED },
+            ],
           },
           data: {
             name: mergedRecipient.name,
@@ -159,9 +180,17 @@ export const updateEnvelopeRecipients = async ({
             signingStatus: mergedRecipient.role === RecipientRole.CC ? SigningStatus.SIGNED : SigningStatus.NOT_SIGNED,
             authOptions,
           },
-          include: {
-            fields: true,
-          },
+        });
+
+        if (updatedCount === 0) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: 'Cannot modify a recipient who has already interacted with the document',
+          });
+        }
+
+        const updatedRecipient = await tx.recipient.findUniqueOrThrow({
+          where: { id: originalRecipient.id },
+          include: { fields: true },
         });
 
         // Clear all fields if the recipient role is changed to a type that cannot have fields.

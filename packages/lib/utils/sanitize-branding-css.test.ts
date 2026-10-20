@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeBrandingCss } from './sanitize-branding-css';
+import { renderStoredBrandingCss } from '../server-only/branding/branding-css-cache';
+import { decodeCssEscapes, sanitizeBrandingCss } from './sanitize-branding-css';
 
 const normalize = (css: string) => css.replace(/\s+/g, ' ').trim();
 
@@ -119,11 +120,11 @@ describe('sanitizeBrandingCss', () => {
       expect(result.warnings).toEqual([]);
     });
 
-    it('keeps ::selection verbatim', () => {
+    it('drops ::selection (round 13 allowlist, C80)', () => {
       const result = sanitizeBrandingCss('p::selection { background: yellow; }');
 
-      expect(normalize(result.css)).toBe('p::selection { background: yellow; }');
-      expect(result.warnings).toEqual([]);
+      expect(normalize(result.css)).not.toContain('::selection');
+      expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
     });
   });
 
@@ -209,8 +210,9 @@ describe('sanitizeBrandingCss', () => {
     const allowedProperties: Array<[string, string]> = [
       ['color', 'red'],
       ['background', '#fff'],
-      ['border', '1px solid black'],
-      ['border-radius', '4px'],
+      // Round 19 (C110): border shorthands left the allowlist; see the round 19 block.
+      ['border-color', 'black'],
+      // Round 17 (C102): border-radius left the allowlist; its drop is asserted in the round 17 block.
       ['font-family', 'sans-serif'],
       ['font-weight', '600'],
     ];
@@ -399,15 +401,14 @@ describe('sanitizeBrandingCss', () => {
       expect(result.css.toLowerCase()).not.toContain('</style');
     });
 
-    it('preserves benign < not followed by /', () => {
-      // `<script>` (no slash) is not a tag close; PostCSS leaves it as text
-      // and the HTML parser treats it as text inside <style> rawtext mode.
+    // Round 19 (C110): the family "<script>alert(1)</script>" is not on the named list, so the
+    // declaration is now dropped with a value warning rather than kept with its end tag escaped.
+    it('drops the unlisted font-family "<script>alert(1)</script>" with a value warning', () => {
       const result = sanitizeBrandingCss('.x { font-family: "<script>alert(1)</script>"; }');
 
-      // The output keeps the literal `<script>` (harmless) but escapes the
-      // `</script>` end tag's `<` for the same reason it'd escape `</style>`.
-      expect(result.css).toContain('<script>');
+      expect(result.css.toLowerCase()).not.toContain('script');
       expect(result.css.toLowerCase()).not.toContain('</style');
+      expect(result.warnings.map((warning) => warning.kind)).toEqual(['value']);
     });
   });
 
@@ -592,9 +593,9 @@ describe('sanitizeBrandingCss', () => {
     }
 
     const ordinaryCases: Array<[string, string[]]> = [
-      ['.btn { color: #123456; border-radius: 4px }', ['.btn', 'color: #123456', 'border-radius: 4px']],
+      // Round 17 (C102): restated without border-radius, which is now dropped (see the round 17 block).
+      ['.btn { color: #123456; border-color: #ccc }', ['.btn', 'color: #123456', 'border-color: #ccc']],
       ['@media (max-width: 600px) { .btn { color: red } }', ['@media (max-width: 600px)', '.btn', 'color: red']],
-      ['.btn:hover { background-color: rgb(1 2 3) }', ['.btn:hover', 'background-color: rgb(1 2 3)']],
     ];
 
     for (const [input, kept] of ordinaryCases) {
@@ -609,13 +610,21 @@ describe('sanitizeBrandingCss', () => {
       });
     }
 
+    // Round 14 (C87): no pseudo-class is kept, so the hover rule this list once kept is dropped.
+    it('drops the hover rule .btn:hover { background-color: rgb(1 2 3) } with a selector warning', () => {
+      const result = sanitizeBrandingCss('.btn:hover { background-color: rgb(1 2 3) }');
+
+      expect(normalize(result.css)).not.toContain('.btn');
+      expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+    });
+
     /**
      * The sanitiser keeps an allowlist of branding properties (colours,
      * backgrounds, borders, outlines, fonts) and checks values token by token.
      *
-     * Bounds these tests choose: a border or outline width of at most 16px (or 1em) is kept;
-     * anything wider is refused, since it can paint over the page. Large border-radius
-     * values are harmless and are not asserted either way.
+     * Bounds: since round 18 (C105) a border or outline width is kept only as a px length of at
+     * most 3 or `thin`/`medium`; anything wider, `thick` or another unit is refused (round 18 block). Since round 17 (C102) every
+     * radius property is refused; that is asserted in the round 17 block.
      */
     describe('allowlist', () => {
       const expectPropertyGone = (css: string, prop: string) => {
@@ -696,11 +705,9 @@ describe('sanitizeBrandingCss', () => {
         }
 
         const keptValues = [
-          'border: 2px solid #333',
-          'border: 16px solid #333',
-          'border-width: 1em',
-          'border-radius: 8px',
-          'border-radius: 50%',
+          // Round 19 (C110): 'border: 2px solid #333' is now dropped (round 19 block).
+          // Round 18 (C105): 'border: 16px solid #333' and 'border-width: 1em' are now dropped (round 18 block).
+          // Round 17 (C102): 'border-radius: 8px' and 'border-radius: 50%' are now dropped (round 17 block).
         ];
 
         for (const declaration of keptValues) {
@@ -749,10 +756,10 @@ describe('sanitizeBrandingCss', () => {
           'background-color: #fafafa',
           'background: #fff',
           'background: linear-gradient(#fff, #eee)',
-          'border: 1px solid black',
+          // Round 19 (C110): 'border: 1px solid black' is now dropped (round 19 block).
           'border-color: #ccc',
-          'border-radius: 4px',
-          'outline: 2px solid red',
+          // Round 17 (C102): 'border-radius: 4px' is now dropped (round 17 block).
+          // Round 19 (C110): 'outline: 2px solid red' is now dropped (round 19 block).
           'font-family: "Inter", sans-serif',
           'font-weight: 600',
           'font-style: italic',
@@ -785,5 +792,675 @@ describe('sanitizeBrandingCss', () => {
         }
       });
     });
+  });
+
+  /**
+   * Round 14 (C86 and C87): each selector is checked on its raw characters before the selector
+   * parser reads it. Only ASCII letters and digits, space, tab, LF, CR and `- _ . # [ ] = ~ ^ $ * " ' , > + :`
+   * are allowed, and once every case-insensitive `::placeholder` is removed no colon may remain. A failing
+   * selector drops its whole rule with one `selector` warning; the rest of the stylesheet is kept.
+   */
+  describe('round 14: selector characters and colons', () => {
+    const KEEP = '.keep { font-weight: 700; }';
+
+    const droppedByCharacter: Array<[string, string]> = [
+      ['a backslash escape in a class', '.c-bs1.a\\62 c'],
+      ['an escaped pseudo-class', '.c-bs2:\\61 ctive'],
+      ["Codex round 13's escaped :is", 'input.c-cx1:i\\000073 (:checked)+textarea'],
+      ['an escaped :where', 'input.c-cx2:wher\\000065 (:checked)+textarea'],
+      ['an escaped :not', 'input.c-cx3:n\\00006f t(.zz)+textarea'],
+      ['an escaped :nth-child', '.c-cx4 > input:nth-chil\\000064 (1)+textarea'],
+      ['parentheses in :is', '.c-p1:is(.a)'],
+      ['parentheses in :not', '.c-p2.a:not(.b)'],
+      ['a comment', '.c-cm.a/**/.b'],
+      ['a namespace', '*|button.c-ns1'],
+      ['a dash-match operator', '.c-ns2[lang|=en]'],
+      ['an at sign', '.c-at@x'],
+      ['a percent sign', '.c-pc%x'],
+      ['an ampersand', '& .c-amp'],
+      ['an exclamation mark', '.c-ex!x'],
+      ['a backtick', '.c-bt`x'],
+      ['a question mark', '.c-q?x'],
+      ['an accented letter', '.c-na1.é'],
+      ['a fullwidth colon U+FF1A', '.c-na2.a：hover'],
+      ['a zero-width space U+200B', '.c-na3.a​'],
+      ['a no-break space U+00A0', '.c-na4.a .b'],
+    ];
+
+    for (const [label, selector] of droppedByCharacter) {
+      it(`drops the rule with ${label} and keeps the rest`, () => {
+        const id = selector.match(/c-[a-z0-9]+/)?.[0] ?? selector;
+        const result = sanitizeBrandingCss(`${KEEP}\n${selector} { font-weight: 700; }`);
+
+        expect(result.refused).toBeUndefined();
+        expect(result.css).not.toContain(id);
+        expect(normalize(result.css)).toContain(KEEP);
+        expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+      });
+    }
+
+    // Amended after the round 14 red run: a `;` in a selector stays a parse error for the whole stylesheet.
+    it('treats a semicolon in a selector as a parse error for the whole stylesheet', () => {
+      const result = sanitizeBrandingCss(`${KEEP}\n.c-sc;x { font-weight: 700; }`);
+
+      expect(result.css.trim()).toBe('');
+      expect(result.warnings.some((warning) => warning.kind === 'parse-error')).toBe(true);
+    });
+
+    // Amended after the round 14 red run: `*` is in the character set only for `*=`; the sanitiser still drops it.
+    it('drops a universal selector as the sanitiser does', () => {
+      const result = sanitizeBrandingCss(`${KEEP}\n.c-u > * { font-weight: 700; }`);
+
+      expect(result.css).not.toContain('c-u');
+      expect(normalize(result.css)).toContain(KEEP);
+      expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+    });
+
+    const droppedByColon = [
+      '.c-hover:hover',
+      '.c-focus:focus',
+      '.c-fv:focus-visible',
+      '.c-fw:focus-within',
+      '.c-fc:first-child',
+      '.c-lc:last-child',
+      '.c-oc:only-child',
+      '.c-fot:first-of-type',
+      '.c-lot:last-of-type',
+      '.c-oot:only-of-type',
+      '.c-empty:empty',
+      ':root .c-root',
+      '.c-nth:nth-child(2)',
+      '.c-not:not(.a)',
+      '.c-is:is(.a)',
+      '.c-where:where(.a)',
+      '.c-upper:HOVER',
+      'input.c-ph:placeholder',
+      'a.c-href[href^="https:"]',
+      'input.c-ph3:::placeholder',
+    ];
+
+    for (const selector of droppedByColon) {
+      it(`drops the rule ${selector} and keeps the rest`, () => {
+        const id = selector.match(/c-[a-z0-9]+/)?.[0] ?? selector;
+        const result = sanitizeBrandingCss(`${KEEP}\n${selector} { font-weight: 700; }`);
+
+        expect(result.css).not.toContain(id);
+        expect(normalize(result.css)).toContain(KEEP);
+        expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+      });
+    }
+
+    it('drops a rule inside @media by the same check', () => {
+      const result = sanitizeBrandingCss(
+        '@media (min-width: 600px) { .c-media:hover { font-weight: 700; } .ok { font-weight: 700; } }',
+      );
+
+      expect(result.css).not.toContain('c-media');
+      expect(result.css).toContain('.ok');
+      expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+    });
+
+    const kept = [
+      'dfn',
+      '.k-class',
+      '#k-id',
+      '[data-k]',
+      '[data-k=x]',
+      '[data-k~="x"]',
+      '[data-k^="ab"]',
+      "[data-k$='yz']",
+      '[data-k*="mid"]',
+      '.k-p .k-desc',
+      '.k-p > .k-child',
+      '.k-s1 + .k-adj',
+      '.k-s1 ~ .k-sib',
+      '.k-l1, .k-l2',
+      'input.k-ph::placeholder',
+      'input.k-ph::PLACEHOLDER',
+      'input.k-ph::PlaceHolder',
+    ];
+
+    for (const selector of kept) {
+      it(`keeps ${selector}`, () => {
+        const result = sanitizeBrandingCss(`${selector} { font-weight: 700; }`);
+
+        expect(normalize(result.css)).toBe(`${selector} { font-weight: 700; }`);
+        expect(result.warnings).toEqual([]);
+      });
+    }
+  });
+
+  /**
+   * Round 15 (C95): the character and colon check also covers what postcss stores between the
+   * selector and its `{` (`rule.raws.between`). A comment, form feed or any character outside the set
+   * there drops the rule with a `selector` warning; plain space and newline are kept.
+   */
+  describe('round 15: the selector trailer', () => {
+    const KEEP = '.keep { font-weight: 700; }';
+
+    const dropped: Array<[string, string]> = [
+      ['a comment holding :hover', 'button/*:hover*/{font-weight:777}'],
+      ['a form feed', 'button\f{font-weight:777}'],
+      ['a no-break space U+00A0', 'button {font-weight:777}'],
+    ];
+
+    for (const [label, rule] of dropped) {
+      it(`drops a rule with ${label} before its brace and keeps the rest`, () => {
+        const result = sanitizeBrandingCss(`${KEEP}\n${rule}`);
+
+        expect(result.css).not.toContain('777');
+        expect(normalize(result.css)).toContain(KEEP);
+        expect(result.warnings.filter((warning) => warning.kind === 'selector')).toHaveLength(1);
+      });
+    }
+
+    // Amended after the round 15 red run: a vertical tab refuses the whole stylesheet, as today.
+    it('refuses the whole stylesheet for a vertical tab before a brace', () => {
+      const result = sanitizeBrandingCss(`${KEEP}\nbutton\v{font-weight:777}`);
+
+      expect(result.css).toBe('');
+      expect(result.refused).toBeDefined();
+    });
+
+    const kept: Array<[string, string]> = [
+      ['a plain space', 'button {font-weight:777}'],
+      ['a newline', 'button\n{font-weight:777}'],
+    ];
+
+    for (const [label, rule] of kept) {
+      it(`keeps a rule with ${label} before its brace`, () => {
+        const result = sanitizeBrandingCss(`${KEEP}\n${rule}`);
+
+        expect(result.css).toContain('font-weight:777');
+        expect(normalize(result.css)).toContain(KEEP);
+        expect(result.warnings).toEqual([]);
+      });
+    }
+  });
+
+  /**
+   * Round 16 (C97 and C98): a tenant `background-color` or `background` must resolve to an opaque
+   * colour. Translucent and keyword values drop the declaration, the rule's other declarations stay.
+   * The spec places the rule at save and in `renderStoredBrandingCss`, not necessarily in
+   * `sanitizeBrandingCss` (the contrast pass is a separate step after it), so these cases go through the
+   * render path, which always applies both. The save path and its warnings are covered end to end in
+   * branding-contrast-round16.spec.ts. C99 is a guard behaviour with no lib surface.
+   */
+  describe('round 16: opaque tenant backgrounds', () => {
+    const TOKENS = { primary: '#047857', primaryForeground: '#ffffff' };
+    const KEEP = '.keep{background-color:#fff;color:#000}';
+    const squash = (css: string) => css.replace(/\s+/g, '');
+    const render = (css: string) => squash(renderStoredBrandingCss(css, TOKENS));
+
+    it("drops Codex round 15's transparent dialog background and keeps its colour", () => {
+      const rendered = render('[role=dialog]{background-color:transparent;color:#909090}');
+
+      expect(rendered).not.toContain('transparent');
+      expect(rendered).toContain('[role=dialog]{color:#909090}');
+    });
+
+    const dropped = [
+      'transparent',
+      'rgba(0,0,0,0.5)',
+      'hsla(0,0%,0%,.5)',
+      '#0008',
+      '#00000080',
+      'currentcolor',
+      'inherit',
+      'initial',
+      'unset',
+      'revert',
+      'revert-layer',
+    ];
+
+    for (const property of ['background-color', 'background']) {
+      for (const value of dropped) {
+        it(`drops ${property}: ${value} and keeps the rule's other declarations`, () => {
+          const text = value === 'transparent' ? '#808080' : '#fff';
+          const rendered = render(`${KEEP}\n.d{${property}:${value};color:${text};border-color:rgb(1, 2, 3)}`);
+
+          expect(rendered).toContain(KEEP);
+          expect(rendered.toLowerCase()).not.toContain(squash(`${property}:${value}`).toLowerCase());
+          expect(rendered).toContain('border-color:rgb(1,2,3)');
+        });
+      }
+    }
+
+    // C101: gradient stops must be opaque, and a `background` shorthand must paint something opaque.
+    const droppedGradients = [
+      'background:linear-gradient(transparent,transparent)',
+      'background-image:linear-gradient(#0000,#0000)',
+      'background:linear-gradient(#fff,rgba(0,0,0,.5))',
+      'background:none',
+    ];
+
+    for (const declaration of droppedGradients) {
+      it(`drops ${declaration} and keeps the rule's other declarations (C101)`, () => {
+        const rendered = render(`${KEEP}\n.d{${declaration};color:#808080;border-color:rgb(1, 2, 3)}`);
+
+        expect(rendered).toContain(KEEP);
+        expect(rendered).not.toContain(squash(declaration));
+        expect(rendered).toContain('border-color:rgb(1,2,3)');
+      });
+    }
+
+    it('keeps background-image:none (C101)', () => {
+      const rule = '.k{background-image:none;border-color:rgb(1, 2, 3)}';
+
+      expect(render(rule)).toContain(squash(rule));
+    });
+
+    // C101 correction: the round 2 rule ("Gradients are not evaluated") still drops opaque gradients.
+    for (const rule of [
+      '.k{background:linear-gradient(#fff,#eee);color:#000}',
+      '.k{background-image:linear-gradient(#fff,#eee);background-color:#fff;color:#000}',
+    ]) {
+      it(`still drops the opaque gradient in ${rule} under the round 2 rule (C101)`, () => {
+        expect(render(rule)).not.toContain('gradient');
+      });
+    }
+
+    const kept: Array<[string, string]> = [
+      ['#fff', '#000'],
+      ['#ffffffff', '#000'],
+      ['rgb(0 0 0)', '#fff'],
+      ['rgba(0,0,0,1)', '#fff'],
+      ['hsl(0 0% 100% / 1)', '#000'],
+    ];
+
+    for (const property of ['background-color', 'background']) {
+      for (const [value, text] of kept) {
+        it(`keeps the opaque ${property}: ${value}`, () => {
+          const rule = `.k{${property}:${value};color:${text}}`;
+
+          expect(render(rule)).toContain(squash(rule));
+          expect(sanitizeBrandingCss(rule).warnings).toEqual([]);
+        });
+      }
+    }
+  });
+  /**
+   * Round 17 (C102 and C103). The five radius properties leave the allowlist and are dropped with
+   * the existing `property` warning, the rule's other declarations kept; stored rows lose them at render.
+   * A background colour is kept only when the colour parser reads it and its alpha is 1; an unreadable
+   * colour drops that declaration before the contrast check, so the rule's other declarations are judged
+   * as if it were never written. The value gate runs with the contrast pass, so C103 goes through the
+   * render path; its save warnings are covered in branding-contrast-round17.spec.ts.
+   */
+  describe('round 17: no tenant radii, and proven background opacity', () => {
+    const TOKENS = { primary: '#047857', primaryForeground: '#ffffff' };
+    const KEEP = '.keep{background-color:#fff;color:#000}';
+    const squash = (css: string) => css.replace(/\s+/g, '');
+    const render = (css: string) => squash(renderStoredBrandingCss(css, TOKENS));
+    const RADII = [
+      'border-radius',
+      'border-top-left-radius',
+      'border-top-right-radius',
+      'border-bottom-left-radius',
+      'border-bottom-right-radius',
+    ];
+
+    for (const property of RADII) {
+      it(`drops ${property} with a property warning and keeps the rule's other declarations`, () => {
+        const result = sanitizeBrandingCss(`.x { color: red; ${property}: 4px; }`);
+
+        expect(decodeCssEscapes(result.css).toLowerCase()).not.toContain('radius');
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      });
+
+      it(`drops ${property} from a stored row at render and keeps .keep`, () => {
+        const rendered = render(`${KEEP}\n.x{${property}:100%;border-color:rgb(1, 2, 3)}`);
+
+        expect(rendered).toContain(KEEP);
+        expect(rendered).not.toContain('radius');
+        expect(rendered).toContain('border-color:rgb(1,2,3)');
+      });
+    }
+
+    for (const input of ['.x { BORDER-RADIUS: 4px; color: red; }', '.x { border-\\72 adius: 4px; color: red; }']) {
+      it(`drops the radius in ${input}`, () => {
+        const result = sanitizeBrandingCss(input);
+
+        expect(decodeCssEscapes(result.css).toLowerCase()).not.toContain('radius');
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.length).toBeGreaterThan(0);
+      });
+    }
+
+    // The radius declarations earlier blocks kept, restated as drops.
+    for (const input of [
+      '.btn { color: #123456; border-radius: 4px }',
+      '.x { border-radius: 8px; color: red; }',
+      '.x { border-radius: 50%; color: red; }',
+    ]) {
+      it(`drops the radius in the formerly kept ${input}`, () => {
+        const result = sanitizeBrandingCss(input);
+
+        expect(result.css).not.toContain('radius');
+        expect(result.css).toMatch(/color: (#123456|red)/);
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      });
+    }
+
+    it("drops Codex round 16's corner radius and keeps the colour and the close-button rule", () => {
+      const rendered = render(
+        '[role=dialog]{border-top-left-radius:100%;color:#909090}\n[data-testid=btn-dialog-close]{background-color:#fff;color:#000}',
+      );
+
+      expect(rendered).not.toContain('radius');
+      expect(rendered).toContain('[role=dialog]{color:#909090}');
+      expect(rendered).toContain('[data-testid=btn-dialog-close]{background-color:#fff;color:#000}');
+    });
+
+    const unproven = [
+      'color-mix(in srgb,white 10%,black 10%)',
+      'rgb(from #fff r g b / 0.5)',
+      'hwb(0 0% 0% / 0.5)',
+      'lab(50 0 0 / 0.5)',
+      'Canvas',
+      '#fffff',
+      'rgb(0 0 0 / none)',
+    ];
+
+    // A lone `color:#000` fails the dark themes, so "judged as if the declaration were never written"
+    // drops it as well; the grey twin survives alone and carries "the rest of the rule is kept".
+    const alone = (text: string) => render(`.x{color:${text};border-color:red}`);
+
+    for (const value of unproven) {
+      it(`drops background-color:${value} and judges the rest as if it were never written`, () => {
+        const rendered = render(`.x{background-color:${value};color:#000;border-color:red}`);
+
+        expect(rendered).not.toContain('background-color');
+        expect(rendered).toBe(alone('#000'));
+        expect(rendered).toContain('border-color:red');
+      });
+
+      it(`drops background-color:${value} and keeps color:#909090 and border-color:red`, () => {
+        expect(render(`.x{background-color:${value};color:#909090;border-color:red}`)).toBe(
+          '.x{color:#909090;border-color:red}',
+        );
+      });
+    }
+
+    for (const value of ['hwb(0 0% 0%)', 'lab(100 0 0)']) {
+      it(`keeps background-color:${value} whole, or drops only it (control)`, () => {
+        const rendered = render(`.x{background-color:${value};color:#000;border-color:red}`);
+        const kept = squash(`.x{background-color:${value};color:#000;border-color:red}`);
+
+        expect([kept, alone('#000')]).toContain(rendered);
+      });
+    }
+  });
+  /**
+   * Round 18 (C105). A border or outline width is kept only as a `px` length of at most 3, or `thin`
+   * or `medium`; `thick`, any other unit and any `px` above 3 drop the declaration with a `value`
+   * warning. A shorthand with no width uses `medium` and is kept. C106 is a guard behaviour with no lib
+   * surface. Round 19 (C110): border and outline shapes left the allowlist, so every case here is
+   * now dropped with a `property` warning, the former kept list included.
+   */
+  describe('round 18: border widths at control scale', () => {
+    const TOKENS = { primary: '#047857', primaryForeground: '#ffffff' };
+    const KEEP = '.keep{background-color:#fff;color:#000}';
+    const squash = (css: string) => css.replace(/\s+/g, '');
+    const render = (css: string) => squash(renderStoredBrandingCss(css, TOKENS));
+
+    const dropped = [
+      'border:4px solid red',
+      'border-width:thick',
+      'border-width:0.5em',
+      'outline:1rem solid red',
+      'border-left:5px solid red',
+      'border-top-width:4px',
+      'outline-width:thick',
+      'border:3.5px solid red',
+      'border-width:1px 4px',
+      'border-width:4PX',
+      'border-bottom:1vw solid red',
+      'outline:0.25in solid red',
+      'border-right-width:2ch',
+      'border:thick solid red',
+      'border-width:10%',
+      // Restated from the C4 kept list, where they were kept before round 18.
+      'border: 16px solid #333',
+      'border-width: 1em',
+    ];
+
+    for (const declaration of dropped) {
+      it(`drops "${declaration}" with a property warning and keeps the rule's other declarations`, () => {
+        const result = sanitizeBrandingCss(`.x { color: red; ${declaration}; }`);
+
+        expect(normalize(result.css)).not.toContain(declaration);
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      });
+
+      it(`drops "${declaration}" from a stored row at render and keeps .keep`, () => {
+        const rendered = render(`${KEEP}\n.x{${declaration};border-color:rgb(1, 2, 3)}`);
+
+        expect(rendered).toContain(KEEP);
+        expect(rendered).toContain('.x{border-color:rgb(1,2,3)}');
+      });
+    }
+
+    it("drops Codex round 17's icon-consuming border", () => {
+      const result = sanitizeBrandingCss('[data-testid=btn-dialog-close] svg{border:8px solid transparent}');
+
+      expect(result.css).not.toContain('8px');
+      expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      expect(render('[data-testid=btn-dialog-close] svg{border:8px solid transparent}')).not.toContain('8px');
+    });
+
+    const kept = [
+      'border:3px solid red',
+      'border:thin solid red',
+      'border:medium solid red',
+      'border:solid red',
+      'outline:2px solid red',
+      'border-width:1px 2px 3px',
+      'outline-width:medium',
+      'border-top:thin solid red',
+      'border-left-width:3px',
+    ];
+
+    for (const declaration of kept) {
+      it(`drops the formerly kept "${declaration}" with a property warning`, () => {
+        const result = sanitizeBrandingCss(`.x { ${declaration}; }`);
+
+        expect(squash(result.css)).not.toContain(squash(declaration));
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+        expect(render(`.x{${declaration}}`)).not.toContain(squash(declaration));
+      });
+    }
+  });
+  /**
+   * Round 19 (C108 and C109). Of the border and outline properties only the six colour properties
+   * stay allowed; every shape property drops with the existing `property` warning, the rule's other
+   * declarations kept. A `font-family` is kept only when every family in it is on the named list,
+   * compared case-insensitively after removing quotes; any other family drops the declaration with a
+   * `value` warning.
+   */
+  describe('round 19: colour-only borders and named fonts', () => {
+    const TOKENS = { primary: '#047857', primaryForeground: '#ffffff' };
+    const KEEP = '.keep{background-color:#fff;color:#000}';
+    const squash = (css: string) => css.replace(/\s+/g, '');
+    const render = (css: string) => squash(renderStoredBrandingCss(css, TOKENS));
+
+    const removed = [
+      'border: 1px solid red',
+      'border-top: 1px solid red',
+      'border-right: 1px solid red',
+      'border-bottom: 1px solid red',
+      'border-left: 1px solid red',
+      'border-style: solid',
+      'border-width: 1px',
+      'border-top-style: dashed',
+      'border-right-style: solid',
+      'border-bottom-style: solid',
+      'border-left-style: solid',
+      'border-top-width: 1px',
+      'border-right-width: 1px',
+      'border-bottom-width: 1px',
+      'border-left-width: 1px',
+      'outline: 1px solid red',
+      'outline-style: solid',
+      'outline-width: 1px',
+      'BORDER: 1px solid red',
+      'border: none',
+      'outline: none',
+      // Restated from the allowlist, C4 and C6 kept lists.
+      'border: 1px solid black',
+      'border: 2px solid #333',
+      'outline: 2px solid red',
+    ];
+
+    for (const declaration of removed) {
+      it(`drops "${declaration}" with a property warning and keeps the rule's other declarations`, () => {
+        const result = sanitizeBrandingCss(`.x { color: red; ${declaration}; }`);
+
+        expect(normalize(result.css).toLowerCase()).not.toContain(declaration.toLowerCase());
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      });
+
+      it(`drops "${declaration}" from a stored row at render and keeps .keep`, () => {
+        const rendered = render(`${KEEP}\n.x{${declaration};border-color:rgb(1, 2, 3)}`);
+
+        expect(rendered).toContain(KEEP);
+        expect(rendered).toContain('.x{border-color:rgb(1,2,3)}');
+      });
+    }
+
+    it("drops Codex round 18's nested checkbox borders", () => {
+      const css = '[role=checkbox],[role=checkbox] span,[role=checkbox] svg{border:3px solid transparent}';
+      const result = sanitizeBrandingCss(css);
+
+      expect(result.css).not.toContain('border');
+      expect(result.warnings.map((warning) => warning.kind)).toEqual(['property']);
+      expect(render(css)).not.toContain('border');
+    });
+
+    for (const declaration of [
+      'border-color: #123456',
+      'border-top-color: #123456',
+      'border-right-color: #123456',
+      'border-bottom-color: #123456',
+      'border-left-color: #123456',
+      'outline-color: #123456',
+    ]) {
+      it(`keeps "${declaration}" with no warning`, () => {
+        const result = sanitizeBrandingCss(`.x { ${declaration}; }`);
+
+        expect(normalize(result.css)).toContain(declaration);
+        expect(result.warnings).toEqual([]);
+        expect(render(`.x{${declaration}}`)).toContain(squash(declaration));
+      });
+    }
+
+    const droppedFonts = [
+      'Wingdings',
+      '"Webdings"',
+      'Symbol',
+      "'Zapf Dingbats'",
+      'Marlett',
+      'Comic Sans MS',
+      'Arial, Wingdings',
+      'W\\69 ngdings',
+      'WINGDINGS',
+      'Webdings, serif',
+      '"Wingdings "',
+      'fantasy',
+      'cursive',
+    ];
+
+    for (const value of droppedFonts) {
+      it(`drops font-family: ${value} with a value warning and keeps the rule's other declarations`, () => {
+        const result = sanitizeBrandingCss(`.x { color: red; font-family: ${value}; }`);
+
+        expect(result.css).not.toContain('font-family');
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['value']);
+        expect(render(`${KEEP}\n.x{font-family:${value};border-color:rgb(1, 2, 3)}`)).toContain(
+          `${KEEP}.x{border-color:rgb(1,2,3)}`,
+        );
+      });
+    }
+
+    const keptFonts = [
+      'Arial',
+      '"Helvetica Neue", Arial, sans-serif',
+      'GEORGIA',
+      'system-ui',
+      "'Times New Roman', serif",
+      '"Inter", sans-serif',
+      "'Segoe UI', Roboto, Helvetica, sans-serif",
+      'Menlo, Monaco, Consolas, "Courier New", monospace',
+      'ui-sans-serif, ui-serif, ui-monospace',
+      'Verdana, Tahoma, "Trebuchet MS", "Open Sans", Lato, Garamond, Palatino, Times, Courier',
+      // Amendment after the round 19 red run: exactly one CSS-wide keyword is kept.
+      'inherit',
+      'initial',
+      'unset',
+      'revert',
+      'revert-layer',
+    ];
+
+    for (const value of keptFonts) {
+      it(`keeps font-family: ${value} with no warning`, () => {
+        const result = sanitizeBrandingCss(`.x { font-family: ${value}; }`);
+
+        expect(normalize(result.css)).toContain(`font-family: ${value}`);
+        expect(result.warnings).toEqual([]);
+        expect(render(`.x{font-family:${value}}`)).toContain(squash(`font-family:${value}`));
+      });
+    }
+  });
+  /**
+   * Round 20 (C112). A `font-family` value containing a backslash is dropped with a `value` warning,
+   * whatever it escapes. Families are split at top-level commas on the raw value; a quoted string is
+   * always a family name, so a quoted keyword drops; only an unquoted single keyword is the keyword.
+   * C111 is a guard behaviour with no lib surface.
+   */
+  describe('round 20: font names as Chromium reads them', () => {
+    const TOKENS = { primary: '#047857', primaryForeground: '#ffffff' };
+    const KEEP = '.keep{background-color:#fff;color:#000}';
+    const squash = (css: string) => css.replace(/\s+/g, '');
+    const render = (css: string) => squash(renderStoredBrandingCss(css, TOKENS));
+
+    const dropped = [
+      'Arial\\,Georgia',
+      '"inherit"',
+      "'initial'",
+      'Ari\\61l',
+      '"Ari\\\nal"',
+      '"unset"',
+      "'revert-layer'",
+      'Arial, "inherit"',
+      'Arial\\ Black',
+      '\\41rial',
+    ];
+
+    for (const value of dropped) {
+      it(`drops font-family: ${JSON.stringify(value)} with a value warning and keeps the rule's other declarations`, () => {
+        const result = sanitizeBrandingCss(`.x { color: red; font-family: ${value}; }`);
+
+        expect(result.css).not.toContain('font-family');
+        expect(result.css).toContain('color: red');
+        expect(result.warnings.map((warning) => warning.kind)).toEqual(['value']);
+        expect(render(`${KEEP}\n.x{font-family:${value};border-color:rgb(1, 2, 3)}`)).toContain(
+          `${KEEP}.x{border-color:rgb(1,2,3)}`,
+        );
+      });
+    }
+
+    for (const value of ['inherit', '"Arial"', "'Times New Roman', serif", '"Segoe UI", sans-serif']) {
+      it(`keeps font-family: ${value} with no warning`, () => {
+        const result = sanitizeBrandingCss(`.x { font-family: ${value}; }`);
+
+        expect(normalize(result.css)).toContain(`font-family: ${value}`);
+        expect(result.warnings).toEqual([]);
+        expect(render(`.x{font-family:${value}}`)).toContain(squash(`font-family:${value}`));
+      });
+    }
   });
 });

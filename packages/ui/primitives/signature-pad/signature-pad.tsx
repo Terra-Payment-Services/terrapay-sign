@@ -38,10 +38,16 @@ export const SignaturePad = ({
   value = '',
   onChange,
   disabled = false,
-  typedSignatureEnabled = true,
-  uploadSignatureEnabled = true,
-  drawSignatureEnabled = true,
+  typedSignatureEnabled: isTypedEnabled = true,
+  uploadSignatureEnabled: isUploadEnabled = true,
+  drawSignatureEnabled: isDrawEnabled = true,
 }: SignaturePadProps) => {
+  // A stored policy with every method off is treated as all three allowed (G4 decision D3).
+  const isNoneEnabled = !isTypedEnabled && !isUploadEnabled && !isDrawEnabled;
+  const typedSignatureEnabled = isTypedEnabled || isNoneEnabled;
+  const uploadSignatureEnabled = isUploadEnabled || isNoneEnabled;
+  const drawSignatureEnabled = isDrawEnabled || isNoneEnabled;
+
   const [imageSignature, setImageSignature] = useState(isBase64Image(value) ? value : '');
   const [drawSignature, setDrawSignature] = useState(isBase64Image(value) ? value : '');
   const [typedSignature, setTypedSignature] = useState(isBase64Image(value) ? '' : value);
@@ -76,11 +82,7 @@ export const SignaturePad = ({
         return 'text';
       }
 
-      if (uploadSignatureEnabled) {
-        return 'image';
-      }
-
-      throw new Error('No signature enabled');
+      return 'image';
     })(),
   );
 
@@ -130,10 +132,6 @@ export const SignaturePad = ({
       })
       .exhaustive();
   };
-
-  if (!drawSignatureEnabled && !typedSignatureEnabled && !uploadSignatureEnabled) {
-    return null;
-  }
 
   return (
     <Tabs

@@ -27,7 +27,10 @@ const getAuthSecret = () => {
 export const sessionCookieOptions = {
   httpOnly: true,
   path: '/',
-  sameSite: useSecureCookies ? 'none' : 'lax',
+  // Lax: the session goes with a top-level link from another site, but no
+  // TerraPay flow needs it on other cross-site requests. The access-code
+  // cookie stays SameSite=None; Partitioned for embedded signing.
+  sameSite: 'lax',
   secure: useSecureCookies,
   domain: getCookieDomain(),
 } as const;

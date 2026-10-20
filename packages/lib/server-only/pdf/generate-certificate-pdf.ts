@@ -13,6 +13,7 @@ import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { getTranslations } from '../../utils/i18n';
 import { getDocumentCertificateAuditLogs } from '../document/get-document-certificate-audit-logs';
 import { getOrganisationClaimByTeamId } from '../organisation/get-organisation-claims';
+import { prepareFieldSignatureImages } from '../signature/prepare-stored-signature-image';
 import { renderCertificate } from './render-certificate';
 
 export type GenerateCertificatePdfOptions = {
@@ -40,7 +41,10 @@ export type GenerateCertificatePdfOptions = {
 };
 
 export const generateCertificatePdf = async (options: GenerateCertificatePdfOptions) => {
-  const { envelope, envelopeOwner, recipients, fields, language, pageWidth, pageHeight } = options;
+  const { envelope, envelopeOwner, recipients, language, pageWidth, pageHeight } = options;
+
+  // Every caller draws what the seal draws, never the stored string, which Skia may not decode (G4 C104).
+  const fields = await prepareFieldSignatureImages(options.fields);
 
   const documentLanguage = ZSupportedLanguageCodeSchema.parse(language);
 

@@ -1,9 +1,11 @@
+import { useOfferedSignature } from '@documenso/lib/client-only/hooks/use-offered-signature';
 import { DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
 import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { DEFAULT_DOCUMENT_TIME_ZONE } from '@documenso/lib/constants/time-zones';
 import { DO_NOT_INVALIDATE_QUERY_ON_MUTATION } from '@documenso/lib/constants/trpc';
 import type { EnvelopeForSigningResponse } from '@documenso/lib/server-only/envelope/get-envelope-for-recipient-signing';
 import type { TRecipientActionAuth } from '@documenso/lib/types/document-auth';
+import { isSignatureImageValue } from '@documenso/lib/universal/signature/is-signature-image-value';
 import { isFieldUnsignedAndRequired, isRequiredField } from '@documenso/lib/utils/advanced-fields-helpers';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
 import { trpc } from '@documenso/trpc/react';
@@ -164,11 +166,11 @@ export const EnvelopeSigningProvider = ({
     },
   });
 
-  // Ensure the user signature doesn't show up if it's not allowed.
-  const [signature, setSignature] = useState(
+  // Ensure the user signature doesn't show up if it's not allowed, nor until the ink rule passes on it (#126).
+  const { signature, setSignature } = useOfferedSignature(
     (() => {
       const sig = initialSignature || '';
-      const isBase64 = isBase64Image(sig);
+      const isBase64 = isSignatureImageValue(sig);
 
       if (
         !sig &&

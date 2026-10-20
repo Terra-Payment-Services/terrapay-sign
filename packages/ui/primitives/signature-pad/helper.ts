@@ -1,10 +1,9 @@
-import { SIGNATURE_MIN_COVERAGE_THRESHOLD } from '@documenso/lib/constants/signatures';
+import { assessSignatureInk } from '@documenso/lib/universal/signature/assess-signature-ink';
 import type { RefObject } from 'react';
 
 /**
- * Checks whether the signature covers enough of the canvas to be considered
- * valid, by measuring the percentage of non-transparent pixels against
- * SIGNATURE_MIN_COVERAGE_THRESHOLD.
+ * Checks whether the signature on the canvas has enough ink, using the rule
+ * the server applies to every stored signature image (assessSignatureInk).
  */
 export const checkSignatureValidity = (element: RefObject<HTMLCanvasElement | null>) => {
   if (!element.current) {
@@ -17,21 +16,10 @@ export const checkSignatureValidity = (element: RefObject<HTMLCanvasElement | nu
     return false;
   }
 
-  const imageData = ctx.getImageData(0, 0, element.current.width, element.current.height);
-  const data = imageData.data;
-  let filledPixels = 0;
-  const totalPixels = data.length / 4;
+  const { width, height } = element.current;
+  const imageData = ctx.getImageData(0, 0, width, height);
 
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] > 0) {
-      filledPixels++;
-    }
-  }
-
-  const filledPercentage = filledPixels / totalPixels;
-  const isValid = filledPercentage > SIGNATURE_MIN_COVERAGE_THRESHOLD;
-
-  return isValid;
+  return assessSignatureInk(imageData.data, width, height).isValid;
 };
 
 export const average = (a: number, b: number) => (a + b) / 2;

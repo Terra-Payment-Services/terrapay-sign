@@ -8,7 +8,7 @@
 // relation to the jobs triggered after a rejection.
 import { jobs } from '@documenso/lib/jobs/client';
 import { prisma } from '@documenso/prisma';
-import { DocumentStatus, EnvelopeType, SigningStatus } from '@prisma/client';
+import { DocumentStatus, EnvelopeType, RecipientRole, SigningStatus } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
@@ -18,6 +18,7 @@ import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToDocumentId, unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
 import { assertRecipientNotExpired } from '../../utils/recipients';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
+import { assertRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
 import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
 
@@ -103,15 +104,22 @@ export async function rejectDocumentWithToken({
   const updatedRecipient = await prisma.$transaction(async (tx) => {
     const actor = await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
 
+    // A recipient may not reject before their turn (G4 D5, #145).
+    await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
     if (actor.signingStatus !== SigningStatus.NOT_SIGNED) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: `Recipient ${recipient.id} has already actioned this document`,
       });
     }
 
-    const rejected = await tx.recipient.update({
+    // Conditional: a CC recipient has nothing to reject, and a role changed to CC since the read above must not
+    // turn into a rejection the seal then overwrites (#121).
+    const { count } = await tx.recipient.updateMany({
       where: {
         id: recipient.id,
+        signingStatus: SigningStatus.NOT_SIGNED,
+        role: { not: RecipientRole.CC },
       },
       data: {
         signedAt: new Date(),
@@ -119,6 +127,14 @@ export async function rejectDocumentWithToken({
         rejectionReason: reason,
       },
     });
+
+    if (count === 0) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} cannot reject this document`,
+      });
+    }
+
+    const rejected = await tx.recipient.findUniqueOrThrow({ where: { id: recipient.id } });
 
     await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({
@@ -153,24 +169,8 @@ export async function rejectDocumentWithToken({
     },
   });
 
-  // Send email notifications to the rejecting recipient
-  await jobs.triggerJob({
-    name: 'send.signing.rejected.emails',
-    payload: {
-      recipientId: recipient.id,
-      documentId: legacyDocumentId,
-    },
-  });
-
-  // Send cancellation emails to other recipients
-  await jobs.triggerJob({
-    name: 'send.document.cancelled.emails',
-    payload: {
-      documentId: legacyDocumentId,
-      cancellationReason: reason,
-      requestMetadata,
-    },
-  });
+  // The rejection and cancellation emails are queued by the seal once it commits, so a seal that stops sends
+  // none (G4 D2).
 
   return updatedRecipient;
 }

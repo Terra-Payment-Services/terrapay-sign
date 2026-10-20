@@ -1,4 +1,5 @@
-import { isBase64Image } from '@documenso/lib/constants/signatures';
+import { useOfferedSignature } from '@documenso/lib/client-only/hooks/use-offered-signature';
+import { isSignatureImageValue } from '@documenso/lib/universal/signature/is-signature-image-value';
 import { createContext, useContext, useState } from 'react';
 
 export type DocumentSigningContextValue = {
@@ -48,11 +49,11 @@ export const DocumentSigningProvider = ({
   const [fullName, setFullName] = useState(initialFullName || '');
   const [email, setEmail] = useState(initialEmail || '');
 
-  // Ensure the user signature doesn't show up if it's not allowed.
-  const [signature, setSignature] = useState(
+  // Ensure the user signature doesn't show up if it's not allowed, nor until the ink rule passes on it (#126).
+  const { signature, setSignature } = useOfferedSignature(
     (() => {
       const sig = initialSignature || '';
-      const isBase64 = isBase64Image(sig);
+      const isBase64 = isSignatureImageValue(sig);
 
       if (isBase64 && (uploadSignatureEnabled || drawSignatureEnabled)) {
         return sig;

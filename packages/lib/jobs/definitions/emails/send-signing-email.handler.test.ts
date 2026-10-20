@@ -51,6 +51,11 @@ vi.mock('@documenso/prisma', () => ({
   },
 }));
 
+// No recipient of these envelopes has rejected (#123).
+vi.mock('../../../server-only/recipient/has-envelope-rejection', () => ({
+  hasEnvelopeRejection: async () => false,
+}));
+
 vi.mock('@documenso/email/templates/document-invite', () => ({
   default: () => null,
 }));

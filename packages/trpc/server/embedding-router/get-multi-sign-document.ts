@@ -3,6 +3,7 @@ import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document
 import { viewedDocument } from '@documenso/lib/server-only/document/viewed-document';
 import { getCompletedFieldsForToken } from '@documenso/lib/server-only/field/get-completed-fields-for-token';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
+import { getIsRecipientsTurnToSign } from '@documenso/lib/server-only/recipient/get-is-recipient-turn';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 
@@ -35,8 +36,14 @@ export const getMultiSignDocumentRoute = procedure
         });
       }
 
-      // Multi-sign cannot satisfy access auth, and applyMultiSignSignature
-      // refuses these documents, so do not hand out their contents either.
+      // Multi-sign signs through the V1 field routes, which refuse V2 envelopes (#142).
+      if (document.internalVersion !== 1) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'V2 envelopes cannot be multi signed: sign them through envelope.field.sign',
+        });
+      }
+
+      // Multi-sign cannot satisfy access auth, so do not hand out the contents of documents that require it.
       const { recipientAccessAuthRequired } = extractDocumentAuthMethods({
         documentAuth: document.authOptions,
         recipientAuth: recipient.authOptions,
@@ -45,6 +52,14 @@ export const getMultiSignDocumentRoute = procedure
       if (recipientAccessAuthRequired) {
         throw new AppError(AppErrorCode.INVALID_REQUEST, {
           message: 'Documents that require additional authentication cannot be multi signed at the moment',
+        });
+      }
+
+      // Nothing is shown or recorded as viewed before the recipient's turn (#145).
+      if (!(await getIsRecipientsTurnToSign({ token }))) {
+        throw new AppError(AppErrorCode.RECIPIENT_OUT_OF_TURN, {
+          message: 'It is not your turn to sign this document yet',
+          statusCode: 400,
         });
       }
 

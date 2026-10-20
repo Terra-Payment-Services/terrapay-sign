@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 
-import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import {
   hasRecipientAccess2FACookie,
@@ -12,7 +11,12 @@ import {
 } from '@documenso/lib/server-only/company-seal/company-seal-field';
 import { assertRecipientAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
+import { assertRecipientsTurn } from '@documenso/lib/server-only/recipient/assert-recipients-turn';
 import { lockEnvelopeForRecipientAction } from '@documenso/lib/server-only/recipient/lock-envelope-for-recipient-action';
+import {
+  assertSignatureMethodAllowed,
+  assertValidSignatureValue,
+} from '@documenso/lib/server-only/signature/assert-valid-signature-value';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { DocumentAuth } from '@documenso/lib/types/document-auth';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
@@ -143,6 +147,9 @@ export const signEnvelopeFieldRoute = procedure
         fieldRecipientId: field.recipientId,
       });
 
+      // Under the lock, so a completion or reorder that commits first is seen; an assistant's own turn (#145).
+      await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
       if (actor.signingStatus === SigningStatus.SIGNED) {
         throw new AppError(AppErrorCode.INVALID_REQUEST, {
           message: `Recipient ${recipient.id} has already signed`,
@@ -251,10 +258,10 @@ export const signEnvelopeFieldRoute = procedure
       }
 
       if (fieldValue.value) {
-        const isBase64 = isBase64Image(fieldValue.value);
-
-        signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
-        typedSignature = !isBase64 ? fieldValue.value : null;
+        ({ signatureImageAsBase64, typedSignature } = await assertValidSignatureValue({
+          value: fieldValue.value,
+          methods: documentMeta,
+        }));
       }
     }
 
@@ -275,6 +282,30 @@ export const signEnvelopeFieldRoute = procedure
 
     return await prisma.$transaction(async (tx) => {
       await assertRecipientCanStillSign(tx);
+
+      // Read again under the lock, so a method change that committed after the check above still applies (C42).
+      if (field.type === FieldType.SIGNATURE) {
+        assertSignatureMethodAllowed(
+          { signatureImageAsBase64, typedSignature },
+          await tx.documentMeta.findUnique({
+            where: { id: envelope.documentMetaId },
+            select: { typedSignatureEnabled: true, drawSignatureEnabled: true, uploadSignatureEnabled: true },
+          }),
+        );
+      }
+
+      // Read under the lock, as V1 does, so a second insert of the same field sees the first (#131). Checkbox and
+      // radio fields are edited in place by the signing page, which sends a new value for an inserted field, so
+      // for them the later write wins.
+      if (field.type !== FieldType.CHECKBOX && field.type !== FieldType.RADIO) {
+        const lockedField = await tx.field.findUniqueOrThrow({ where: { id: field.id }, select: { inserted: true } });
+
+        if (lockedField.inserted) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Field ${fieldId} has already been inserted`,
+          });
+        }
+      }
 
       const updatedField = await tx.field.update({
         where: {

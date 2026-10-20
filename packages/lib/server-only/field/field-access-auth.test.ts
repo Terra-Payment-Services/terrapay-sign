@@ -53,6 +53,7 @@ const textField = (inserted: boolean) => ({
   envelope: {
     id: 'envelope_1',
     status: DocumentStatus.PENDING,
+    internalVersion: 1,
     deletedAt: null,
     authOptions: null,
     recipients: [],

@@ -3,6 +3,7 @@ import { PDF } from '@libpdf/core';
 import { groupBy } from 'remeda';
 
 import { AppError } from '../../errors/app-error';
+import { prepareFieldSignatureImages } from '../signature/prepare-stored-signature-image';
 import { inspectExistingSignatures } from './existing-signatures';
 import { insertFieldInPDFV2 } from './insert-field-in-pdf-v2';
 import { assertSignedBytesUntouched } from './normalize-pdf';
@@ -20,7 +21,9 @@ type GeneratePartialSignedPdfOptions = {
  * No PKI signature, no certificate page, no audit log appendix - this is a
  * preview of the in-progress envelope, not a final executed document.
  */
-export const generatePartialSignedPdf = async ({ pdfData, fields }: GeneratePartialSignedPdfOptions) => {
+export const generatePartialSignedPdf = async ({ pdfData, fields: storedFields }: GeneratePartialSignedPdfOptions) => {
+  // The fields are drawn from the prepared images, never the stored strings, which Skia may not decode (G4 C104).
+  const fields = await prepareFieldSignatureImages(storedFields);
   const pdfDoc = await PDF.load(pdfData);
 
   // A counterparty's signature survives only if the form is flattened around it

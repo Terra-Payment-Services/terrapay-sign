@@ -23,6 +23,10 @@ import { apiSignin } from './fixtures/authentication';
  * the request and 500 ms on the probe gap sits far above the fixed difference and far
  * below the vulnerable one. There is no absolute ceiling, since one would fail a correct
  * parser on a loaded runner.
+ *
+ * Since round 5 (criterion 57 in the campaign spec) the sanitiser may limit selector
+ * length, so the flat selector's rule is either kept or dropped with a warning naming the
+ * selector. Both outcomes pass; the timing bounds are unchanged.
  */
 const REQUEST_MARGIN_MS = 750;
 const STALL_MARGIN_MS = 500;
@@ -101,7 +105,10 @@ test('[BRANDING_CSS]: a maximum length flat selector is sanitised quickly and do
 
     expect(response.ok()).toBe(true);
 
-    return { requestMs, worstGapMs, probeCount };
+    const body = await response.json().catch(() => null);
+    const warnings: { kind?: string; detail?: string }[] = body?.result?.data?.json?.cssWarnings ?? [];
+
+    return { requestMs, worstGapMs, probeCount, warnings };
   };
 
   const benignCss = buildBenignCss(css.length);
@@ -125,7 +132,13 @@ test('[BRANDING_CSS]: a maximum length flat selector is sanitised quickly and do
     where: { id: organisation.organisationGlobalSettingsId },
   });
 
-  expect(stored.brandingCss).toContain('{color:red}');
+  // Kept, or dropped with a selector warning (criterion 57 adds a selector length limit).
+  const isKept = stored.brandingCss.includes('{color:red}');
+  const hasSelectorWarning = measured.warnings.some((warning) =>
+    /selector/i.test(`${warning.kind ?? ''} ${warning.detail ?? ''}`),
+  );
+
+  expect(isKept || hasSelectorWarning, 'the rule is kept, or dropped with a selector warning').toBe(true);
 
   expect(requestMs).toBeLessThan(baseline.requestMs + REQUEST_MARGIN_MS);
   expect(worstGapMs).toBeLessThan(baseline.worstGapMs + STALL_MARGIN_MS);

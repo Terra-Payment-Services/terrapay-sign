@@ -15,15 +15,20 @@ const recipientDeleteMany = vi.fn();
 const recipientUpsert = vi.fn();
 const fieldDeleteMany = vi.fn();
 
+// The envelope lock (#121) re-reads recipients and fields inside the transaction; the mock serves the same rows
+// the outer read returned.
 const transactionClient = {
+  $queryRaw: async () => [],
   envelope: {
     findFirstOrThrow: async () => ({ signatureLevel: 'SES', status: 'PENDING' }),
   },
   recipient: {
+    findMany: async () => (await envelopeFindFirst()).recipients,
     upsert: async (...args: unknown[]) => await recipientUpsert(...args),
     deleteMany: async (...args: unknown[]) => await recipientDeleteMany(...args),
   },
   field: {
+    findMany: async () => (await envelopeFindFirst()).fields,
     deleteMany: async (...args: unknown[]) => await fieldDeleteMany(...args),
   },
   documentAuditLog: {
@@ -115,7 +120,9 @@ describe('setDocumentRecipients', () => {
       ...update,
       id: where.id,
     }));
-    recipientDeleteMany.mockResolvedValue({ count: 0 });
+    recipientDeleteMany.mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) => ({
+      count: where.id.in.length,
+    }));
   });
 
   it('removes a recipient who has not touched the document', async () => {
@@ -199,7 +206,9 @@ describe('setDocumentRecipients and "Require account" access', () => {
       ...update,
       id: where.id,
     }));
-    recipientDeleteMany.mockResolvedValue({ count: 0 });
+    recipientDeleteMany.mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) => ({
+      count: where.id.in.length,
+    }));
   });
 
   const setRecipientsWithAccess = async (recipient: ReturnType<typeof signer>, accessAuth: 'ACCOUNT'[]) =>

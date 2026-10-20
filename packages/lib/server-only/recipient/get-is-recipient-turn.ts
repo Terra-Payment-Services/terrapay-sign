@@ -1,10 +1,15 @@
 import { prisma } from '@documenso/prisma';
-import { DocumentSigningOrder, EnvelopeType, RecipientRole, SigningStatus } from '@prisma/client';
+import { EnvelopeType } from '@prisma/client';
+
+import { isEnvelopeRecipientsTurn } from './assert-recipients-turn';
 
 export type GetIsRecipientTurnOptions = {
   token: string;
 };
 
+/**
+ * Whether the recipient holding `token` may act now, by the order rule the signing routes apply (#145).
+ */
 export async function getIsRecipientsTurnToSign({ token }: GetIsRecipientTurnOptions) {
   const envelope = await prisma.envelope.findFirstOrThrow({
     where: {
@@ -17,36 +22,22 @@ export async function getIsRecipientsTurnToSign({ token }: GetIsRecipientTurnOpt
     },
     include: {
       documentMeta: true,
-      recipients: {
-        orderBy: {
-          signingOrder: 'asc',
-        },
-      },
+      recipients: true,
     },
   });
 
-  if (envelope.documentMeta?.signingOrder !== DocumentSigningOrder.SEQUENTIAL) {
-    return true;
-  }
+  const currentRecipient = envelope.recipients.find((recipient) => recipient.token === token);
 
-  const { recipients } = envelope;
-
-  const currentRecipientIndex = recipients.findIndex((r) => r.token === token);
-
-  if (currentRecipientIndex === -1) {
+  if (!currentRecipient) {
     return false;
   }
 
-  for (let i = 0; i < currentRecipientIndex; i++) {
-    // CC recipients have no action to take, so they can never block the flow.
-    if (recipients[i].role === RecipientRole.CC) {
-      continue;
-    }
-
-    if (recipients[i].signingStatus !== SigningStatus.SIGNED) {
-      return false;
-    }
-  }
-
-  return true;
+  return isEnvelopeRecipientsTurn(
+    {
+      signingOrder: envelope.documentMeta?.signingOrder,
+      signatureLevel: envelope.signatureLevel,
+      recipients: envelope.recipients,
+    },
+    currentRecipient.id,
+  );
 }

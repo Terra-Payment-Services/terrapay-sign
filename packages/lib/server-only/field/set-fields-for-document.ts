@@ -17,19 +17,20 @@ import {
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData, diffFieldChanges } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, type Field, FieldType } from '@prisma/client';
+import { EnvelopeType, type Field, FieldType, type Recipient, SigningStatus } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapFieldToLegacyField } from '../../utils/fields';
-import { canRecipientFieldsBeModified } from '../../utils/recipients';
+import { canRecipientBeModified, canRecipientFieldsBeModified } from '../../utils/recipients';
 import {
   assertLegacySetFieldsSparesSeals,
   lockFieldsSparingSeals,
   resolveCompanySealFieldMeta,
 } from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { lockEnvelopeForOwnerEdit } from '../recipient/lock-envelope-for-owner-edit';
 
 export interface SetFieldsForDocumentOptions {
   userId: number;
@@ -107,6 +108,18 @@ export const setFieldsForDocument = async ({
     });
   }
 
+  // A rejecter's fields stay as they were until the seal records the rejection (#121).
+  const isRejecterField = (field: { recipientId: number | null }, recipients: Recipient[]) =>
+    recipients.some(
+      (recipient) => recipient.id === field.recipientId && recipient.signingStatus === SigningStatus.REJECTED,
+    );
+
+  if (removedFields.some((removedField) => isRejecterField(removedField, envelope.recipients))) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'Cannot remove a field of a recipient who has rejected the document',
+    });
+  }
+
   const linkedFields = fields.map((field) => {
     const existing = existingFields.find((existingField) => existingField.id === field.id);
 
@@ -125,6 +138,14 @@ export const setFieldsForDocument = async ({
     if (!recipient) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: `Recipient not found for field ${field.id}`,
+      });
+    }
+
+    // The upsert below never moves a field to another recipient, so the check must be made against the recipient
+    // the field actually belongs to; a field id submitted under someone else refuses (#121).
+    if (existing && existing.recipientId !== field.recipientId) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Field ${field.id} belongs to another recipient`,
       });
     }
 
@@ -160,6 +181,67 @@ export const setFieldsForDocument = async ({
   }
 
   const persistedFields = await prisma.$transaction(async (tx) => {
+    // The checks above, made again on rows read under the envelope lock that rejection and signing take (#121).
+    const locked = await lockEnvelopeForOwnerEdit(tx, envelope.id);
+
+    const lockedRemovals = locked.fields.filter((lockedField) =>
+      removedFields.some((removedField) => removedField.id === lockedField.id),
+    );
+
+    // A removal is refused when the field is inserted or its recipient is frozen (rejected, holding any inserted
+    // field whatever its role, or a signer who signed), judged on the rows under the lock. Omitting a field from the
+    // list deletes it (#121).
+    const isFrozenRemoval = (lockedField: (typeof locked.fields)[number]) => {
+      const recipient = locked.recipients.find((candidate) => candidate.id === lockedField.recipientId);
+
+      return lockedField.inserted || !recipient || !canRecipientBeModified(recipient, locked.fields);
+    };
+
+    if (lockedRemovals.some(isFrozenRemoval)) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Cannot remove a field of a recipient who has already interacted with the document',
+      });
+    }
+
+    // The full rows as they stand under the lock; an owner edit may have committed since the first read.
+    const lockedRows = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+
+    // A field of a recipient who can no longer be modified is never written. One the caller left as it read it is
+    // skipped and returned as it now stands, so a stale list cannot write its old values over a newer edit.
+    const frozenRows = new Map<number, Field>();
+
+    for (const field of linkedFields) {
+      const lockedField = field._persisted
+        ? lockedRows.find((candidate) => candidate.id === field._persisted?.id)
+        : undefined;
+
+      if (field._persisted && (!lockedField || lockedField.recipientId !== field.recipientId)) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Field ${field._persisted.id} belongs to another recipient`,
+        });
+      }
+
+      const lockedRecipient = locked.recipients.find((recipient) => recipient.id === field.recipientId);
+
+      if (lockedRecipient && canRecipientFieldsBeModified(lockedRecipient, locked.fields)) {
+        continue;
+      }
+
+      // A real change differs from the row under the lock and from what the caller read.
+      const isChange =
+        !field._persisted ||
+        !lockedField ||
+        (hasFieldBeenChanged(lockedField, field) && hasFieldBeenChanged(field._persisted, field));
+
+      if (isChange) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot modify a field where the recipient has already interacted with the document',
+        });
+      }
+
+      frozenRows.set(lockedField.id, lockedField);
+    }
+
     if (protectCompanySeals) {
       await lockFieldsSparingSeals(tx, [
         ...linkedFields.flatMap((field) => (field._persisted ? [field._persisted] : [])),
@@ -169,6 +251,15 @@ export const setFieldsForDocument = async ({
 
     const upsertedFields = await Promise.all(
       linkedFields.map(async (field) => {
+        const frozenRow = field._persisted ? frozenRows.get(field._persisted.id) : undefined;
+
+        if (frozenRow) {
+          return {
+            ...frozenRow,
+            formId: field.formId,
+          };
+        }
+
         const fieldSignerEmail = field._recipient.email.toLowerCase();
 
         const parsedFieldMeta = field.fieldMeta

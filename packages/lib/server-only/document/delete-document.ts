@@ -1,6 +1,13 @@
 import { prisma } from '@documenso/prisma';
 import type { DocumentMeta, Envelope, Recipient, User } from '@prisma/client';
-import { DocumentStatus, EnvelopeType, RecipientRole, SendStatus, WebhookTriggerEvents } from '@prisma/client';
+import {
+  DocumentStatus,
+  EnvelopeType,
+  RecipientRole,
+  SendStatus,
+  SigningStatus,
+  WebhookTriggerEvents,
+} from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { jobs } from '../../jobs/client';
@@ -142,9 +149,30 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
     meta: envelope.documentMeta,
   });
 
-  // Soft delete completed documents.
-  if (isDocumentCompleted(envelope.status)) {
-    return await prisma.$transaction(async (tx) => {
+  // Decided under the envelope lock that rejection, signing and the seal also take, on the status and recipients
+  // read under it. Completed documents, and pending ones a recipient has rejected, are soft deleted: a committed
+  // rejection fixes the outcome, and the seal still records it (#122).
+  const result = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: DocumentStatus; deletedAt: Date | null }>>`
+      SELECT "status", "deletedAt" FROM "Envelope" WHERE "id" = ${envelope.id} FOR NO KEY UPDATE
+    `;
+
+    if (!locked) {
+      throw new AppError(AppErrorCode.NOT_FOUND, {
+        message: 'Document not found',
+      });
+    }
+
+    if (locked.deletedAt) {
+      return { kind: 'none' as const };
+    }
+
+    const rejection = await tx.recipient.findFirst({
+      where: { envelopeId: envelope.id, signingStatus: SigningStatus.REJECTED },
+      select: { id: true },
+    });
+
+    if (isDocumentCompleted(locked.status) || rejection) {
       await tx.documentAuditLog.create({
         data: createDocumentAuditLogData({
           envelopeId: envelope.id,
@@ -156,7 +184,7 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
         }),
       });
 
-      return await tx.envelope.update({
+      const softDeleted = await tx.envelope.update({
         where: {
           id: envelope.id,
         },
@@ -164,11 +192,11 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
           deletedAt: new Date().toISOString(),
         },
       });
-    });
-  }
 
-  // Hard delete draft and pending documents.
-  const deletedEnvelope = await prisma.$transaction(async (tx) => {
+      return { kind: 'soft' as const, envelope: softDeleted };
+    }
+
+    // Hard delete draft and pending documents.
     // Currently redundant since deleting a document will delete the audit logs.
     // However may be useful if we disassociate audit logs and documents if required.
     await tx.documentAuditLog.create({
@@ -182,7 +210,7 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
       }),
     });
 
-    return await tx.envelope.delete({
+    const hardDeleted = await tx.envelope.delete({
       where: {
         id: envelope.id,
         status: {
@@ -190,7 +218,19 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
         },
       },
     });
+
+    return { kind: 'hard' as const, envelope: hardDeleted };
   });
+
+  if (result.kind === 'none') {
+    return;
+  }
+
+  if (result.kind === 'soft') {
+    return result.envelope;
+  }
+
+  const deletedEnvelope = result.envelope;
 
   const isEnvelopeDeleteEmailEnabled = extractDerivedDocumentEmailSettings(envelope.documentMeta).documentDeleted;
 

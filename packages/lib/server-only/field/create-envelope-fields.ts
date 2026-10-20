@@ -19,6 +19,7 @@ import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { type BoundingBox, savePdfWithWhiteouts, whiteoutRegions } from '../pdf/auto-place-fields';
 import { assertSignaturesValidOnArrival } from '../pdf/normalize-pdf';
+import { assertRecipientFieldsModifiableUnderLock } from '../recipient/lock-envelope-for-owner-edit';
 
 type CoordinatePosition = {
   page: number;
@@ -393,6 +394,13 @@ export const createEnvelopeFields = async ({
 
     return await prisma.$transaction(async (tx) => {
       await assertEnvelopeMutable(envelope, tx);
+
+      // Taken before the item updates below, so the envelope lock comes first here as in every other writer.
+      await assertRecipientFieldsModifiableUnderLock(
+        tx,
+        envelope.id,
+        validatedFields.map((field) => field.recipientId),
+      );
 
       /*
         Move each item first, in id order, before any field insert. The update

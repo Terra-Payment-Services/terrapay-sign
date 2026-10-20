@@ -5,6 +5,7 @@ import { unsafeGetEntireEnvelope } from '@documenso/lib/server-only/admin/get-en
 import { decryptSecondaryData } from '@documenso/lib/server-only/crypto/decrypt';
 import { getDocumentCertificateAuditLogs } from '@documenso/lib/server-only/document/get-document-certificate-audit-logs';
 import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organisation/get-organisation-claims';
+import { prepareStoredSignatureImage } from '@documenso/lib/server-only/signature/prepare-stored-signature-image';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { getCompanySealCertificateEntries } from '@documenso/lib/utils/company-seal-certificate';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
@@ -69,6 +70,27 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const messages = await getTranslations(documentLanguage);
 
+  // Each signature image is drawn as the seal draws it, from the prepared PNG within the size bound, never the stored
+  // string (G4 C102). The seal stops before printing when one cannot be read, so null here only leaves it undrawn.
+  const recipients = await Promise.all(
+    envelope.recipients.map(async (recipient) => ({
+      ...recipient,
+      fields: await Promise.all(
+        recipient.fields.map(async (field) =>
+          field.signature?.signatureImageAsBase64
+            ? {
+                ...field,
+                signature: {
+                  ...field.signature,
+                  signatureImageAsBase64: await prepareStoredSignatureImage(field.signature.signatureImageAsBase64),
+                },
+              }
+            : field,
+        ),
+      ),
+    })),
+  );
+
   return {
     document: {
       id: mapSecondaryIdToDocumentId(envelope.secondaryId),
@@ -80,7 +102,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       qrToken: envelope.qrToken,
       authOptions: envelope.authOptions,
-      recipients: envelope.recipients,
+      recipients,
       createdAt: envelope.createdAt,
       updatedAt: envelope.updatedAt,
       deletedAt: envelope.deletedAt,

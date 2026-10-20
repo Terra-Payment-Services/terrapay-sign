@@ -50,6 +50,7 @@ export const ZDocumentAuditLogTypeSchema = z.enum([
   'DOCUMENT_EXTERNAL_ID_UPDATED', // When the document external ID is updated.
   'DOCUMENT_MOVED_TO_TEAM', // When the document is moved to a team.
   'DOCUMENT_DELEGATED_OWNER_CREATED', // When the document delegated owner is created.
+  'DOCUMENT_SIGNATURE_IMAGE_UNRENDERABLE', // When the seal stops on a stored signature image it cannot read.
 
   // ACCESS AUTH 2FA events.
   'DOCUMENT_ACCESS_AUTH_2FA_REQUESTED', // When ACCESS AUTH 2FA is requested.
@@ -592,6 +593,16 @@ export const ZDocumentAuditLogEventDocumentRecipientRejectedSchema = z.object({
 });
 
 /**
+ * Event: The seal stopped because a stored signature image could not be read by any decoder (G4 decision D2).
+ */
+export const ZDocumentAuditLogEventDocumentSignatureImageUnrenderableSchema = z.object({
+  type: z.literal(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SIGNATURE_IMAGE_UNRENDERABLE),
+  data: ZBaseRecipientDataSchema.extend({
+    fieldId: z.string(),
+  }),
+});
+
+/**
  * Event: Document recipient requested a 2FA token.
  */
 export const ZDocumentAuditLogEventDocumentRecipientRequested2FAEmailSchema = z.object({
@@ -863,6 +874,7 @@ export const ZDocumentAuditLogSchema = ZDocumentAuditLogBaseSchema.and(
     ZDocumentAuditLogEventDocumentViewedSchema,
     ZDocumentAuditLogEventDocumentRecipientCompleteSchema,
     ZDocumentAuditLogEventDocumentRecipientRejectedSchema,
+    ZDocumentAuditLogEventDocumentSignatureImageUnrenderableSchema,
     ZDocumentAuditLogEventDocumentRecipientRequested2FAEmailSchema,
     ZDocumentAuditLogEventDocumentRecipientValidated2FAEmailSchema,
     ZDocumentAuditLogEventDocumentRecipientFailed2FAEmailSchema,

@@ -1,7 +1,7 @@
 import { DocumentInviteEmailTemplate } from '@documenso/email/templates/document-invite';
 import { resolveExpiresAt } from '@documenso/lib/constants/envelope-expiration';
 import { RECIPIENT_ROLE_TO_EMAIL_TYPE, RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
@@ -33,6 +33,7 @@ import { getEmailContext } from '../email/get-email-context';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
+import { hasEnvelopeRejection } from '../recipient/has-envelope-rejection';
 import { updateRecipientNextReminder } from '../recipient/update-recipient-next-reminder';
 import { assertUserNotDisabled } from '../user/assert-user-not-disabled';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -128,6 +129,17 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
   }
 
   assertNoPlaceholderRecipients(envelope.recipients);
+
+  // A rejection leaves the envelope PENDING until the seal runs; nobody is invited again in that window (#123). The
+  // envelope read above may come from a lagging replica, so the primary is asked too, before anything is written.
+  if (
+    envelope.recipients.some((recipient) => recipient.signingStatus === SigningStatus.REJECTED) ||
+    (await hasEnvelopeRejection(envelope.id))
+  ) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'Document has been rejected',
+    });
+  }
 
   // A recipientCount of 0 means unlimited recipients are allowed. Block resending
   // when the document has more recipients than the organisation is allowed to send
@@ -309,6 +321,11 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
           plainText: true,
         }),
       ]);
+
+      // Asked again just before the send, for a rejection that committed during this resend (#123).
+      if (await hasEnvelopeRejection(envelope.id)) {
+        return;
+      }
 
       // Send email outside any transaction to avoid holding a connection
       // open during network I/O.

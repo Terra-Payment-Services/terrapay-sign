@@ -1,3 +1,5 @@
+import { createApiToken } from '@documenso/lib/server-only/public-api/create-api-token';
+import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { prisma } from '@documenso/prisma';
 import { seedPendingDocumentWithFullFields } from '@documenso/prisma/seed/documents';
 import { seedUser } from '@documenso/prisma/seed/users';
@@ -6,11 +8,14 @@ import {
   DocumentSigningOrder,
   DocumentStatus,
   FieldType,
+  ReadStatus,
   RecipientRole,
   SendStatus,
   SigningStatus,
 } from '@prisma/client';
 
+import { JOB, jobsFor } from '../fixtures/reject-seal';
+import { addressFor, expectNoNewMail, jsonHeaders, uniqueLocalPart, V2_URL, waitForMail } from '../fixtures/send-path';
 import { signDirectSignaturePad, signSignaturePad } from '../fixtures/signature';
 
 test('[NEXT_RECIPIENT_DICTATION]: should allow updating next recipient when dictation is enabled', async ({ page }) => {
@@ -594,4 +599,113 @@ test('[NEXT_RECIPIENT_DICTATION]: should not offer dictation when CC recipient i
       { timeout: 30_000 },
     )
     .toBe(DocumentStatus.COMPLETED);
+});
+
+/**
+ * C109 (G4 dictation ruling, G4/ci-55464/dictation-ruling.txt). A reminder is a real way to mark a later recipient of
+ * a sequential envelope SENT before their turn: resendDocument checks no turn, and the redistribute dialog offers every
+ * unsigned recipient. The recipient s1 dictates must still be renamed, and invited once, as main does.
+ */
+test('C109 a dictated next signer reminded before their turn is renamed and invited exactly once', async ({
+  page,
+  request,
+}) => {
+  const { user, team } = await seedUser();
+  const { user: firstSigner } = await seedUser();
+  const { user: secondSigner } = await seedUser();
+  const { user: thirdSigner } = await seedUser();
+
+  const notYetSent = { sendStatus: SendStatus.NOT_SENT, readStatus: ReadStatus.NOT_OPENED, signedAt: null };
+
+  const { recipients, document } = await seedPendingDocumentWithFullFields({
+    owner: user,
+    teamId: team.id,
+    recipients: [firstSigner, secondSigner, thirdSigner],
+    recipientsCreateOptions: [
+      { signingOrder: 1 },
+      { signingOrder: 2, ...notYetSent },
+      { signingOrder: 3, ...notYetSent },
+    ],
+    updateDocumentOptions: {
+      documentMeta: {
+        upsert: {
+          create: { allowDictateNextSigner: true, signingOrder: DocumentSigningOrder.SEQUENTIAL },
+          update: { allowDictateNextSigner: true, signingOrder: DocumentSigningOrder.SEQUENTIAL },
+        },
+      },
+    },
+  });
+
+  const [firstRecipient, secondRecipient] = recipients;
+
+  const { token: apiToken } = await createApiToken({
+    userId: user.id,
+    teamId: team.id,
+    tokenName: 'c109',
+    expiresIn: null,
+  });
+
+  // The owner reminds s2 while s1 has not signed.
+  const reminded = await request.post(`${V2_URL}/document/redistribute`, {
+    headers: jsonHeaders(apiToken),
+    data: { documentId: mapSecondaryIdToDocumentId(document.secondaryId), recipients: [secondRecipient.id] },
+  });
+
+  expect(reminded.ok(), `premise: the reminder is accepted: ${reminded.status()}`).toBe(true);
+
+  const remindedSecond = await prisma.recipient.findUniqueOrThrow({ where: { id: secondRecipient.id } });
+
+  expect(remindedSecond.sendStatus, 'premise: the reminder marks s2 SENT before their turn').toBe(SendStatus.SENT);
+  expect(remindedSecond.signingStatus).toBe(SigningStatus.NOT_SIGNED);
+
+  const dictatedLocalPart = uniqueLocalPart('c109-dictated');
+  const dictatedEmail = addressFor(dictatedLocalPart);
+
+  const signUrl = `/sign/${firstRecipient.token}`;
+
+  await page.goto(signUrl);
+  await expect(page.getByRole('heading', { name: 'Sign Document' })).toBeVisible();
+
+  await signSignaturePad(page);
+
+  for (const field of firstRecipient.fields) {
+    await page.locator(`#field-${field.id}`).getByRole('button').click();
+
+    if (field.type === FieldType.TEXT) {
+      await page.locator('#custom-text').fill('TEXT');
+      await page.getByRole('button', { name: 'Save' }).click();
+    }
+
+    await expect(page.locator(`#field-${field.id}`)).toHaveAttribute('data-inserted', 'true');
+  }
+
+  await page.getByRole('button', { name: 'Complete' }).click();
+
+  const dialog = page.getByRole('dialog');
+
+  await expect(dialog.getByText('Next Recipient Name')).toBeVisible();
+  await dialog.getByLabel('Name').fill('C109 Dictated');
+  await dialog.getByLabel('Email').fill(dictatedEmail);
+
+  await page.getByRole('button', { name: 'Sign' }).click();
+  await page.waitForURL(`${signUrl}/complete`);
+
+  const second = await prisma.recipient.findUniqueOrThrow({ where: { id: secondRecipient.id } });
+
+  expect(second.name, 'C109: the dictated name is applied').toBe('C109 Dictated');
+  expect(second.email, 'C109: the dictated email is applied').toBe(dictatedEmail);
+  expect(second.signingStatus).toBe(SigningStatus.NOT_SIGNED);
+
+  const invitations = await jobsFor(JOB.SIGNING_EMAIL, 'recipientId', secondRecipient.id);
+
+  expect(invitations, 'C109: one signing-request job for the dictated signer').toHaveLength(1);
+
+  await waitForMail(request, dictatedLocalPart, 1);
+  await expectNoNewMail(request, dictatedLocalPart, 1, 'C109: the dictated signer is invited once');
+
+  const renames = await prisma.documentAuditLog.findMany({
+    where: { envelopeId: document.id, type: 'RECIPIENT_UPDATED' },
+  });
+
+  expect(renames, 'C109: one RECIPIENT_UPDATED entry for the dictation').toHaveLength(1);
 });

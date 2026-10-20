@@ -1,6 +1,7 @@
 import { ORGANISATION_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/organisations';
 import { TEAM_MEMBER_ROLE_PERMISSIONS_MAP } from '@documenso/lib/constants/teams';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { checkBrandingSave } from '@documenso/lib/server-only/branding/check-branding-save';
 import { warnIgnoredEmailId } from '@documenso/lib/server-only/email/warn-ignored-email-id';
 import { normalizeBrandingColors } from '@documenso/lib/utils/normalize-branding-colors';
 import { buildOrganisationWhereQuery } from '@documenso/lib/utils/organisations';
@@ -66,19 +67,18 @@ export const updateTeamSettingsRoute = authenticatedProcedure
       });
     }
 
-    // Signatures will only be inherited if all are NULL.
-    if (typedSignatureEnabled === false && uploadSignatureEnabled === false && drawSignatureEnabled === false) {
-      throw new AppError(AppErrorCode.INVALID_BODY, {
-        message: 'At least one signature type must be enabled',
-      });
-    }
-
     const team = await prisma.team.findFirst({
       where: buildTeamWhereQuery({
         teamId,
         userId: user.id,
         roles: TEAM_MEMBER_ROLE_PERMISSIONS_MAP['MANAGE_TEAM'],
       }),
+      include: {
+        teamGlobalSettings: true,
+        organisation: {
+          select: { organisationGlobalSettings: { select: { brandingCss: true, brandingColors: true } } },
+        },
+      },
     });
 
     if (!team) {
@@ -127,6 +127,13 @@ export const updateTeamSettingsRoute = authenticatedProcedure
       sanitizedBrandingCss = null;
     } else if (typeof brandingCss === 'string') {
       const result = sanitizeBrandingCss(brandingCss);
+
+      if (result.refused) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: `Branding stylesheet not saved: ${result.refused}.`,
+        });
+      }
+
       sanitizedBrandingCss = result.css.trim() === '' ? null : result.css;
       cssWarnings = result.warnings;
     }
@@ -137,46 +144,100 @@ export const updateTeamSettingsRoute = authenticatedProcedure
     // override of nothing once a team toggles brandingEnabled = true.
     const normalizedBrandingColors = normalizeBrandingColors(brandingColors);
 
-    await prisma.team.update({
-      where: {
-        id: teamId,
-      },
-      data: {
-        teamGlobalSettings: {
-          update: {
-            // Document related settings.
-            documentVisibility,
-            documentLanguage,
-            documentTimezone,
-            documentDateFormat,
-            includeSenderDetails: derivedIncludeSenderDetails,
-            includeSigningCertificate,
-            includeAuditLog,
-            typedSignatureEnabled,
-            uploadSignatureEnabled,
-            drawSignatureEnabled,
-            delegateDocumentOwnership,
-            envelopeExpirationPeriod: envelopeExpirationPeriod === null ? Prisma.DbNull : envelopeExpirationPeriod,
-            reminderSettings: reminderSettings === null ? Prisma.DbNull : reminderSettings,
+    // Unreadable colour pairs refuse the save; unreadable stylesheet pairs are dropped.
+    const contrast = checkBrandingSave({
+      css: sanitizedBrandingCss,
+      colors: normalizedBrandingColors,
+      storedCss: team.teamGlobalSettings.brandingCss,
+      storedColors: team.teamGlobalSettings.brandingColors,
+      inheritedCss: team.organisation.organisationGlobalSettings.brandingCss,
+      inheritedColors: team.organisation.organisationGlobalSettings.brandingColors,
+    });
 
-            // Branding related settings.
-            brandingEnabled,
-            brandingUrl,
-            brandingCompanyDetails,
-            brandingColors: normalizedBrandingColors === null ? Prisma.DbNull : normalizedBrandingColors,
-            brandingCss: sanitizedBrandingCss,
+    if (typeof sanitizedBrandingCss === 'string') {
+      sanitizedBrandingCss = contrast.css?.trim() ? contrast.css : null;
+      cssWarnings = [...(cssWarnings ?? []), ...contrast.warnings];
+    }
 
-            // Email related settings.
-            emailReplyTo,
-            // emailReplyToName,
-            emailDocumentSettings: emailDocumentSettings === null ? Prisma.DbNull : emailDocumentSettings,
-            defaultRecipients: defaultRecipients === null ? Prisma.DbNull : defaultRecipients,
+    await prisma.$transaction(async (tx) => {
+      // The merged team-over-organisation methods are checked on rows locked in the order
+      // organisation.settings.update uses, the organisation's and then the team's, so no concurrent team or
+      // organisation update can leave the team with all three methods off (C94, C94b).
+      if (
+        typedSignatureEnabled !== undefined ||
+        uploadSignatureEnabled !== undefined ||
+        drawSignatureEnabled !== undefined
+      ) {
+        const { organisationGlobalSettingsId } = await tx.organisation.findUniqueOrThrow({
+          where: { id: team.organisationId },
+          select: { organisationGlobalSettingsId: true },
+        });
 
-            // AI features settings.
-            aiFeaturesEnabled,
+        await tx.$queryRaw`SELECT "id" FROM "OrganisationGlobalSettings" WHERE "id" = ${organisationGlobalSettingsId} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "TeamGlobalSettings" WHERE "id" = ${team.teamGlobalSettingsId} FOR UPDATE`;
+
+        const inherited = await tx.organisationGlobalSettings.findUniqueOrThrow({
+          where: { id: organisationGlobalSettingsId },
+        });
+        const stored = await tx.teamGlobalSettings.findUniqueOrThrow({ where: { id: team.teamGlobalSettingsId } });
+
+        const merged = [
+          [typedSignatureEnabled, stored.typedSignatureEnabled, inherited.typedSignatureEnabled],
+          [uploadSignatureEnabled, stored.uploadSignatureEnabled, inherited.uploadSignatureEnabled],
+          [drawSignatureEnabled, stored.drawSignatureEnabled, inherited.drawSignatureEnabled],
+        ].map(
+          ([incoming, teamValue, organisationValue]) =>
+            (incoming === undefined ? teamValue : incoming) ?? organisationValue,
+        );
+
+        if (merged.every((enabled) => enabled === false)) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: 'At least one signature type must be enabled',
+          });
+        }
+      }
+
+      await tx.team.update({
+        where: {
+          id: teamId,
+        },
+        data: {
+          teamGlobalSettings: {
+            update: {
+              // Document related settings.
+              documentVisibility,
+              documentLanguage,
+              documentTimezone,
+              documentDateFormat,
+              includeSenderDetails: derivedIncludeSenderDetails,
+              includeSigningCertificate,
+              includeAuditLog,
+              typedSignatureEnabled,
+              uploadSignatureEnabled,
+              drawSignatureEnabled,
+              delegateDocumentOwnership,
+              envelopeExpirationPeriod: envelopeExpirationPeriod === null ? Prisma.DbNull : envelopeExpirationPeriod,
+              reminderSettings: reminderSettings === null ? Prisma.DbNull : reminderSettings,
+
+              // Branding related settings.
+              brandingEnabled,
+              brandingUrl,
+              brandingCompanyDetails,
+              brandingColors: normalizedBrandingColors === null ? Prisma.DbNull : normalizedBrandingColors,
+              brandingCss: sanitizedBrandingCss,
+
+              // Email related settings.
+              emailReplyTo,
+              // emailReplyToName,
+              emailDocumentSettings: emailDocumentSettings === null ? Prisma.DbNull : emailDocumentSettings,
+              defaultRecipients: defaultRecipients === null ? Prisma.DbNull : defaultRecipients,
+
+              // AI features settings.
+              aiFeaturesEnabled,
+            },
           },
         },
-      },
+      });
     });
 
     return {

@@ -44,6 +44,7 @@ const assistant = {
 const envelope = {
   id: 'envelope_1',
   status: DocumentStatus.PENDING,
+  internalVersion: 1,
   deletedAt: null,
   authOptions: null,
   recipients: [],
@@ -142,7 +143,9 @@ describe('an assistant clearing a field it prefilled is audited', () => {
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
         // The envelope lock: the query returns nothing and the assistant is still to act.
-        $queryRaw: async () => [],
+        $queryRaw: async () => [{ status: 'PENDING' }],
+        // The order gate reads the envelope under the lock (#145); a PARALLEL envelope puts everyone in turn.
+        envelope: { findUniqueOrThrow: async () => ({ signatureLevel: 'SES', documentMeta: null, recipients: [] }) },
         recipient: { findMany: async () => [{ id: assistant.id, signingStatus: assistant.signingStatus }] },
         field: { update: mocks.fieldUpdate },
         signature: { deleteMany: mocks.signatureDeleteMany },

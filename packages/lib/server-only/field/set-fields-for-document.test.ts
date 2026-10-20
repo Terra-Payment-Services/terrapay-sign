@@ -12,8 +12,15 @@ const envelopeFindFirst = vi.fn();
 const fieldDeleteMany = vi.fn();
 const fieldUpsert = vi.fn();
 
+// The envelope lock (#121) re-reads recipients and fields inside the transaction; the mock serves the rows the
+// outer read returned.
 const transactionClient = {
+  $queryRaw: async () => [],
+  recipient: {
+    findMany: async () => (await envelopeFindFirst()).recipients,
+  },
   field: {
+    findMany: async () => (await envelopeFindFirst()).fields,
     upsert: async (...args: unknown[]) => await fieldUpsert(...args),
     deleteMany: async (...args: unknown[]) => await fieldDeleteMany(...args),
   },

@@ -16,6 +16,7 @@ import {
 } from '../company-seal/company-seal-field';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { assertRecipientFieldsModifiableUnderLock } from '../recipient/lock-envelope-for-owner-edit';
 
 export interface UpdateEnvelopeFieldsOptions {
   userId: number;
@@ -150,6 +151,12 @@ export const updateEnvelopeFields = async ({
 
   const updatedFields = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    await assertRecipientFieldsModifiableUnderLock(
+      tx,
+      envelope.id,
+      fieldsToUpdate.map(({ originalField }) => originalField.recipientId),
+    );
 
     if (protectCompanySeals) {
       await lockFieldsSparingSeals(

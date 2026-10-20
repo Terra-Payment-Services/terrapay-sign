@@ -391,6 +391,8 @@ export class AppError extends Error {
         AppErrorCode.CSC_SAD_EXPIRED_PRE_SIGN,
         AppErrorCode.CSC_EMBED_FAILED,
         AppErrorCode.COMPANY_SEAL_V2_ONLY,
+        // The certificate of a document that is not complete yet is a refusal, not a server error (G4 C107).
+        'DOCUMENT_NOT_COMPLETE',
         () => 400 as const,
       )
       .with(AppErrorCode.UNAUTHORIZED, () => 401 as const)

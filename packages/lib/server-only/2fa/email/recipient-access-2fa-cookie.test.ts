@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@documenso/prisma', () => ({ prisma: { recipient: { findFirst: vi.fn() } } }));
 
@@ -78,5 +78,72 @@ describe('recipient access code cookie', () => {
         recipient: { id: 7, authOptions: { accessAuth: ['TWO_FACTOR_AUTH'], actionAuth: [] } },
       }),
     ).toBe(false);
+  });
+});
+
+/**
+ * Attributes of the Set-Cookie header in each environment. The constants that
+ * pick them are fixed at module load, so each case stubs the environment,
+ * resets the module registry and imports a fresh copy.
+ */
+const issueCookieFor = async (environment: Record<string, string>) => {
+  for (const [key, value] of Object.entries({
+    ...environment,
+    NEXTAUTH_SECRET: 'test-secret-that-is-long-enough-to-sign',
+  })) {
+    vi.stubEnv(key, value);
+  }
+
+  vi.resetModules();
+  vi.doMock('@documenso/prisma', () => ({ prisma: { recipient: { findFirst: vi.fn() } } }));
+
+  const fresh = await import('./recipient-access-2fa-cookie');
+  const [pair, ...rest] = (await fresh.createRecipientAccess2FACookie({ recipientId: 7 }))
+    .split(';')
+    .map((part) => part.trim());
+
+  return {
+    name: pair.slice(0, pair.indexOf('=')),
+    attributes: new Map(
+      rest.map((part) => {
+        const index = part.indexOf('=');
+
+        return index === -1 ? [part.toLowerCase(), ''] : [part.slice(0, index).toLowerCase(), part.slice(index + 1)];
+      }),
+    ),
+  };
+};
+
+describe('recipient access code cookie attributes', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('AC5: stays SameSite=None; Secure; Partitioned in production, for the cross-site embed', async () => {
+    const { name, attributes } = await issueCookieFor({
+      NODE_ENV: 'production',
+      NEXT_PUBLIC_WEBAPP_URL: 'https://sign.example.com',
+    });
+
+    expect(name).toBe('__Secure-recipientAccess2FA-7');
+    expect(attributes.get('samesite')?.toLowerCase()).toBe('none');
+    expect(attributes.has('secure')).toBe(true);
+    expect(attributes.has('partitioned')).toBe(true);
+    expect(attributes.has('httponly')).toBe(true);
+    expect(attributes.get('path')).toBe('/');
+    expect(attributes.get('max-age')).toBe('1800');
+  });
+
+  it('AC6: is plain SameSite=Lax over http in development', async () => {
+    const { name, attributes } = await issueCookieFor({
+      NODE_ENV: 'test',
+      NEXT_PUBLIC_WEBAPP_URL: 'http://localhost:3000',
+    });
+
+    expect(name).toBe('recipientAccess2FA-7');
+    expect(attributes.get('samesite')?.toLowerCase()).toBe('lax');
+    expect(attributes.has('httponly')).toBe(true);
+    expect(attributes.has('secure')).toBe(false);
+    expect(attributes.has('partitioned')).toBe(false);
   });
 });

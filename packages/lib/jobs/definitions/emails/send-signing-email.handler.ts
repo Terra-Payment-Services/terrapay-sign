@@ -9,6 +9,7 @@ import {
   OrganisationType,
   RecipientRole,
   SendStatus,
+  SigningStatus,
 } from '@prisma/client';
 import { createElement } from 'react';
 
@@ -21,6 +22,7 @@ import { buildEnvelopeEmailHeaders } from '../../../server-only/email/build-enve
 import { getEmailContext } from '../../../server-only/email/get-email-context';
 import { assertLegacyEnvelopeAcceptsPdf } from '../../../server-only/pdf/normalize-pdf';
 import { assertOrganisationRatesAndLimits } from '../../../server-only/rate-limit/assert-organisation-rates-and-limits';
+import { hasEnvelopeRejection } from '../../../server-only/recipient/has-envelope-rejection';
 import { updateRecipientNextReminder } from '../../../server-only/recipient/update-recipient-next-reminder';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../../types/document-audit-logs';
 import { extractDerivedDocumentEmailSettings } from '../../../types/document-email';
@@ -100,6 +102,16 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
   const { documentMeta, team } = envelope;
 
   if (recipient.role === RecipientRole.CC) {
+    return;
+  }
+
+  // A recipient who has rejected or signed since this job was queued is not asked to sign, and once anyone has
+  // rejected nobody is (#123).
+  if (recipient.signingStatus === SigningStatus.REJECTED || recipient.signingStatus === SigningStatus.SIGNED) {
+    return;
+  }
+
+  if (await hasEnvelopeRejection(envelope.id)) {
     return;
   }
 
@@ -267,7 +279,7 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
       return;
     }
 
-    await io.runTask('send-signing-email', async () => {
+    const delivery = await io.runTask('send-signing-email', async () => {
       const [html, text] = await Promise.all([
         renderEmailWithI18N(template, { lang: emailLanguage, branding }),
         renderEmailWithI18N(template, {
@@ -276,6 +288,12 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
           plainText: true,
         }),
       ]);
+
+      // Asked again immediately before the send, for a rejection that committed while the email was prepared.
+      // A suppressed invitation records nothing below: no SENT mark, no reminder, no EMAIL_SENT row (#123).
+      if (await hasEnvelopeRejection(envelope.id)) {
+        return 'suppressed' as const;
+      }
 
       await emailTransport.sendMail({
         to: {
@@ -293,7 +311,13 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
           teamId: envelope.teamId,
         }),
       });
+
+      return 'sent' as const;
     });
+
+    if (delivery === 'suppressed') {
+      return;
+    }
   }
 
   const sentAt = new Date();

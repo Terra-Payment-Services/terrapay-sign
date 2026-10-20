@@ -31,10 +31,18 @@ vi.mock('@documenso/prisma', () => ({
     // returns nothing and the recipient list is the recipient under test.
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
       await callback({
-        $queryRaw: async () => [],
+        $queryRaw: async () => [{ status: 'PENDING' }],
+        // The order gate reads the envelope under the lock (#145); a PARALLEL envelope puts everyone in turn.
+        envelope: { findUniqueOrThrow: async () => ({ signatureLevel: 'SES', documentMeta: null, recipients: [] }) },
         recipient: {
           findMany: async () => [await findFirst()],
-          update: async (...args: unknown[]) => await update(...args),
+          // The rejection is a conditional updateMany (#121); it reaches the same spy and reports one row.
+          updateMany: async (...args: unknown[]) => {
+            await update(...args);
+
+            return { count: 1 };
+          },
+          findUniqueOrThrow: async () => ({ ...(await findFirst()), signingStatus: 'REJECTED' }),
         },
         documentAuditLog: {
           create: async (...args: unknown[]) => await auditLogCreate(...args),

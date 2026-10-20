@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 
 import { toNativeCssVarsString } from '~/utils/css-vars';
 
+import { guardBranding } from './recipient-branding-guard';
+
 export type RecipientBrandingPayload = {
   allowCustomBranding: boolean;
   colors?: TCssVarsSchema | null;
@@ -15,19 +17,20 @@ export type RecipientBrandingProps = {
 };
 
 /**
- * Renders a `<style nonce>` block for a recipient route, scoped to the
- * `.documenso-branded` wrapper rendered in `_recipient+/_layout.tsx`.
+ * Renders the branding `<style nonce>` blocks for a recipient route, scoped to the
+ * `documenso-branded` class `root.tsx` puts on `<body>`.
  *
- * Both the CSS variables (from `branding.colors`) and the user's custom CSS
- * (from `branding.css`) are emitted inside a single nested rule so the user
- * doesn't need to scope their own selectors — native CSS nesting handles it:
+ * The CSS variables (from `branding.colors`) sit in `.documenso-branded { ... }`. The user's
+ * custom CSS (from `branding.css`) is nested in the class repeated three times, so the user
+ * doesn't need to scope their own selectors and every rule outranks the app's state classes:
  *
- *   .documenso-branded {
- *     --background: ...;
+ *   .documenso-branded.documenso-branded.documenso-branded {
  *     .my-class { color: red; }
  *   }
  *
- * Equivalent to `.documenso-branded .my-class { color: red; }` after expansion.
+ * Equivalent to `.documenso-branded.documenso-branded.documenso-branded .my-class` after
+ * expansion, at least (0,3,1) for a type selector, above the app's `hover:` classes (0,2,0) and
+ * `group-hover:` forms (0,3,0), so colours a tenant sets hold in every state (round 14).
  *
  * The user's CSS is sanitised at write time (`sanitizeBrandingCss`) and stored
  * in the DB as-is — no per-render parsing.
@@ -55,36 +58,72 @@ export const RecipientBranding = ({ branding, cspNonce }: RecipientBrandingProps
   const hasVars = varsString.trim().length > 0;
   const hasUserCss = userCss.trim().length > 0;
 
-  const innerBody = `${hasVars ? `${varsString}\n` : ''}${hasUserCss ? userCss : ''}`.trim();
-  const css = `.documenso-branded { ${innerBody} }`;
+  // Tokens and the tenant stylesheet are separate elements, so the contrast guard can disable the
+  // stylesheet first and the tokens only if the page still fails (round 22). The guard finds
+  // the token elements by `data-branding-tokens`.
+  const varsCss = `.documenso-branded { ${varsString} }`;
+  const userStyleCss = `.documenso-branded.documenso-branded.documenso-branded { ${userCss} }`;
 
   useEffect(() => {
-    if (!branding?.allowCustomBranding) {
-      return;
-    }
-
-    if (!hasVars && !hasUserCss) {
+    if (!branding?.allowCustomBranding || !hasVars) {
       return;
     }
 
     const style = document.createElement('style');
     style.setAttribute('nonce', cspNonce ?? '');
-    style.textContent = css;
+    style.setAttribute('data-branding-tokens', '');
+    style.textContent = varsCss;
 
     document.head.appendChild(style);
 
     return () => {
       document.head.removeChild(style);
     };
-  }, [branding, cspNonce, css, hasUserCss, hasVars]);
+  }, [branding, cspNonce, varsCss, hasVars]);
+
+  useEffect(() => {
+    if (!branding?.allowCustomBranding || (!hasUserCss && !hasVars)) {
+      return;
+    }
+
+    // Appended unapplied; the guard applies it and measures in the same task, so an unreadable
+    // stylesheet is never painted. With tokens and no stylesheet the guard watches the tokens alone.
+    let style: HTMLStyleElement | null = null;
+
+    if (hasUserCss) {
+      style = document.createElement('style');
+      style.setAttribute('nonce', cspNonce ?? '');
+      style.setAttribute('media', 'not all');
+      style.textContent = userStyleCss;
+
+      document.head.appendChild(style);
+    }
+
+    const stop = guardBranding(style);
+
+    return () => {
+      stop();
+      style?.remove();
+    };
+  }, [branding, cspNonce, userStyleCss, hasUserCss, hasVars]);
 
   if (!branding?.allowCustomBranding) {
     return null;
   }
 
-  if (!hasVars && !hasUserCss) {
-    return null;
-  }
+  // Without JavaScript the guard cannot run, so the stylesheet is served only inside <noscript>
+  // and the save-time check is the one layer. A stylesheet that could close the element is left out.
+  const noscriptHtml =
+    hasUserCss && !/<\//.test(userStyleCss) ? `<style nonce="${cspNonce ?? ''}">${userStyleCss}</style>` : '';
 
-  return <style nonce={cspNonce}>{css}</style>;
+  return (
+    <>
+      {hasVars && (
+        <style nonce={cspNonce} data-branding-tokens="">
+          {varsCss}
+        </style>
+      )}
+      {noscriptHtml && <noscript dangerouslySetInnerHTML={{ __html: noscriptHtml }} />}
+    </>
+  );
 };

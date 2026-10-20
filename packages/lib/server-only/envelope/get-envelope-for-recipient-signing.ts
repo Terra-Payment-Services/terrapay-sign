@@ -5,22 +5,15 @@ import EnvelopeSchema from '@documenso/prisma/generated/zod/modelSchema/Envelope
 import SignatureSchema from '@documenso/prisma/generated/zod/modelSchema/SignatureSchema';
 import TeamSchema from '@documenso/prisma/generated/zod/modelSchema/TeamSchema';
 import UserSchema from '@documenso/prisma/generated/zod/modelSchema/UserSchema';
-import {
-  DocumentSigningOrder,
-  DocumentStatus,
-  EnvelopeType,
-  FieldType,
-  RecipientRole,
-  SigningStatus,
-} from '@prisma/client';
+import { DocumentStatus, EnvelopeType, FieldType, SigningStatus } from '@prisma/client';
 import { z } from 'zod';
-
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { TDocumentAuthMethods } from '../../types/document-auth';
 import { ZEnvelopeFieldSchema, ZFieldSchema } from '../../types/field';
 import { ZRecipientLiteSchema } from '../../types/recipient';
 import { isRecipientExpired } from '../../utils/recipients';
 import { isRecipientAuthorized } from '../document/is-recipient-authorized';
+import { isEnvelopeRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { getTeamSettings } from '../team/get-team-settings';
 
 export type GetRecipientEnvelopeByTokenOptions = {
@@ -270,23 +263,15 @@ export const getEnvelopeForRecipientSigning = async ({
     },
   });
 
-  let isRecipientsTurn = true;
-
-  const currentRecipientIndex = envelope.recipients.findIndex((r) => r.token === token);
-
-  if (envelope.documentMeta.signingOrder === DocumentSigningOrder.SEQUENTIAL && currentRecipientIndex !== -1) {
-    for (let i = 0; i < currentRecipientIndex; i++) {
-      // CC recipients have no action to take, so they can never block the flow.
-      if (envelope.recipients[i].role === RecipientRole.CC) {
-        continue;
-      }
-
-      if (envelope.recipients[i].signingStatus !== SigningStatus.SIGNED) {
-        isRecipientsTurn = false;
-        break;
-      }
-    }
-  }
+  // The same order rule the signing routes apply under the lock (#145).
+  const isRecipientsTurn = isEnvelopeRecipientsTurn(
+    {
+      signingOrder: envelope.documentMeta.signingOrder,
+      signatureLevel: envelope.signatureLevel,
+      recipients: envelope.recipients,
+    },
+    recipient.id,
+  );
 
   const sender = settings.includeSenderDetails
     ? {

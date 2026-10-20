@@ -1,7 +1,7 @@
 import DocumentCancelTemplate from '@documenso/email/templates/document-cancel';
 import { prisma } from '@documenso/prisma';
 import { msg } from '@lingui/core/macro';
-import { DocumentStatus, SendStatus } from '@prisma/client';
+import { DocumentStatus, SendStatus, SigningStatus } from '@prisma/client';
 import { createElement } from 'react';
 
 import { getI18nInstance } from '../../client-only/providers/i18n-server';
@@ -53,58 +53,35 @@ export const adminSuperDeleteDocument = async ({ envelopeId, requestMetadata }: 
     meta: envelope.documentMeta,
   });
 
-  const { status, user } = envelope;
+  const { user } = envelope;
 
   const isDocumentDeletedEmailEnabled = extractDerivedDocumentEmailSettings(envelope.documentMeta).documentDeleted;
 
-  const recipientsToNotify = envelope.recipients.filter((recipient) => isRecipientEmailValidForSending(recipient));
+  // Always hard delete if deleted from admin. Whether to tell the recipients is decided under the envelope lock that
+  // rejection also takes, on the rows read under it, and the emails go out only after the purge commits. A pending
+  // document a recipient has rejected was not cancelled, so nobody is told it was (#122).
+  const { deleted, recipientsToNotify } = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: DocumentStatus }>>`
+      SELECT "status" FROM "Envelope" WHERE "id" = ${envelopeId} FOR NO KEY UPDATE
+    `;
 
-  // if the document is pending, send cancellation emails to all recipients
-  if (status === DocumentStatus.PENDING && recipientsToNotify.length > 0 && isDocumentDeletedEmailEnabled) {
-    await Promise.all(
-      recipientsToNotify.map(async (recipient) => {
-        if (recipient.sendStatus !== SendStatus.SENT) {
-          return;
-        }
+    if (!locked) {
+      throw new AppError(AppErrorCode.NOT_FOUND, {
+        message: 'Document not found',
+      });
+    }
 
-        const assetBaseUrl = NEXT_PUBLIC_WEBAPP_URL() || 'http://localhost:3000';
-        const template = createElement(DocumentCancelTemplate, {
-          documentName: envelope.title,
-          inviterName: user.name || undefined,
-          inviterEmail: user.email,
-          assetBaseUrl,
-        });
+    const lockedRecipients = await tx.recipient.findMany({ where: { envelopeId } });
 
-        const lang = envelope.documentMeta?.language ?? settings.documentLanguage;
+    const hasRejection = lockedRecipients.some((recipient) => recipient.signingStatus === SigningStatus.REJECTED);
 
-        const [html, text] = await Promise.all([
-          renderEmailWithI18N(template, { lang, branding }),
-          renderEmailWithI18N(template, {
-            lang,
-            branding,
-            plainText: true,
-          }),
-        ]);
+    const notify =
+      locked.status === DocumentStatus.PENDING && !hasRejection && isDocumentDeletedEmailEnabled
+        ? lockedRecipients.filter(
+            (recipient) => recipient.sendStatus === SendStatus.SENT && isRecipientEmailValidForSending(recipient),
+          )
+        : [];
 
-        const i18n = await getI18nInstance(lang);
-
-        await emailTransport.sendMail({
-          to: {
-            address: recipient.email,
-            name: recipient.name,
-          },
-          from: senderEmail,
-          replyTo: replyToEmail,
-          subject: i18n._(msg`Document Cancelled`),
-          html,
-          text,
-        });
-      }),
-    );
-  }
-
-  // always hard delete if deleted from admin
-  return await prisma.$transaction(async (tx) => {
     await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({
         envelopeId,
@@ -117,6 +94,45 @@ export const adminSuperDeleteDocument = async ({ envelopeId, requestMetadata }: 
       }),
     });
 
-    return await tx.envelope.delete({ where: { id: envelopeId } });
+    return { deleted: await tx.envelope.delete({ where: { id: envelopeId } }), recipientsToNotify: notify };
   });
+
+  await Promise.all(
+    recipientsToNotify.map(async (recipient) => {
+      const assetBaseUrl = NEXT_PUBLIC_WEBAPP_URL() || 'http://localhost:3000';
+      const template = createElement(DocumentCancelTemplate, {
+        documentName: envelope.title,
+        inviterName: user.name || undefined,
+        inviterEmail: user.email,
+        assetBaseUrl,
+      });
+
+      const lang = envelope.documentMeta?.language ?? settings.documentLanguage;
+
+      const [html, text] = await Promise.all([
+        renderEmailWithI18N(template, { lang, branding }),
+        renderEmailWithI18N(template, {
+          lang,
+          branding,
+          plainText: true,
+        }),
+      ]);
+
+      const i18n = await getI18nInstance(lang);
+
+      await emailTransport.sendMail({
+        to: {
+          address: recipient.email,
+          name: recipient.name,
+        },
+        from: senderEmail,
+        replyTo: replyToEmail,
+        subject: i18n._(msg`Document Cancelled`),
+        html,
+        text,
+      });
+    }),
+  );
+
+  return deleted;
 };

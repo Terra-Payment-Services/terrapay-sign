@@ -206,6 +206,17 @@ type Seeded = {
   bDate?: SeededField;
 };
 
+/** Marks a seeded envelope V1 or V2 (API v2 creates V2) and reads it back as the premise. */
+const markVersion = async (envelopeId: string, internalVersion: 1 | 2) => {
+  if (internalVersion === 1) {
+    await prisma.envelope.update({ where: { id: envelopeId }, data: { internalVersion: 1 } });
+  }
+
+  const { internalVersion: stored } = await prisma.envelope.findUniqueOrThrow({ where: { id: envelopeId } });
+
+  expect(stored, `premise: envelope ${envelopeId} is V${internalVersion}`).toBe(internalVersion);
+};
+
 const FIELD_BOXES = [
   { positionX: 10, positionY: 60, width: 30, height: 8 },
   { positionX: 10, positionY: 84, width: 30, height: 8 },
@@ -217,11 +228,12 @@ const DATE_BOX = { positionX: 50, positionY: 84, width: 30, height: 8 };
  * A PENDING V2 envelope in parallel signing order, signers A and B, each with
  * one SIGNATURE field, invitations sent. With `bDate`, B also has a DATE field;
  * its fieldMeta is given explicitly, since V2 cannot handle a DATE field with a
- * null fieldMeta.
+ * null fieldMeta. With `internalVersion: 1` the same envelope is marked V1, for
+ * the tests that use the V1 field routes, which refuse V2 envelopes since #142.
  */
 const seedEnvelope = async (
   request: APIRequestContext,
-  options: { emails?: { a: string; b: string }; bDate?: boolean } = {},
+  options: { emails?: { a: string; b: string }; bDate?: boolean; internalVersion?: 1 | 2 } = {},
 ): Promise<Seeded> => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const title = `Reject race ${stamp}`;
@@ -289,6 +301,8 @@ const seedEnvelope = async (
 
   // Keep the seal sweep away: it looks only at envelopes whose recipients last acted long ago.
   await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: new Date() } });
+
+  await markVersion(envelope.id, options.internalVersion ?? 2);
 
   return {
     envelopeId: envelope.id,
@@ -579,11 +593,11 @@ const runIterations = async (name: string, iterate: () => Promise<Outcome>) => {
 // ---------------------------------------------------------------------------
 
 test('C1 B cannot sign its field through the V1 token sign route after A rejected', async ({ request }) => {
-  const control = await seedEnvelope(request);
+  const control = await seedEnvelope(request, { internalVersion: 1 });
   expectOk(await signV1(request, control.b), 'control: B signs through the V1 route with nobody rejected');
   expect((await fieldRow(control.b)).inserted).toBe(true);
 
-  const seeded = await seedEnvelope(request);
+  const seeded = await seedEnvelope(request, { internalVersion: 1 });
   await seedRejectedNotSealed(seeded);
 
   expectRefused(await signV1(request, seeded.b), 'B signing through the V1 route after A rejected');
@@ -636,12 +650,12 @@ test('C2 B cannot insert or un-insert a field through the V2 envelope field rout
 });
 
 test('C3 B cannot remove its signed field after A rejected', async ({ request }) => {
-  const control = await seedEnvelope(request);
+  const control = await seedEnvelope(request, { internalVersion: 1 });
   expectOk(await signV1(request, control.b), 'control: B signs');
   expectOk(await removeSigned(request, control.b), 'control: B removes its signed field with nobody rejected');
   expect((await fieldRow(control.b)).inserted).toBe(false);
 
-  const seeded = await seedEnvelope(request);
+  const seeded = await seedEnvelope(request, { internalVersion: 1 });
   expectOk(await signV1(request, seeded.b), 'B signs before A rejects');
   await seedRejectedNotSealed(seeded);
 
@@ -1152,7 +1166,7 @@ test("C17 B's complete racing B's V1 sign: the loser answers 4xx, never 5xx", as
   test.setTimeout(15 * 60_000);
 
   await runIterations('C17-sign', async () => {
-    const seeded = await seedEnvelope(request);
+    const seeded = await seedEnvelope(request, { internalVersion: 1 });
 
     const [completeReply, signReply] = await Promise.all([
       complete(request, seeded, seeded.b, false),
@@ -1192,7 +1206,7 @@ test("C17 B's complete racing B's remove-signed-field: the loser answers 4xx, ne
   test.setTimeout(15 * 60_000);
 
   await runIterations('C17-remove', async () => {
-    const seeded = await seedEnvelope(request);
+    const seeded = await seedEnvelope(request, { internalVersion: 1 });
 
     expectOk(await signV1(request, seeded.b), 'B signs before the race');
 
@@ -1234,56 +1248,68 @@ test("C17 B's complete racing B's remove-signed-field: the loser answers 4xx, ne
 // Added after the second Codex review
 // ---------------------------------------------------------------------------
 
-test('C17 after B has completed, and after the seal, B signing or removing answers 4xx', async ({ request }) => {
-  test.setTimeout(180_000);
+/** The sign and remove calls of each version's routes: V1 field routes on a V1 envelope, envelope.field.sign on V2. */
+const ROUTES = {
+  1: { sign: signV1, remove: removeSigned },
+  2: { sign: signV2, remove: unsignV2 },
+} as const;
 
-  const expectFieldUnchanged = async (seeded: Seeded, before: Awaited<ReturnType<typeof fieldRow>>, when: string) => {
-    const after = await fieldRow(seeded.b);
+for (const version of [1, 2] as const) {
+  test(`C17 after B has completed, and after the seal, B signing or removing answers 4xx (V${version} envelope, V${version} routes)`, async ({
+    request,
+  }) => {
+    const { sign, remove } = ROUTES[version];
 
-    expect(after.inserted, `${when}: B's field stays inserted`).toBe(true);
-    expect(after.customText, `${when}: B's field value is unchanged`).toBe(before.customText);
-    expect(after.signature?.id, `${when}: B's signature row is unchanged`).toBe(before.signature?.id);
-    expect(
-      await fieldAuditRows(seeded.envelopeId, FIELD_INSERTED, seeded.b),
-      `${when}: no new insert row`,
-    ).toHaveLength(1);
-    expect(
-      await fieldAuditRows(seeded.envelopeId, FIELD_UNINSERTED, seeded.b),
-      `${when}: no uninsert row`,
-    ).toHaveLength(0);
-  };
+    test.setTimeout(180_000);
 
-  // B has completed and the envelope is still PENDING, since A has not.
-  const pending = await seedEnvelope(request);
+    const expectFieldUnchanged = async (seeded: Seeded, before: Awaited<ReturnType<typeof fieldRow>>, when: string) => {
+      const after = await fieldRow(seeded.b);
 
-  expectOk(await signV1(request, pending.b), 'B signs');
-  expectOk(await complete(request, pending, pending.b), 'B completes');
-  expect((await recipientRow(pending.b)).signingStatus).toBe(SigningStatus.SIGNED);
+      expect(after.inserted, `${when}: B's field stays inserted`).toBe(true);
+      expect(after.customText, `${when}: B's field value is unchanged`).toBe(before.customText);
+      expect(after.signature?.id, `${when}: B's signature row is unchanged`).toBe(before.signature?.id);
+      expect(
+        await fieldAuditRows(seeded.envelopeId, FIELD_INSERTED, seeded.b),
+        `${when}: no new insert row`,
+      ).toHaveLength(1);
+      expect(
+        await fieldAuditRows(seeded.envelopeId, FIELD_UNINSERTED, seeded.b),
+        `${when}: no uninsert row`,
+      ).toHaveLength(0);
+    };
 
-  const pendingBefore = await fieldRow(pending.b);
+    // B has completed and the envelope is still PENDING, since A has not.
+    const pending = await seedEnvelope(request, { internalVersion: version });
 
-  expectRefused(await signV1(request, pending.b), 'B signing after its own completion');
-  expectRefused(await removeSigned(request, pending.b), 'B removing a signed field after its own completion');
-  await expectFieldUnchanged(pending, pendingBefore, 'after B completed');
-  expect((await prisma.envelope.findUniqueOrThrow({ where: { id: pending.envelopeId } })).status).toBe(
-    DocumentStatus.PENDING,
-  );
+    expectOk(await sign(request, pending.b), 'B signs');
+    expectOk(await complete(request, pending, pending.b), 'B completes');
+    expect((await recipientRow(pending.b)).signingStatus).toBe(SigningStatus.SIGNED);
 
-  // Both have completed and the envelope has sealed COMPLETED.
-  const sealed = await seedEnvelope(request);
+    const pendingBefore = await fieldRow(pending.b);
 
-  expectOk(await signV1(request, sealed.a), 'A signs');
-  expectOk(await complete(request, sealed, sealed.a), 'A completes');
-  expectOk(await signV1(request, sealed.b), 'B signs');
-  expectOk(await complete(request, sealed, sealed.b), 'B completes');
-  await waitForStatus(sealed.envelopeId, DocumentStatus.COMPLETED);
+    expectRefused(await sign(request, pending.b), 'B signing after its own completion');
+    expectRefused(await remove(request, pending.b), 'B removing a signed field after its own completion');
+    await expectFieldUnchanged(pending, pendingBefore, 'after B completed');
+    expect((await prisma.envelope.findUniqueOrThrow({ where: { id: pending.envelopeId } })).status).toBe(
+      DocumentStatus.PENDING,
+    );
 
-  const sealedBefore = await fieldRow(sealed.b);
+    // Both have completed and the envelope has sealed COMPLETED.
+    const sealed = await seedEnvelope(request, { internalVersion: version });
 
-  expectRefused(await signV1(request, sealed.b), 'B signing after the envelope sealed COMPLETED');
-  expectRefused(await removeSigned(request, sealed.b), 'B removing a signed field after the envelope sealed COMPLETED');
-  await expectFieldUnchanged(sealed, sealedBefore, 'after the seal');
-});
+    expectOk(await sign(request, sealed.a), 'A signs');
+    expectOk(await complete(request, sealed, sealed.a), 'A completes');
+    expectOk(await sign(request, sealed.b), 'B signs');
+    expectOk(await complete(request, sealed, sealed.b), 'B completes');
+    await waitForStatus(sealed.envelopeId, DocumentStatus.COMPLETED);
+
+    const sealedBefore = await fieldRow(sealed.b);
+
+    expectRefused(await sign(request, sealed.b), 'B signing after the envelope sealed COMPLETED');
+    expectRefused(await remove(request, sealed.b), 'B removing a signed field after the envelope sealed COMPLETED');
+    await expectFieldUnchanged(sealed, sealedBefore, 'after the seal');
+  });
+}
 
 const B_TEXT_VALUE = 'Written by B';
 const ASSISTANT_TEXT_VALUE = 'Written by the assistant';
@@ -1311,7 +1337,7 @@ type AssistantSeeded = {
  */
 const seedAssistantEnvelope = async (
   request: APIRequestContext,
-  options: { textInserted?: boolean } = {},
+  options: { textInserted?: boolean; internalVersion?: 1 | 2 } = {},
 ): Promise<AssistantSeeded> => {
   const textInserted = options.textInserted ?? true;
 
@@ -1373,6 +1399,8 @@ const seedAssistantEnvelope = async (
   // Keep the seal sweep away, as seedEnvelope does.
   await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: new Date() } });
 
+  await markVersion(envelope.id, options.internalVersion ?? 2);
+
   return {
     envelopeId: envelope.id,
     documentId: mapSecondaryIdToDocumentId(secondaryId),
@@ -1417,6 +1445,10 @@ const textFieldRow = async (seeded: AssistantSeeded) =>
 /**
  * C18. The spec's "B's TEXT field is inserted with B's value, unchanged after
  * B's completion row" is read as: no assistant write lands after the completion.
+ * The V2 route, like V1, refuses an insert on an inserted field (#131; the
+ * signing page removes a value before writing a new one), so the insert cases
+ * seed B's TEXT field optional and uninserted, as C19 does, and a refused insert
+ * leaves it so.
  * An assistant insert that is serialised before B's completion legitimately
  * leaves the assistant's value, so when B is SIGNED the field must be inserted,
  * holding either B's value (the write was refused) or the assistant's value
@@ -1429,7 +1461,7 @@ test("C18 the assistant's write to B's TEXT field cannot land after B's completi
   test.setTimeout(30 * 60_000);
 
   // Controls, so a refusal in the race cannot come from a seed the routes reject.
-  const insertControl = await seedAssistantEnvelope(request);
+  const insertControl = await seedAssistantEnvelope(request, { textInserted: false });
   expectOk(
     await assistantWriteText(request, insertControl, ASSISTANT_TEXT_VALUE),
     "control: the assistant writes B's TEXT field",
@@ -1451,7 +1483,7 @@ test("C18 the assistant's write to B's TEXT field cannot land after B's completi
   );
 
   const race = (variant: 'insert' | 'remove') => async (): Promise<Outcome> => {
-    const seeded = await seedAssistantEnvelope(request);
+    const seeded = await seedAssistantEnvelope(request, { textInserted: variant === 'remove' });
     const value = variant === 'insert' ? ASSISTANT_TEXT_VALUE : null;
 
     const [writeReply, completeReply] = await Promise.all([
@@ -1488,12 +1520,17 @@ test("C18 the assistant's write to B's TEXT field cannot land after B's completi
     if (isCompleted) {
       const completedAt = time(completion[0]) ?? -Infinity;
 
+      const isSeededState =
+        variant === 'insert'
+          ? !text.inserted && text.customText === ''
+          : text.inserted && text.customText === B_TEXT_VALUE;
+      const isEarlierInsert = variant === 'insert' && text.inserted && text.customText === ASSISTANT_TEXT_VALUE;
+
       problems.push(completion.length === 1 ? null : `B is SIGNED with ${completion.length} completion row(s)`);
-      problems.push(text.inserted ? null : 'B is SIGNED with its TEXT field uninserted');
       problems.push(
-        [B_TEXT_VALUE, ASSISTANT_TEXT_VALUE].includes(text.customText)
+        isSeededState || isEarlierInsert
           ? null
-          : `B is SIGNED with an unexpected TEXT value "${text.customText}"`,
+          : `B is SIGNED with its TEXT field inserted=${text.inserted} holding "${text.customText}"`,
       );
       problems.push(
         prefills.every((row) => (time(row) ?? Infinity) <= completedAt)
@@ -1563,7 +1600,7 @@ test("C19 the assistant on the V1 routes cannot write B's TEXT field after B com
   test.setTimeout(30 * 60_000);
 
   // Control: with B not yet completed, the assistant inserts and removes through V1.
-  const control = await seedAssistantEnvelope(request, { textInserted: false });
+  const control = await seedAssistantEnvelope(request, { textInserted: false, internalVersion: 1 });
   expectOk(await assistantSignV1(request, control), "control: the assistant inserts B's TEXT field through V1");
   expect((await textFieldRow(control)).customText).toBe(ASSISTANT_TEXT_VALUE);
   expect((await textAuditRows(control)).prefills).toHaveLength(1);
@@ -1571,7 +1608,7 @@ test("C19 the assistant on the V1 routes cannot write B's TEXT field after B com
   expect((await textFieldRow(control)).inserted).toBe(false);
 
   // Sequential: B completes first.
-  const forInsert = await seedAssistantEnvelope(request, { textInserted: false });
+  const forInsert = await seedAssistantEnvelope(request, { textInserted: false, internalVersion: 1 });
   expectOk(await completeB(request, forInsert), 'B completes with its optional TEXT field empty');
   expectRefused(await assistantSignV1(request, forInsert), "the assistant's V1 insert after B completed");
 
@@ -1581,7 +1618,7 @@ test("C19 the assistant on the V1 routes cannot write B's TEXT field after B com
   expect(insertAfter.customText).toBe('');
   expect((await textAuditRows(forInsert)).prefills).toHaveLength(0);
 
-  const forRemove = await seedAssistantEnvelope(request);
+  const forRemove = await seedAssistantEnvelope(request, { internalVersion: 1 });
   expectOk(await completeB(request, forRemove), 'B completes');
   expectRefused(await assistantRemoveV1(request, forRemove), "the assistant's V1 removal after B completed");
 
@@ -1599,7 +1636,7 @@ test("C19 the assistant on the V1 routes cannot write B's TEXT field after B com
 
   // Fired together with B's complete.
   const race = (variant: 'insert' | 'remove') => async (): Promise<Outcome> => {
-    const seeded = await seedAssistantEnvelope(request, { textInserted: variant === 'remove' });
+    const seeded = await seedAssistantEnvelope(request, { textInserted: variant === 'remove', internalVersion: 1 });
 
     const [writeReply, completeReply] = await Promise.all([
       variant === 'insert' ? assistantSignV1(request, seeded, false) : assistantRemoveV1(request, seeded, false),
@@ -1690,7 +1727,7 @@ test("C20 B's V1 sign of one field fired twice lands once, and signing an insert
   test.setTimeout(15 * 60_000);
 
   // Sequential: signing an already inserted field.
-  const seeded = await seedEnvelope(request);
+  const seeded = await seedEnvelope(request, { internalVersion: 1 });
 
   expectOk(await signV1With(request, seeded.b, 'First signature'), 'B signs');
 
@@ -1707,7 +1744,7 @@ test("C20 B's V1 sign of one field fired twice lands once, and signing an insert
 
   // Fired twice at once.
   await runIterations('C20', async () => {
-    const raced = await seedEnvelope(request);
+    const raced = await seedEnvelope(request, { internalVersion: 1 });
     const values = { first: 'Signature one', second: 'Signature two' };
 
     const [firstReply, secondReply] = await Promise.all([
@@ -1818,27 +1855,31 @@ test('C13 a rejection on the signing page seals the envelope REJECTED and mails 
   expect(bMail, 'B: the invitation and the cancellation email, nothing else').toHaveLength(2);
 });
 
-test('C14 without a rejection, A and B both sign and complete and the envelope seals COMPLETED', async ({
-  request,
-}) => {
-  test.setTimeout(120_000);
+for (const version of [1, 2] as const) {
+  test(`C14 without a rejection, A and B both sign and complete and the envelope seals COMPLETED (V${version} envelope, V${version} route)`, async ({
+    request,
+  }) => {
+    test.setTimeout(120_000);
 
-  const seeded = await seedEnvelope(request);
+    const seeded = await seedEnvelope(request, { internalVersion: version });
+    const sign = ROUTES[version].sign;
 
-  // A signs through the V1 route and B through the V2 route, the same calls the refusals above use.
-  expectOk(await signV1(request, seeded.a), 'A signs through the V1 route');
-  expectOk(await complete(request, seeded, seeded.a), 'A completes');
-  expectOk(await signV2(request, seeded.b), 'B signs through the V2 route');
-  expectOk(await complete(request, seeded, seeded.b), 'B completes');
+    // Both sign through the route of the envelope's version, the same calls the refusals above use. Before #142 one
+    // V2 envelope carried A on the V1 route and B on the V2 route; the V1 routes now refuse V2 envelopes.
+    expectOk(await sign(request, seeded.a), `A signs through the V${version} route`);
+    expectOk(await complete(request, seeded, seeded.a), 'A completes');
+    expectOk(await sign(request, seeded.b), `B signs through the V${version} route`);
+    expectOk(await complete(request, seeded, seeded.b), 'B completes');
 
-  await waitForStatus(seeded.envelopeId, DocumentStatus.COMPLETED);
+    await waitForStatus(seeded.envelopeId, DocumentStatus.COMPLETED);
 
-  expect((await recipientRow(seeded.a)).signingStatus).toBe(SigningStatus.SIGNED);
-  expect((await recipientRow(seeded.b)).signingStatus).toBe(SigningStatus.SIGNED);
+    expect((await recipientRow(seeded.a)).signingStatus).toBe(SigningStatus.SIGNED);
+    expect((await recipientRow(seeded.b)).signingStatus).toBe(SigningStatus.SIGNED);
 
-  const completed = await auditRows(seeded.envelopeId, DOCUMENT_COMPLETED);
+    const completed = await auditRows(seeded.envelopeId, DOCUMENT_COMPLETED);
 
-  expect(completed).toHaveLength(1);
-  expect((completed[0].data as { isRejected?: boolean }).isRejected).toBeUndefined();
-  expect(await auditRows(seeded.envelopeId, REJECTED)).toHaveLength(0);
-});
+    expect(completed).toHaveLength(1);
+    expect((completed[0].data as { isRejected?: boolean }).isRejected).toBeUndefined();
+    expect(await auditRows(seeded.envelopeId, REJECTED)).toHaveLength(0);
+  });
+}

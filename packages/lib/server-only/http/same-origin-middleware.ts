@@ -38,8 +38,9 @@ export const isCrossOriginUnsafeRequest = (req: Request, allowedOrigin: string):
 
 /**
  * Reject state-changing requests from other origins. This is the CSRF guard
- * for routes authenticated by the session cookie, which is sent on
- * cross-site requests because it is SameSite=None.
+ * for routes authenticated by the session cookie. That cookie is SameSite=Lax,
+ * but other hosts on the same site still receive it, and the emailed access
+ * code cookie is SameSite=None, so the browser alone does not stop them.
  *
  * Routes that other sites are meant to call, such as the token-authenticated
  * public API, must be passed through `isExempt`.

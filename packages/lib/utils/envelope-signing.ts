@@ -3,7 +3,6 @@ import { validateDropdownField } from '@documenso/lib/advanced-fields-validation
 import { validateNumberField } from '@documenso/lib/advanced-fields-validation/validate-number';
 import { validateTextField } from '@documenso/lib/advanced-fields-validation/validate-text';
 import { DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
-import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { DEFAULT_DOCUMENT_TIME_ZONE } from '@documenso/lib/constants/time-zones';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { TDocumentMeta } from '@documenso/lib/types/document-meta';
@@ -27,7 +26,7 @@ import { z } from 'zod';
 export type ExtractFieldInsertionValuesOptions = {
   fieldValue: TSignEnvelopeFieldValue;
   field: Field;
-  documentMeta: Pick<TDocumentMeta, 'timezone' | 'dateFormat' | 'typedSignatureEnabled'>;
+  documentMeta: Pick<TDocumentMeta, 'timezone' | 'dateFormat'>;
 };
 
 export const extractFieldInsertionValues = ({
@@ -236,14 +235,7 @@ export const extractFieldInsertionValues = ({
         };
       }
 
-      const isBase64 = isBase64Image(value);
-
-      if (documentMeta.typedSignatureEnabled === false && !isBase64) {
-        throw new AppError(AppErrorCode.INVALID_BODY, {
-          message: 'Typed signatures are not allowed. Please draw your signature',
-        });
-      }
-
+      // The value and the signature method are validated by the sign route (assertValidSignatureValue).
       return {
         customText: '',
         inserted: true,

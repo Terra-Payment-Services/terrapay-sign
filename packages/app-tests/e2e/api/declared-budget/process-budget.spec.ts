@@ -114,7 +114,7 @@ const pieces = () => {
 test('criteria 2 and 5: past 256 MiB of declared uploads a 2 MiB request is refused 503 at once, and admitted once they finish', async ({
   request,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(300_000);
 
   const bodies = new Map<number, Buffer>();
   const bodyOf = (size: number) => {
@@ -171,7 +171,8 @@ test('criteria 2 and 5: past 256 MiB of declared uploads a 2 MiB request is refu
   const completedAt = Date.now();
   const answers = await Promise.all(
     holds.map(async (hold) => {
-      const response = await hold.conn.waitResponse(60_000);
+      // Criterion 5 sets no time bound; on the shared runner answers took 11 to 58 s and missed 60 s (CI 55408, 55422).
+      const response = await hold.conn.waitResponse(180_000);
 
       return { response, afterMs: Date.now() - completedAt };
     }),

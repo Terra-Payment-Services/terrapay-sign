@@ -79,7 +79,10 @@ export const SignaturePadDialog = ({
         whileHover="onHover"
       >
         {!value && !disableAnimation && (
+          // A decorative hint: the whole pad is the button. The branding guard does not measure it.
           <motion.svg
+            aria-hidden="true"
+            data-branding-decorative=""
             width="120"
             height="120"
             viewBox="0 0 16 16"

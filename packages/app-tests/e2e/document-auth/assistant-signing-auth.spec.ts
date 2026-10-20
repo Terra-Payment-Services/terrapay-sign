@@ -21,7 +21,10 @@ type SeededEnvelopes = {
  * Returns the assistant's token from envelope A and the TEXT field id from
  * envelope B so callers can exercise signing routes across envelopes.
  */
-const seedTwoPendingEnvelopes = async (request: APIRequestContext): Promise<SeededEnvelopes> => {
+const seedTwoPendingEnvelopes = async (
+  request: APIRequestContext,
+  { internalVersion }: { internalVersion?: 1 } = {},
+): Promise<SeededEnvelopes> => {
   const envelopeA = await apiSeedPendingDocument(request, {
     title: '[TEST] Envelope A',
     recipients: [
@@ -72,6 +75,14 @@ const seedTwoPendingEnvelopes = async (request: APIRequestContext): Promise<Seed
     ],
   });
 
+  // As in seedAssistantWithCoRecipient: a V1 route's test gets V1 envelopes (G4 C64, #142).
+  if (internalVersion === 1) {
+    await prisma.envelope.updateMany({
+      where: { id: { in: [envelopeA.envelope.id, envelopeB.envelope.id] } },
+      data: { internalVersion: 1 },
+    });
+  }
+
   const otherEnvelope = await prisma.envelope.findUniqueOrThrow({
     where: { id: envelopeB.envelope.id },
     include: { fields: true },
@@ -106,7 +117,10 @@ type SameEnvelopeSeed = {
  * Signature row is written against the field's own recipientId and would be
  * attributed to a signer who never made it.
  */
-const seedAssistantWithCoRecipient = async (request: APIRequestContext): Promise<SameEnvelopeSeed> => {
+const seedAssistantWithCoRecipient = async (
+  request: APIRequestContext,
+  { internalVersion }: { internalVersion?: 1 } = {},
+): Promise<SameEnvelopeSeed> => {
   const seeded = await apiSeedPendingDocument(request, {
     title: '[TEST] Assistant same-envelope',
     recipients: [
@@ -134,6 +148,12 @@ const seedAssistantWithCoRecipient = async (request: APIRequestContext): Promise
 
   const assistant = seeded.distributeResult.recipients.find((r) => r.role === 'ASSISTANT');
   const signer = seeded.distributeResult.recipients.find((r) => r.role === 'SIGNER');
+
+  // The API creates V2 envelopes, which the V1 field routes now refuse (G4 C64, #142). A test of a V1 route's
+  // own behaviour marks the envelope V1, the version that route serves.
+  if (internalVersion === 1) {
+    await prisma.envelope.update({ where: { id: seeded.envelope.id }, data: { internalVersion: 1 } });
+  }
 
   if (!assistant || !signer) {
     throw new Error('Expected both an ASSISTANT and a SIGNER in the seeded envelope');
@@ -187,7 +207,7 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: cross-envelope field access', () => {
   });
 
   test('field.signFieldWithToken (V1) rejects fieldId from another envelope', async ({ request }) => {
-    const { assistantToken, otherEnvelopeFieldId } = await seedTwoPendingEnvelopes(request);
+    const { assistantToken, otherEnvelopeFieldId } = await seedTwoPendingEnvelopes(request, { internalVersion: 1 });
 
     const res = await trpcMutation(request, 'field.signFieldWithToken', {
       token: assistantToken,
@@ -207,7 +227,7 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: cross-envelope field access', () => {
   });
 
   test('field.removeSignedFieldWithToken (V1) rejects fieldId from another envelope', async ({ request }) => {
-    const { assistantToken, otherEnvelopeFieldId } = await seedTwoPendingEnvelopes(request);
+    const { assistantToken, otherEnvelopeFieldId } = await seedTwoPendingEnvelopes(request, { internalVersion: 1 });
 
     // Pre-insert the field so a successful (incorrect) uninsert is detectable.
     await prisma.field.update({
@@ -235,7 +255,9 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: cross-envelope field access', () => {
 
 test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () => {
   test('field.signFieldWithToken (V1) refuses to sign a co-recipient SIGNATURE field', async ({ request }) => {
-    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request);
+    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request, {
+      internalVersion: 1,
+    });
 
     const res = await trpcMutation(request, 'field.signFieldWithToken', {
       token: assistantToken,
@@ -286,7 +308,7 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () =>
   test('field.signFieldWithToken (V1) still lets an assistant prefill a co-recipient TEXT field', async ({
     request,
   }) => {
-    const { assistantToken, signerTextFieldId } = await seedAssistantWithCoRecipient(request);
+    const { assistantToken, signerTextFieldId } = await seedAssistantWithCoRecipient(request, { internalVersion: 1 });
 
     const res = await trpcMutation(request, 'field.signFieldWithToken', {
       token: assistantToken,
@@ -306,7 +328,9 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () =>
   });
 
   test('field.removeSignedFieldWithToken (V1) refuses to clear a co-recipient signature', async ({ request }) => {
-    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request);
+    const { assistantToken, signerSignatureFieldId } = await seedAssistantWithCoRecipient(request, {
+      internalVersion: 1,
+    });
 
     const signerField = await prisma.field.update({
       where: { id: signerSignatureFieldId },
@@ -380,7 +404,10 @@ test.describe('[ASSISTANT_SIGNING_AUTH]: same-envelope signature forgery', () =>
   });
 
   test('an assistant clearing a field it prefilled is written to the audit log', async ({ request }) => {
-    const { assistantToken, envelopeId, signerTextFieldId } = await seedAssistantWithCoRecipient(request);
+    // V1 routes below, so a V1 envelope (G4 C64).
+    const { assistantToken, envelopeId, signerTextFieldId } = await seedAssistantWithCoRecipient(request, {
+      internalVersion: 1,
+    });
 
     const signResponse = await trpcMutation(request, 'field.signFieldWithToken', {
       token: assistantToken,

@@ -18,14 +18,14 @@ export const signOutRoute = new Hono<HonoAuthContext>()
     const sessionToken = await getSessionCookie(c);
 
     if (!sessionToken) {
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     const { session } = await validateSessionToken(sessionToken);
 
     if (!session) {
       deleteSessionCookie(c);
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     await invalidateSessions({
@@ -37,7 +37,7 @@ export const signOutRoute = new Hono<HonoAuthContext>()
 
     deleteSessionCookie(c);
 
-    return c.status(200);
+    return c.body(null, 200);
   })
   .post('/signout-all', async (c) => {
     const metadata = c.get('requestMetadata');
@@ -45,14 +45,14 @@ export const signOutRoute = new Hono<HonoAuthContext>()
     const sessionToken = await getSessionCookie(c);
 
     if (!sessionToken) {
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     const { session } = await validateSessionToken(sessionToken);
 
     if (!session) {
       deleteSessionCookie(c);
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     const userId = session.userId;
@@ -78,7 +78,7 @@ export const signOutRoute = new Hono<HonoAuthContext>()
       isRevoke: true,
     });
 
-    return c.status(200);
+    return c.body(null, 200);
   })
   .post('/signout-session', sValidator('json', ZSignoutSessionSchema), async (c) => {
     const metadata = c.get('requestMetadata');
@@ -88,14 +88,14 @@ export const signOutRoute = new Hono<HonoAuthContext>()
     const sessionToken = await getSessionCookie(c);
 
     if (!sessionToken) {
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     const { session } = await validateSessionToken(sessionToken);
 
     if (!session) {
       deleteSessionCookie(c);
-      return new Response('No session found', { status: 401 });
+      return c.text('No session found', 401);
     }
 
     await invalidateSessions({
@@ -109,5 +109,5 @@ export const signOutRoute = new Hono<HonoAuthContext>()
       deleteSessionCookie(c);
     }
 
-    return c.status(200);
+    return c.body(null, 200);
   });

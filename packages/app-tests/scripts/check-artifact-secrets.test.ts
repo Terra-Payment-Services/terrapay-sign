@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
@@ -839,4 +841,284 @@ describe('criterion 12: mandatory outputs', () => {
 
     expectNothingPublished(run);
   });
+});
+
+/**
+ * A zip with one entry per file, stored (method 0, the default: valid, and the bytes stay visible to a
+ * search) or deflated (method 8, which hides the bytes from any search that does not inflate the entry).
+ */
+const storedZip = (entries: Record<string, Buffer>, method: 0 | 8 = 0) => {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+
+  for (const [name, original] of Object.entries(entries)) {
+    const nameBytes = Buffer.from(name, 'utf8');
+    const crc = zlib.crc32(original);
+    const data = method === 8 ? zlib.deflateRawSync(original) : original;
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(original.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(original.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt32LE(offset, 42);
+
+    locals.push(local, nameBytes, data);
+    centrals.push(central, nameBytes);
+    offset += local.length + nameBytes.length + data.length;
+  }
+
+  const centralBytes = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(entries).length, 8);
+  end.writeUInt16LE(Object.keys(entries).length, 10);
+  end.writeUInt32LE(centralBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...locals, centralBytes, end]);
+};
+
+/** The shape of the Playwright HTML report: its data is one base64 data URL inside index.html. */
+const reportWithDataUrl = (base64: string) =>
+  reportWith(`<script>window.playwrightReportBase64 = "data:application/zip;base64,${base64}";</script>`);
+
+const BASE64_64_MB = 64 * 1024 * 1024;
+
+/** A zip whose base64 is at least `base64Length` characters, with `secret` among its entries when given. */
+const zipOfBase64Length = (base64Length: number, secret?: string, method: 0 | 8 = 0) => {
+  // Deflated, a constant filler would shrink to nothing, so the filler is then incompressible.
+  const size = Math.ceil((base64Length * 3) / 4);
+  const filler = method === 8 ? crypto.randomBytes(size) : Buffer.alloc(size, 0x61);
+  const entries: Record<string, Buffer> = { 'report.json': Buffer.from('{"files":[]}') };
+
+  if (secret !== undefined) {
+    entries['trace.txt'] = Buffer.from(`request failed with ${secret}\n`, 'utf8');
+  }
+
+  entries['filler.bin'] = filler;
+
+  return storedZip(entries, method).toString('base64');
+};
+
+describe('S1: the Playwright report embeds its data as one large base64 data URL', () => {
+  it('when_index_html_holds_a_64_mb_base64_data_url_should_scan_it_and_publish_the_run', () => {
+    const base64 = zipOfBase64Length(BASE64_64_MB);
+
+    expect(base64.length).toBeGreaterThanOrEqual(BASE64_64_MB);
+
+    const run = runScan({
+      env: { [MODE]: 'local', E2E_REMOTE_API_TOKEN: SECRET },
+      files: { 'playwright-report/index.html': reportWithDataUrl(base64) },
+    });
+
+    expect(run.status, `log:\n${run.log}`).toBe(0);
+    expect(run.log).not.toContain('Maximum call stack size exceeded');
+    expect(fs.existsSync(path.join(run.artifacts, 'playwright-report/index.html'))).toBe(true);
+  }, 120_000);
+
+  it('when_a_secret_sits_inside_the_zip_of_a_64_mb_data_url_should_publish_nothing_and_name_file_and_variable', () => {
+    // Deflated: the secret's bytes appear nowhere in the base64, so only decoding the data URL and
+    // inflating the entry can find it, and the finding's location is that decoded path.
+    const base64 = zipOfBase64Length(BASE64_64_MB, SECRET, 8);
+
+    for (const form of Object.values(formsOf(SECRET))) {
+      expect(base64.includes(form), 'the fixture must hide the secret from the outer search').toBe(false);
+    }
+
+    const run = runScan({
+      env: { [MODE]: 'local', E2E_REMOTE_API_TOKEN: SECRET },
+      files: { 'playwright-report/index.html': reportWithDataUrl(base64) },
+    });
+
+    expectNothingPublished(run);
+    expect(run.log).not.toContain('Maximum call stack size exceeded');
+    expect(run.log).toContain('LEAK - playwright-report/index.html!data-url-0!trace.txt contains the value of');
+    expect(run.log).toContain('E2E_REMOTE_API_TOKEN');
+    expectLogWithout(run, Object.values(formsOf(SECRET)));
+  }, 120_000);
+});
+
+describe('S2: a data URL whose base64 is shorter than 16 characters', () => {
+  it.each([
+    ['1 character', 'Q'],
+    ['12 characters', 'QUJDREVGR0hJ'],
+    ['15 characters', 'QUJDREVGR0hJSkt'],
+  ])('when_the_base64_has_%s_should_ignore_it_and_publish_the_run', (_length, base64) => {
+    const run = runScan({
+      env: { [MODE]: 'local', E2E_REMOTE_API_TOKEN: SECRET },
+      files: { 'playwright-report/index.html': reportWithDataUrl(base64) },
+    });
+
+    expect(run.status, `log:\n${run.log}`).toBe(0);
+    expect(fs.readFileSync(path.join(run.artifacts, 'playwright-report/index.html'), 'utf8')).toContain(
+      `;base64,${base64}"`,
+    );
+  });
+});
+
+/**
+ * S2 observed: which data URLs the scan decodes. The secret is six bytes, so the base64 of a few
+ * bytes around it is 15 or 16 characters long. The outer base64 forms of the secret also sit in
+ * the html, so the file is refused either way; what tells decoding apart is the location of the
+ * finding, `index.html!data-url-<n>`, where n counts only the URLs of 16 characters or more.
+ */
+describe('S2 observed: the data URLs the scan decodes, and how it numbers them', () => {
+  const SHORT_SECRET = 'Zk7Qp2';
+  const REPORT_PATH = 'playwright-report/index.html';
+  const b64 = (text: string) => Buffer.from(text, 'utf8').toString('base64');
+  const unpadded = (text: string) => b64(text).replace(/=+$/, '');
+
+  const scanDataUrls = (html: string) =>
+    runScan({
+      env: { [MODE]: 'local', E2E_REMOTE_API_TOKEN: SHORT_SECRET },
+      files: { [REPORT_PATH]: reportWith(html) },
+    });
+
+  const urlOf = (base64: string) => `<a href="data:text/plain;base64,${base64}">x</a>`;
+
+  it('fixtures_have_the_lengths_the_tests_claim', () => {
+    expect(unpadded(`${SHORT_SECRET}abcde`)).toHaveLength(15);
+    expect(b64(`${SHORT_SECRET}abcdef`)).toHaveLength(16);
+    expect(b64(`${SHORT_SECRET}abcde`)).toHaveLength(16);
+    expect(b64(`${SHORT_SECRET}abcde`).endsWith('=')).toBe(true);
+  });
+
+  it('when_a_15_character_payload_holds_the_secret_should_not_decode_it', () => {
+    const run = scanDataUrls(urlOf(unpadded(`${SHORT_SECRET}abcde`)));
+
+    expectNothingPublished(run);
+    expect(run.log).not.toContain('data-url');
+  });
+
+  it('when_a_16_character_payload_holds_the_secret_should_decode_it', () => {
+    const run = scanDataUrls(urlOf(b64(`${SHORT_SECRET}abcdef`)));
+
+    expectNothingPublished(run);
+    expect(run.log).toContain(`LEAK - ${REPORT_PATH}!data-url-0 contains the value of E2E_REMOTE_API_TOKEN`);
+  });
+
+  it('when_the_16_characters_include_equals_padding_should_decode_it', () => {
+    const run = scanDataUrls(urlOf(b64(`${SHORT_SECRET}abcde`)));
+
+    expectNothingPublished(run);
+    expect(run.log).toContain(`LEAK - ${REPORT_PATH}!data-url-0 contains the value of E2E_REMOTE_API_TOKEN`);
+  });
+
+  it('when_two_data_urls_qualify_should_report_them_at_data_url_0_and_data_url_1', () => {
+    const run = scanDataUrls(urlOf(b64(`${SHORT_SECRET}abcdef`)) + urlOf(b64(`${SHORT_SECRET}ghijkl`)));
+
+    expectNothingPublished(run);
+    expect(run.log).toContain(`${REPORT_PATH}!data-url-0 contains the value of`);
+    expect(run.log).toContain(`${REPORT_PATH}!data-url-1 contains the value of`);
+    expect(run.log).not.toContain('data-url-2');
+  });
+
+  it('when_a_short_data_url_comes_first_should_number_only_the_qualifying_urls', () => {
+    const run = scanDataUrls(
+      urlOf(unpadded(`${SHORT_SECRET}abcde`)) +
+        urlOf(b64(`${SHORT_SECRET}abcdef`)) +
+        urlOf(b64(`${SHORT_SECRET}ghijkl`)),
+    );
+
+    expectNothingPublished(run);
+    expect(run.log).toContain(`${REPORT_PATH}!data-url-0 contains the value of`);
+    expect(run.log).toContain(`${REPORT_PATH}!data-url-1 contains the value of`);
+    expect(run.log).not.toContain('data-url-2');
+  });
+
+  it.each([
+    ['an empty payload', ';base64,'],
+    ['a short payload', ';base64,QUJD'],
+  ])('when_a_;base64,_marker_with_%s_is_followed_at_once_by_another_should_decode_the_second', (_label, first) => {
+    const run = scanDataUrls(`<a href="data:text/plain${first};base64,${b64(`${SHORT_SECRET}abcdef`)}">x</a>`);
+
+    expectNothingPublished(run);
+    expect(run.log).toContain(`LEAK - ${REPORT_PATH}!data-url-0 contains the value of E2E_REMOTE_API_TOKEN`);
+    expect(run.log).not.toContain('data-url-1');
+  });
+});
+
+/**
+ * Issued-credential patterns on a multi-MB token run (#179, Codex r13). V8's regex engine
+ * overflows its stack on `{21,}` or `{16,}` over such a run, so the scan used to refuse the file
+ * as "could not be checked" instead of reporting the kind of credential it holds.
+ */
+describe('A: the issued-credential patterns on an 8 MiB token run', () => {
+  const EIGHT_MIB = 8 * 1024 * 1024;
+  const RUN = 'Ab3_'.repeat(EIGHT_MIB / 4);
+  const REPORT_PATH = 'playwright-report/index.html';
+
+  const expectReportedAsKind = (run: Run, kind: string) => {
+    expect(run.log, `log:\n${run.log.slice(0, 2000)}`).toContain(`LEAK - ${REPORT_PATH} contains ${kind}`);
+    expect(run.log).not.toContain('could not be checked');
+    expect(run.log).not.toContain('Maximum call stack');
+    expectLogWithout(run, [RUN.slice(0, 32)]);
+  };
+
+  const cases: [string, string, string, boolean][] = [
+    ['a signing link', 'a signing link', `<a href="https://sign.example.com/sign/${RUN}">link</a>`, true],
+    ['a ?token= link', 'a ?token= link', `<a href="https://sign.example.com/x?token=${RUN}">link</a>`, false],
+    ['a bearer value', 'an Authorization: Bearer value', `<pre>Authorization: Bearer ${RUN}</pre>`, false],
+  ];
+
+  it.each(cases)(
+    'in_remote_mode_when_the_report_holds_%s_with_an_8_mib_token_should_report_that_kind',
+    (_label, kind, body, isSigningLink) => {
+      const run = runScan({
+        env: { [MODE]: 'remote', E2E_REMOTE_API_TOKEN: SECRET },
+        files: { [REPORT_PATH]: reportWith(body) },
+      });
+
+      expectReportedAsKind(run, kind);
+      // The existing remote rules: a signing link alone leaves the clean manifest, anything else leaves nothing.
+      expect(listFiles(run.artifacts).filter((name) => name !== NOTE)).toEqual(isSigningLink ? [MANIFEST] : []);
+      expect(run.status, `log:\n${run.log.slice(0, 2000)}`).toBe(isSigningLink ? 0 : 1);
+    },
+    120_000,
+  );
+
+  it.each(cases)(
+    'with_no_mode_when_the_report_holds_%s_with_an_8_mib_token_should_report_that_kind_and_publish_nothing',
+    (_label, kind, body) => {
+      const run = runScan({ env: { E2E_REMOTE_API_TOKEN: SECRET }, files: { [REPORT_PATH]: reportWith(body) } });
+
+      expectReportedAsKind(run, kind);
+      expectNothingPublished(run);
+    },
+    120_000,
+  );
+
+  it.each([
+    ['remote', { [MODE]: 'remote' }],
+    ['no mode', {}],
+  ])(
+    'in_%s_mode_when_bearer_is_followed_by_8_mib_of_whitespace_and_a_short_token_should_not_crash',
+    (_label, mode) => {
+      const run = runScan({
+        env: { ...mode, E2E_REMOTE_API_TOKEN: SECRET },
+        files: { [REPORT_PATH]: reportWith(`<pre>Bearer${' '.repeat(EIGHT_MIB)}short</pre>`) },
+      });
+
+      expect(run.log).not.toContain('could not be checked');
+      expect(run.log).not.toContain('Maximum call stack');
+      expect(run.status, `log:\n${run.log.slice(0, 2000)}`).toBe(0);
+      expect(fs.existsSync(path.join(run.artifacts, REPORT_PATH))).toBe(true);
+    },
+    120_000,
+  );
 });

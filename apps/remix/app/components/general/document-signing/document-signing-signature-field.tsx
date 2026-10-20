@@ -125,7 +125,10 @@ export const DocumentSigningSignatureField = ({
 
       const isTypedSignature = !value.startsWith('data:image');
 
-      if (isTypedSignature && typedSignatureEnabled === false) {
+      // With every method off the policy allows all three (G4 decision D3).
+      const isImageEnabled = uploadSignatureEnabled !== false || drawSignatureEnabled !== false;
+
+      if (isTypedSignature && typedSignatureEnabled === false && isImageEnabled) {
         toast({
           title: _(msg`Error`),
           description: _(msg`Typed signatures are not allowed. Please draw your signature.`),

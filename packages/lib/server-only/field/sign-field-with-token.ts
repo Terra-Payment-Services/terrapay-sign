@@ -30,7 +30,9 @@ import { assertRecipientNotExpired } from '../../utils/recipients';
 import { isRecipientAccess2FARequired } from '../2fa/email/recipient-access-2fa-cookie';
 import { assertRecipientAccessAuthorized } from '../document/assert-recipient-access-authorized';
 import { validateFieldAuth } from '../document/validate-field-auth';
+import { assertRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
+import { assertSignatureMethodAllowed, assertValidSignatureValue } from '../signature/assert-valid-signature-value';
 
 export type SignFieldWithTokenOptions = {
   token: string;
@@ -60,13 +62,16 @@ export type SignFieldWithTokenOptions = {
 export const signFieldWithToken = async ({
   token,
   fieldId,
-  value,
+  value: receivedValue,
   isBase64,
   userId,
   authOptions,
   isAccess2FAVerified = false,
   requestMetadata,
 }: SignFieldWithTokenOptions) => {
+  // The schema no longer trims, so a typed signature reaches its validator as received (G4 C105b).
+  const value = receivedValue.trim();
+
   const recipient = await prisma.recipient.findFirstOrThrow({
     where: {
       token,
@@ -123,6 +128,13 @@ export const signFieldWithToken = async ({
     throw new Error(`Document ${envelope.id} has been deleted`);
   }
 
+  // A V2 envelope's fields are signed through envelope.field.sign, which applies the V2 rules (#142).
+  if (envelope.internalVersion !== 1) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Document ${envelope.id} is a V2 envelope: sign its fields through envelope.field.sign`,
+    });
+  }
+
   if (envelope.status !== DocumentStatus.PENDING) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {
       message: `Document ${envelope.id} must be pending for signing`,
@@ -174,7 +186,9 @@ export const signFieldWithToken = async ({
     field.recipientId !== recipient.id &&
     (field.type === FieldType.SIGNATURE || field.type === FieldType.FREE_SIGNATURE)
   ) {
-    throw new Error(`Assistant ${recipient.id} cannot sign for recipient ${field.recipientId}`);
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `Assistant ${recipient.id} cannot sign for recipient ${field.recipientId}`,
+    });
   }
 
   if (field.type === FieldType.NUMBER && field.fieldMeta) {
@@ -244,21 +258,17 @@ export const signFieldWithToken = async ({
 
   let customText = !isSignatureField ? value : undefined;
 
-  const signatureImageAsBase64 = isSignatureField && isBase64 ? value : undefined;
-  const typedSignature = isSignatureField && !isBase64 ? value : undefined;
+  const signature = isSignatureField
+    ? await assertValidSignatureValue({ value: receivedValue, isBase64, methods: documentMeta })
+    : null;
+
+  const signatureImageAsBase64 = signature?.signatureImageAsBase64 ?? undefined;
+  const typedSignature = signature?.typedSignature ?? undefined;
 
   if (field.type === FieldType.DATE) {
     customText = DateTime.now()
       .setZone(documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
       .toFormat(documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
-  }
-
-  if (isSignatureField && !signatureImageAsBase64 && !typedSignature) {
-    throw new Error('Signature field must have a signature');
-  }
-
-  if (isSignatureField && documentMeta?.typedSignatureEnabled === false && typedSignature) {
-    throw new Error('Typed signatures are not allowed. Please draw your signature');
   }
 
   if (field.fieldMeta?.readOnly && !AUTO_SIGNABLE_FIELD_TYPES.includes(field.type)) {
@@ -293,6 +303,9 @@ export const signFieldWithToken = async ({
       fieldRecipientId: field.recipientId,
     });
 
+    // Under the lock, so a completion or reorder that commits first is seen; an assistant's own turn (#145).
+    await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+
     if (actor.signingStatus === SigningStatus.SIGNED) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: `Recipient ${recipient.id} has already signed`,
@@ -308,6 +321,17 @@ export const signFieldWithToken = async ({
       });
     }
 
+    // Read again under the lock, so a method change that committed after the check above still applies (C42).
+    if (signature) {
+      assertSignatureMethodAllowed(
+        signature,
+        await tx.documentMeta.findFirst({
+          where: { envelope: { id: envelope.id } },
+          select: { typedSignatureEnabled: true, drawSignatureEnabled: true, uploadSignatureEnabled: true },
+        }),
+      );
+    }
+
     const updatedField = await tx.field.update({
       where: {
         id: field.id,
@@ -319,7 +343,7 @@ export const signFieldWithToken = async ({
     });
 
     if (isSignatureField) {
-      const signature = await tx.signature.upsert({
+      const storedSignature = await tx.signature.upsert({
         where: {
           fieldId: field.id,
         },
@@ -337,7 +361,7 @@ export const signFieldWithToken = async ({
 
       // Dirty but I don't want to deal with type information
       Object.assign(updatedField, {
-        signature,
+        signature: storedSignature,
       });
     }
 

@@ -521,6 +521,12 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
           user: msg`${user} completed their task`,
         }));
     })
+    .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SIGNATURE_IMAGE_UNRENDERABLE }, ({ data }) => {
+      const signer = `${data.recipientName} (${data.recipientEmail})`;
+      const description = msg`The signature image of ${signer} could not be rendered, so the document was not sealed`;
+
+      return { anonymous: description, you: description, user: description };
+    })
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_REJECTED }, ({ data }) => {
       if (data.isExternal) {
         const onBehalfOf = data.onBehalfOfUserName || data.onBehalfOfUserEmail;

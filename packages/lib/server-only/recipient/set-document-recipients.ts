@@ -18,6 +18,7 @@ import { canRecipientBeModified, isRecipientEmailValidForSending } from '../../u
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
+import { lockEnvelopeForOwnerEdit } from './lock-envelope-for-owner-edit';
 
 export interface SetDocumentRecipientsOptions {
   userId: number;
@@ -156,8 +157,51 @@ export const setDocumentRecipients = async ({
   const persistedRecipients = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
 
-    return await Promise.all(
-      linkedRecipients.map(async (recipient) => {
+    // The checks above are made again under the envelope lock, which rejection and signing also take. A recipient
+    // who rejected or signed after the first read is otherwise reset to NOT_SIGNED by the upsert below, or
+    // deleted, even when the caller left them unchanged (#121).
+    const locked = await lockEnvelopeForOwnerEdit(tx, envelope.id);
+
+    const lockedRecipientOf = (id: number) => locked.recipients.find((candidate) => candidate.id === id);
+
+    const isLockedRecipientModifiable = (id: number) => {
+      const lockedRecipient = lockedRecipientOf(id);
+
+      return lockedRecipient !== undefined && canRecipientBeModified(lockedRecipient, locked.fields);
+    };
+
+    if (removedRecipients.some((removedRecipient) => !isLockedRecipientModifiable(removedRecipient.id))) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Cannot remove a recipient who has already interacted with the document',
+      });
+    }
+
+    const lockedLinkedRecipients = linkedRecipients.map((recipient) => {
+      if (!recipient._persisted) {
+        return recipient;
+      }
+
+      const lockedPersisted = lockedRecipientOf(recipient._persisted.id);
+
+      if (!lockedPersisted) {
+        throw new AppError(AppErrorCode.NOT_FOUND, {
+          message: `Recipient with id ${recipient._persisted.id} not found`,
+        });
+      }
+
+      const canPersistedRecipientBeModified = isLockedRecipientModifiable(lockedPersisted.id);
+
+      if (hasRecipientBeenChanged(lockedPersisted, recipient) && !canPersistedRecipientBeModified) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot modify a recipient who has already interacted with the document',
+        });
+      }
+
+      return { ...recipient, _persisted: lockedPersisted, canPersistedRecipientBeModified };
+    });
+
+    const upserted = await Promise.all(
+      lockedLinkedRecipients.map(async (recipient) => {
         let authOptions = ZRecipientAuthOptionsSchema.parse(recipient._persisted?.authOptions);
 
         if (recipient.actionAuth !== undefined || recipient.accessAuth !== undefined) {
@@ -174,6 +218,8 @@ export const setDocumentRecipients = async ({
           };
         }
 
+        // An upsert cannot carry the status condition, so it relies on the check above, made under the envelope
+        // lock that every signing and rejection write also takes.
         const upsertedRecipient = await tx.recipient.upsert({
           where: {
             id: recipient._persisted?.id ?? -1,
@@ -263,17 +309,27 @@ export const setDocumentRecipients = async ({
         };
       }),
     );
-  });
 
-  if (removedRecipients.length > 0) {
-    await prisma.$transaction(async (tx) => {
-      await tx.recipient.deleteMany({
+    // Removed in the same locked transaction as the checks, so a rejection cannot commit in between.
+    if (removedRecipients.length > 0) {
+      const { count } = await tx.recipient.deleteMany({
         where: {
           id: {
             in: removedRecipients.map((recipient) => recipient.id),
           },
+          envelopeId: envelope.id,
+          OR: [
+            { role: RecipientRole.CC, signingStatus: { not: SigningStatus.REJECTED } },
+            { signingStatus: SigningStatus.NOT_SIGNED },
+          ],
         },
       });
+
+      if (count !== removedRecipients.length) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot remove a recipient who has already interacted with the document',
+        });
+      }
 
       await tx.documentAuditLog.createMany({
         data: removedRecipients.map((recipient) =>
@@ -290,8 +346,12 @@ export const setDocumentRecipients = async ({
           }),
         ),
       });
-    });
+    }
 
+    return upserted;
+  });
+
+  if (removedRecipients.length > 0) {
     const isRecipientRemovedEmailEnabled = extractDerivedDocumentEmailSettings(envelope.documentMeta).recipientRemoved;
 
     if (isRecipientRemovedEmailEnabled) {
@@ -364,7 +424,9 @@ const hasRecipientBeenChanged = (recipient: Recipient, newRecipientData: Recipie
     recipient.email !== newRecipientData.email ||
     recipient.name !== newRecipientData.name ||
     recipient.role !== newRecipientData.role ||
-    recipient.signingOrder !== newRecipientData.signingOrder ||
+    // An omitted signing order leaves the stored one alone (the upsert skips undefined), so it is not a change;
+    // otherwise a list that omits it would count every recipient with a null order as changed (#121).
+    (newRecipientData.signingOrder !== undefined && recipient.signingOrder !== newRecipientData.signingOrder) ||
     !isDeepEqual(authOptions.accessAuth, newRecipientAccessAuth) ||
     !isDeepEqual(authOptions.actionAuth, newRecipientActionAuth)
   );

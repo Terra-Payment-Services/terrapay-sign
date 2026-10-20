@@ -1,7 +1,7 @@
 import { ZSupportedLanguageCodeSchema } from '@documenso/lib/constants/locales';
 import { z } from 'zod';
 
-import { ZCssVarsSchema } from './css-vars';
+import { ZStoredCssVarsSchema } from './css-vars';
 
 export const ZBaseEmbedDataSchema = z.object({
   darkModeDisabled: z.boolean().optional().default(false),
@@ -9,6 +9,6 @@ export const ZBaseEmbedDataSchema = z.object({
     .string()
     .optional()
     .transform((value) => value || undefined),
-  cssVars: ZCssVarsSchema.optional().default({}),
+  cssVars: ZStoredCssVarsSchema.optional().default({}),
   language: ZSupportedLanguageCodeSchema.optional(),
 });

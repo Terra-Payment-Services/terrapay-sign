@@ -40,7 +40,34 @@ import { encodedForms, envSources, secretValues, shortExampleValues } from '../r
  */
 const ARTIFACT_DIRS = ['test-results', 'playwright-report'];
 const RENDERED = /\.(png|jpe?g|webm|webp)$/i;
-const DATA_URL = /;base64,([A-Za-z0-9+/=]{16,})/g;
+const BASE64 = /[A-Za-z0-9+/=]/;
+
+/**
+ * The payloads of `;base64,` data URLs at least 16 characters long. A loop rather than a
+ * regex: V8's regex engine overflows its stack on a base64 run of several MB, which the
+ * html report embeds (#179).
+ */
+const dataUrlPayloads = (text: string) => {
+  const payloads: string[] = [];
+  let at = text.indexOf(';base64,');
+
+  while (at >= 0) {
+    const start = at + ';base64,'.length;
+    let end = start;
+
+    while (end < text.length && BASE64.test(text[end])) {
+      end++;
+    }
+
+    if (end - start >= 16) {
+      payloads.push(text.slice(start, end));
+    }
+
+    at = text.indexOf(';base64,', end);
+  }
+
+  return payloads;
+};
 const FAILURE_NOTE = 'SCAN-DID-NOT-PASS.txt';
 const RESULTS = 'test-results/results.json';
 const MANIFEST = 'test-results/manifest.json';
@@ -77,12 +104,14 @@ const MODE = process.env.ARTIFACT_SCAN_MODE;
  * JSON's \/ are decoded, one linear pass, so a link or bearer value written
  * URL-encoded or slash-escaped is found too. Only a signing link counts as
  * `link`, the one finding a remote run may answer with its manifest alone.
+ * Quantifiers are exact rather than open-ended: a test needs only the first
+ * characters, and V8 overflows its stack on an open run of several MB (#179).
  */
 const ISSUED = [
-  { kind: 'a signing link (/sign/ or /embed/sign/ and a token)', pattern: /\/sign\/[A-Za-z0-9_-]{21,}/, link: true },
-  { kind: 'a ?token= link', pattern: /[?&;]token=[A-Za-z0-9_-]{21,}/, link: false },
+  { kind: 'a signing link (/sign/ or /embed/sign/ and a token)', pattern: /\/sign\/[A-Za-z0-9_-]{21}/, link: true },
+  { kind: 'a ?token= link', pattern: /[?&;]token=[A-Za-z0-9_-]{21}/, link: false },
   { kind: 'a Sign API token (api_...)', pattern: /\bapi_[a-z0-9]{16}/, link: false },
-  { kind: 'an Authorization: Bearer value', pattern: /\bbearer\s+[A-Za-z0-9._~+/-]{16,}/i, link: false },
+  { kind: 'an Authorization: Bearer value', pattern: /\bbearer\s+[A-Za-z0-9._~+/-]{16}/i, link: false },
 ];
 const patterns = MODE === 'local' ? [] : ISSUED;
 const ENCODED: Record<string, string> = { '%2f': '/', '%3f': '?', '%3d': '=', '%20': ' ', '\\/': '/' };
@@ -210,8 +239,8 @@ const search = (content: Buffer, where: string): Finding[] => {
       return [...found, ...search(gunzipSync(content), `${where}!gunzip`)];
     }
 
-    const dataUrls = [...text.matchAll(DATA_URL)].flatMap((match, index) =>
-      search(Buffer.from(match[1], 'base64'), `${where}!data-url-${index}`),
+    const dataUrls = dataUrlPayloads(text).flatMap((payload, index) =>
+      search(Buffer.from(payload, 'base64'), `${where}!data-url-${index}`),
     );
 
     return [...found, ...dataUrls];

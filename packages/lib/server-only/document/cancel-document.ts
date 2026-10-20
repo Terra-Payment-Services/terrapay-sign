@@ -1,6 +1,6 @@
 import { jobs } from '@documenso/lib/jobs/client';
 import { prisma } from '@documenso/prisma';
-import { DocumentStatus, EnvelopeType, WebhookTriggerEvents } from '@prisma/client';
+import { DocumentStatus, EnvelopeType, SigningStatus, WebhookTriggerEvents } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../../types/document-audit-logs';
@@ -75,13 +75,51 @@ export const cancelDocument = async ({ id, userId, teamId, reason, requestMetada
   }
 
   const updatedEnvelope = await prisma.$transaction(async (tx) => {
-    const updated = await tx.envelope.update({
+    // Rejection takes this lock too, so a rejection that committed before the cancel is seen here. A committed
+    // rejection fixes the outcome: the seal records it as REJECTED, and the cancel is refused (#122).
+    const [locked] = await tx.$queryRaw<Array<{ status: DocumentStatus }>>`
+      SELECT "status" FROM "Envelope" WHERE "id" = ${envelope.id} FOR NO KEY UPDATE
+    `;
+
+    if (locked?.status !== DocumentStatus.PENDING) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Only pending documents can be cancelled',
+      });
+    }
+
+    const rejection = await tx.recipient.findFirst({
+      where: { envelopeId: envelope.id, signingStatus: SigningStatus.REJECTED },
+      select: { id: true },
+    });
+
+    if (rejection) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Document has been rejected by a recipient and cannot be cancelled',
+      });
+    }
+
+    // Conditional, so a cancel that loses to the seal, another cancel or a rejection changes nothing and says so.
+    const { count } = await tx.envelope.updateMany({
       where: {
         id: envelope.id,
+        status: DocumentStatus.PENDING,
+        recipients: { none: { signingStatus: SigningStatus.REJECTED } },
       },
       data: {
         status: DocumentStatus.CANCELLED,
         completedAt: new Date(),
+      },
+    });
+
+    if (count === 0) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Only pending documents can be cancelled',
+      });
+    }
+
+    const updated = await tx.envelope.findUniqueOrThrow({
+      where: {
+        id: envelope.id,
       },
     });
 

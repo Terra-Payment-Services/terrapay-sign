@@ -6,6 +6,7 @@ import { SALT_ROUNDS } from '../../constants/auth';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { createPersonalOrganisation } from '../organisation/create-organisation';
 import { isOrganisationCreationAllowed } from '../organisation/organisation-creation-allowed';
+import { assertValidSignatureValue } from '../signature/assert-valid-signature-value';
 
 export interface CreateUserOptions {
   name: string;
@@ -14,7 +15,19 @@ export interface CreateUserOptions {
   signature?: string | null;
 }
 
+/**
+ * Creates a user with a personal organisation. A signature, when given, passes the check `updateProfile` applies
+ * and is stored normalised; an empty or absent one stores none (G4 C34).
+ *
+ * @throws AppError INVALID_REQUEST for a signature the profile update would refuse; ALREADY_EXISTS for a taken email.
+ */
 export const createUser = async ({ name, email, password, signature }: CreateUserOptions) => {
+  const storedSignature = signature
+    ? await assertValidSignatureValue({ value: signature }).then(
+        (valid) => valid.signatureImageAsBase64 ?? valid.typedSignature ?? '',
+      )
+    : signature;
+
   const hashedPassword = await hash(password, SALT_ROUNDS);
 
   const userExists = await prisma.user.findFirst({
@@ -32,7 +45,7 @@ export const createUser = async ({ name, email, password, signature }: CreateUse
       name,
       email: email.toLowerCase(),
       password: hashedPassword, // Todo: (RR7) Drop password.
-      signature,
+      signature: storedSignature,
     },
   });
 

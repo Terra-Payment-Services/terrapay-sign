@@ -43,20 +43,21 @@ test.beforeAll(async ({ request }) => {
 type CompletionMail = { subject: string; attachmentNames: string[] };
 
 /** Waits for the owner's and each recipient's completion email, then returns the attachment names per mailbox. */
-const readCompletionMails = async (request: APIRequestContext, localParts: string[]) => {
+const readCompletionMails = async (localParts: string[]) => {
   const byMailbox: Record<string, CompletionMail[]> = {};
 
   await expect(async () => {
     for (const localPart of localParts) {
-      const listRes = await request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
+      // Node fetch, untraced: a trace would record the sender address, which the artifact scan refuses (#176).
+      const listRes = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}`);
 
-      expect(listRes.ok()).toBe(true);
+      expect(listRes.ok).toBe(true);
 
       const list = (await listRes.json()) as Array<{ id: string; subject: string }>;
       const mails: CompletionMail[] = [];
 
       for (const entry of list) {
-        const res = await request.get(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${entry.id}`);
+        const res = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${localPart}/${entry.id}`);
         const message = (await res.json()) as {
           header: { Subject: string[] };
           attachments?: Array<{ filename: string }>;
@@ -119,7 +120,7 @@ const runV2 = async (request: APIRequestContext, title: string) => {
     });
   }
 
-  return await readCompletionMails(request, [...localParts, ownerLocalPart(user.email)]);
+  return await readCompletionMails([...localParts, ownerLocalPart(user.email)]);
 };
 
 const runV1 = async (request: APIRequestContext, title: string) => {
@@ -178,7 +179,7 @@ const runV1 = async (request: APIRequestContext, title: string) => {
     });
   }
 
-  return await readCompletionMails(request, [...localParts, ownerLocalPart(user.email)]);
+  return await readCompletionMails([...localParts, ownerLocalPart(user.email)]);
 };
 
 test('rule_1_2_v2_envelope_with_a_pdf_title_attaches_the_title_unchanged_to_every_copy', async ({ request }) => {
