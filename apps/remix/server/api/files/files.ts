@@ -1,11 +1,11 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
+import { sValidator } from '@documenso/auth/server/lib/utils/s-validator';
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import { isRecipientTokenAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { DocumentStatus, type Prisma } from '@prisma/client';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -278,7 +278,9 @@ export const filesRoute = new Hono<HonoEnv>()
         };
       }
 
-      if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+      const { user } = await getOptionalSession(c);
+
+      if (!(await isRecipientTokenAccessAuthorized({ headers: c.req.raw.headers, token, userId: user?.id }))) {
         return c.json({ error: 'Access code required' }, 401);
       }
 
@@ -337,7 +339,9 @@ export const filesRoute = new Hono<HonoEnv>()
         };
       }
 
-      if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+      const { user } = await getOptionalSession(c);
+
+      if (!(await isRecipientTokenAccessAuthorized({ headers: c.req.raw.headers, token, userId: user?.id }))) {
         return c.json({ error: 'Access code required' }, 401);
       }
 

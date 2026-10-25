@@ -12,6 +12,7 @@ import { putPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.s
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
 import type { Envelope, EnvelopeItem, Recipient } from '@prisma/client';
+import { assertFieldTypesSupported } from '../field/assert-field-types-supported';
 
 type UnsafeCreateEnvelopeItemsOptions = {
   files: {
@@ -44,8 +45,8 @@ export const UNSAFE_createEnvelopeItems = async ({
 }: UnsafeCreateEnvelopeItemsOptions) => {
   const currentHighestOrderValue = envelope.envelopeItems[envelope.envelopeItems.length - 1]?.order ?? 1;
 
-  // For each file: normalize, extract & clean placeholders, then upload.
-  const envelopeItemsToCreate = await Promise.all(
+  // For each file: normalize, extract & clean placeholders; all are checked before any is uploaded (#242).
+  const preparedFiles = await Promise.all(
     files.map(async ({ file, orderOverride, clientId }, index) => {
       let buffer = Buffer.from(await file.arrayBuffer());
 
@@ -59,6 +60,17 @@ export const UNSAFE_createEnvelopeItems = async ({
 
       const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
 
+      return { file, orderOverride, clientId, index, cleanedPdf, placeholders };
+    }),
+  );
+
+  assertFieldTypesSupported(
+    envelope.internalVersion,
+    preparedFiles.flatMap(({ placeholders }) => placeholders.map((placeholder) => placeholder.fieldAndMeta.type)),
+  );
+
+  const envelopeItemsToCreate = await Promise.all(
+    preparedFiles.map(async ({ file, orderOverride, clientId, index, cleanedPdf, placeholders }) => {
       const { documentData } = await putPdfFileServerSide(
         {
           name: file.name,

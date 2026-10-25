@@ -4,11 +4,10 @@ import { enableTwoFactorAuthentication } from '@documenso/lib/server-only/2fa/en
 import { setupTwoFactorAuthentication } from '@documenso/lib/server-only/2fa/setup-2fa';
 import { viewBackupCodes } from '@documenso/lib/server-only/2fa/view-backup-codes';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { Hono } from 'hono';
-
 import { AuthenticationErrorCode } from '../lib/errors/error-codes';
 import { getSession } from '../lib/utils/get-session';
+import { sValidator } from '../lib/utils/s-validator';
 import type { HonoAuthContext } from '../types/context';
 import {
   ZDisableTwoFactorRequestSchema,

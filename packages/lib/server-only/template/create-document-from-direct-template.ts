@@ -86,7 +86,7 @@ export type TCreateDocumentFromDirectTemplateResponse = z.infer<typeof ZCreateDo
 
 export const createDocumentFromDirectTemplate = async ({
   directRecipientName: initialDirectRecipientName,
-  directRecipientEmail,
+  directRecipientEmail: requestedDirectRecipientEmail,
   directTemplateToken,
   directTemplateExternalId,
   signedFieldValues,
@@ -95,6 +95,16 @@ export const createDocumentFromDirectTemplate = async ({
   requestMetadata,
   user,
 }: CreateDocumentFromDirectTemplateOptions): Promise<TCreateDocumentFromDirectTemplateResponse> => {
+  // A signed-in caller signs as their own account, so the email cannot name someone else (#174).
+  if (user && user.email.trim().toLowerCase() !== requestedDirectRecipientEmail.trim().toLowerCase()) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'The email must be the one on your account.',
+      statusCode: 400,
+    });
+  }
+
+  const directRecipientEmail = user ? user.email : requestedDirectRecipientEmail;
+
   const directTemplateEnvelope = await prisma.envelope.findFirst({
     where: {
       directLink: {
@@ -716,6 +726,7 @@ export const createDocumentFromDirectTemplate = async ({
             type: DOCUMENT_AUDIT_LOG_TYPE.RECIPIENT_UPDATED,
             envelopeId: createdEnvelope.id,
             user: {
+              id: user?.id,
               name: user?.name || directRecipientName || '',
               email: user?.email || directRecipientEmail,
             },

@@ -146,7 +146,10 @@ describe('an assistant clearing a field it prefilled is audited', () => {
         $queryRaw: async () => [{ status: 'PENDING' }],
         // The order gate reads the envelope under the lock (#145); a PARALLEL envelope puts everyone in turn.
         envelope: { findUniqueOrThrow: async () => ({ signatureLevel: 'SES', documentMeta: null, recipients: [] }) },
-        recipient: { findMany: async () => [{ id: assistant.id, signingStatus: assistant.signingStatus }] },
+        // The lock also reads each recipient's token, refusing a link that no longer matches (#150).
+        recipient: {
+          findMany: async () => [{ id: assistant.id, signingStatus: assistant.signingStatus, token: 'tok' }],
+        },
         field: { update: mocks.fieldUpdate },
         signature: { deleteMany: mocks.signatureDeleteMany },
         documentAuditLog: { create: mocks.auditLogCreate },

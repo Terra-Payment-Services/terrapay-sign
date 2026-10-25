@@ -287,7 +287,7 @@ const BOX_B = { positionX: 10, positionY: 84, width: 30, height: 8 };
 /**
  * A PENDING V2 envelope with signers A and B (and a CC when asked), each signer
  * holding one SIGNATURE field, invitations sent through API v2. signedAt is set
- * to now so the seal sweep leaves the envelope alone for the length of a test.
+ * outside the seal sweep's window so the sweep never picks the envelope up.
  */
 export const seedEnvelope = async (request: APIRequestContext, options: SeedOptions = {}): Promise<Seeded> => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -382,8 +382,8 @@ export const seedEnvelope = async (request: APIRequestContext, options: SeedOpti
   const b = signerFor(people[1].email);
   const ccRow = rows.find((row) => row.role === 'CC');
 
-  // Keep the seal sweep away: it looks only at envelopes whose recipients last acted long ago.
-  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: new Date() } });
+  // Keep the seal sweep away: see outsideSweepWindow.
+  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: outsideSweepWindow() } });
 
   const items = await prisma.envelopeItem.findMany({ where: { envelopeId: envelope.id }, orderBy: { order: 'asc' } });
 
@@ -408,11 +408,17 @@ export const seedEnvelope = async (request: APIRequestContext, options: SeedOpti
 
 export const REJECTION_REASON = 'A rejected before the seal';
 
+/**
+ * signedAt for seeded recipients: seven hours back, outside the seal sweep's six-hour window, so a
+ * rejected or fully signed envelope a test leaves unsealed is never resealed and mailed later (#177).
+ */
+export const outsideSweepWindow = () => new Date(Date.now() - 7 * 60 * 60 * 1000);
+
 /** "Rejected but not yet sealed": A REJECTED with a reason and an audit row, envelope PENDING, no seal job. */
 export const seedRejectedNotSealed = async (seeded: Seeded, reason = REJECTION_REASON) => {
   await prisma.recipient.update({
     where: { id: seeded.a.id },
-    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: reason, signedAt: new Date() },
+    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: reason, signedAt: outsideSweepWindow() },
   });
 
   await prisma.documentAuditLog.create({
@@ -446,7 +452,7 @@ export const seedSignedNotSealed = async (seeded: Seeded) => {
     });
     await prisma.recipient.update({
       where: { id: signer.id },
-      data: { signingStatus: SigningStatus.SIGNED, signedAt: new Date() },
+      data: { signingStatus: SigningStatus.SIGNED, signedAt: outsideSweepWindow() },
     });
   }
 

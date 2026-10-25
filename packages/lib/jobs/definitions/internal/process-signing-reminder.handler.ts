@@ -146,6 +146,7 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
     claims,
     emailsDisabled,
     emailTransport,
+    settings,
   } = await getEmailContext({
     emailType: 'RECIPIENT',
     source: {
@@ -277,6 +278,7 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
         userId: envelope.userId,
         envelopeId: envelope.id,
         teamId: envelope.teamId,
+        includeSenderDetails: settings.includeSenderDetails,
       }),
     });
 

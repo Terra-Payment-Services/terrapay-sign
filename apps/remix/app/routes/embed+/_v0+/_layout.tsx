@@ -76,12 +76,7 @@ export function ErrorBoundary({ loaderData }: Route.ErrorBoundaryProps) {
     }
 
     if (error.status === 401 && error.data.type === 'embed-access-code-required') {
-      return (
-        <DocumentSigningAccess2FAGate
-          documentAuthOptions={error.data.documentAuthOptions}
-          recipient={error.data.recipient}
-        />
-      );
+      return <DocumentSigningAccess2FAGate recipient={error.data.recipient} />;
     }
 
     if (error.status === 403 && error.data.type === 'embed-paywall') {

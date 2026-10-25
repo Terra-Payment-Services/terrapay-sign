@@ -384,7 +384,7 @@ test('[DOCUMENT_FLOW]: should be able to approve a document', async ({ page }) =
   }
 });
 
-test('[DOCUMENT_FLOW]: should be able to create, send with redirect url, sign a document and redirect to redirect url', async ({
+test('[DOCUMENT_FLOW]: should be able to create, send with redirect url, sign a document and be offered the redirect url', async ({
   page,
 }) => {
   const { user, team } = await seedUser();
@@ -456,7 +456,12 @@ test('[DOCUMENT_FLOW]: should be able to create, send with redirect url, sign a 
   ).toBeVisible();
   await page.getByRole('button', { name: 'Approve' }).click();
 
-  await page.waitForURL('https://documenso.com');
+  // The redirect URL is offered on the complete page, never followed automatically (#186).
+  await page.waitForURL(`/sign/${token}/complete`);
+  await expect(page.getByRole('link', { name: 'Continue', exact: true })).toHaveAttribute(
+    'href',
+    'https://documenso.com/',
+  );
 
   await expect(async () => {
     // Check if document has been signed

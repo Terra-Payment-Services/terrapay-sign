@@ -35,6 +35,7 @@ import { assertLegacyEnvelopeAcceptsPdf } from '../pdf/normalize-pdf';
 import { assertRecipientsTurn } from '../recipient/assert-recipients-turn';
 import { getIsRecipientsTurnToSign } from '../recipient/get-is-recipient-turn';
 import { lockEnvelopeForRecipientAction } from '../recipient/lock-envelope-for-recipient-action';
+import { getRecipientEmailChangeData } from '../recipient/recipient-email-change';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 import { assertAccessAuth2FAAttemptAllowed } from './assert-access-auth-2fa-attempt-allowed';
 import { assertRecipientAccessAuthorized } from './assert-recipient-access-authorized';
@@ -338,7 +339,7 @@ export const completeDocumentWithToken = async ({
   }
 
   const { openedStepIds, isDictationEligible } = await prisma.$transaction(async (tx) => {
-    await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+    await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id, token });
 
     // Again under the lock, so a reorder that commits after the check above is seen (#145).
     await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });
@@ -642,6 +643,8 @@ export const completeDocumentWithToken = async ({
                 ? {
                     name: dictatedSigner.name,
                     email: dictatedSigner.email,
+                    // A dictated replacement gets a link of their own; the invitation job reads the row afresh (#150).
+                    ...getRecipientEmailChangeData(nextRecipient.email, dictatedSigner.email),
                   }
                 : {}),
             },

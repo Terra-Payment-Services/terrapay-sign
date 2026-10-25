@@ -1,5 +1,5 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import { isRecipientTokenAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { getOrganisationTemplateWhereInput } from '@documenso/lib/server-only/template/get-organisation-template-by-id';
 import { prisma } from '@documenso/prisma';
@@ -50,6 +50,7 @@ export const getEnvelopeItemsByTokenRoute = maybeAuthenticatedProcedure
       envelopeId,
       token: access.token,
       headers: ctx.req.headers,
+      userId: user?.id,
     });
 
     return {
@@ -61,10 +62,12 @@ const handleGetEnvelopeItemsByToken = async ({
   envelopeId,
   token,
   headers,
+  userId,
 }: {
   envelopeId: string;
   token: string;
   headers: Headers;
+  userId?: number;
 }) => {
   const envelope = await prisma.envelope.findFirst({
     where: {
@@ -91,7 +94,7 @@ const handleGetEnvelopeItemsByToken = async ({
     });
   }
 
-  if (!(await isRecipientTokenAccess2FASatisfied({ headers, token }))) {
+  if (!(await isRecipientTokenAccessAuthorized({ headers, token, userId }))) {
     throw new AppError(AppErrorCode.UNAUTHORIZED, {
       message: 'The access code must be entered before viewing this document',
     });

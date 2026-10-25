@@ -1,3 +1,4 @@
+import { sValidator } from '@documenso/auth/server/lib/utils/s-validator';
 import { PDF_SIZE_A4_72PPI } from '@documenso/lib/constants/pdf';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
@@ -8,7 +9,6 @@ import { getApiTokenByToken } from '@documenso/lib/server-only/public-api/get-ap
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { buildTeamWhereQuery } from '@documenso/lib/utils/teams';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { DocumentStatus, EnvelopeType } from '@prisma/client';
 import contentDisposition from 'content-disposition';
 import { Hono } from 'hono';

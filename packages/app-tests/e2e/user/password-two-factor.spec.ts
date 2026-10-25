@@ -1,5 +1,4 @@
 import { DOCUMENSO_ENCRYPTION_KEY } from '@documenso/lib/constants/crypto';
-import { enableTwoFactorAuthentication } from '@documenso/lib/server-only/2fa/enable-2fa';
 import { setupTwoFactorAuthentication } from '@documenso/lib/server-only/2fa/setup-2fa';
 import { symmetricDecrypt } from '@documenso/lib/universal/crypto';
 import { prisma } from '@documenso/prisma';
@@ -41,9 +40,11 @@ test('[USER] password update requires a 2FA code when 2FA is enabled', async ({ 
 
   await setupTwoFactorAuthentication({ user });
 
-  const userWithSecret = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  // Switch 2FA on with a direct write: enabling with a code would spend the current step, and the single-use rule
+  // (#197) would then refuse the same code at the password update below.
+  await prisma.user.update({ where: { id: user.id }, data: { twoFactorEnabled: true } });
 
-  await enableTwoFactorAuthentication({ user: userWithSecret, code: await getCurrentTotpCode(user.id) });
+  const userWithSecret = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 
   await page.goto('/settings/security');
   await waitForHydration(page, 'input[name="currentPassword"]');
@@ -88,9 +89,10 @@ test('[USER] password update API rejects a missing 2FA code when 2FA is enabled'
 
   await setupTwoFactorAuthentication({ user });
 
-  const userWithSecret = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  // Switch 2FA on with a direct write, so no TOTP code is spent (#197).
+  await prisma.user.update({ where: { id: user.id }, data: { twoFactorEnabled: true } });
 
-  await enableTwoFactorAuthentication({ user: userWithSecret, code: await getCurrentTotpCode(user.id) });
+  const userWithSecret = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 
   const response = await page.request.post('/api/auth/email-password/update-password', {
     data: { currentPassword: 'password', password: 'Test123!' },

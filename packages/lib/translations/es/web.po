@@ -264,9 +264,11 @@ msgstr "{0} plantillas de firma directa"
 msgid "{0} field"
 msgstr "Campo {0}"
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{0} te ha invitado a {recipientActionVerb} el documento \"{1}\"."
 
@@ -274,13 +276,6 @@ msgstr "{0} te ha invitado a {recipientActionVerb} el documento \"{1}\"."
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} a document"
 msgstr "{0} te invitó a {recipientActionVerb} un documento"
-
-#. placeholder {0}: user.name || user.email
-#. placeholder {1}: envelope.team.name
-#. placeholder {2}: envelope.title
-#: packages/lib/server-only/document/resend-document.ts
-msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0} en nombre de \"{1}\" te ha invitado a {recipientActionVerb} el documento \"{2}\"."
 
 #. placeholder {0}: formatChipCount(totalVisibleCount, isVisibleCountCapped)
 #: apps/remix/app/components/general/app-command-menu.tsx
@@ -291,6 +286,12 @@ msgstr "{0} resultados"
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
 msgid "{0} Teams"
 msgstr "{0} Equipos"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "{0}, {1}"
+msgstr "{0}, {1}"
 
 #. placeholder {0}: currentStepData.order
 #. placeholder {1}: envelopeEditorSteps.length
@@ -364,9 +365,11 @@ msgstr "{inviterName} te ha eliminado del documento {documentName}."
 msgid "{inviterName} has removed you from the document<0/>\"{documentName}\""
 msgstr "{inviterName} te ha eliminado del documento<0/>\"{documentName}\""
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{inviterName} en nombre de \"{0}\" te ha invitado a {recipientActionVerb} el documento \"{1}\"."
 
@@ -481,6 +484,10 @@ msgstr "{user} agregó un campo"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} added a recipient"
 msgstr "{user} agregó un destinatario"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "{user} applied the company seal of {legalEntityName} ({sealName})"
+msgstr "{user} aplicó el sello de la empresa {legalEntityName} ({sealName})"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} approved the document"
@@ -970,6 +977,10 @@ msgstr "Un nuevo miembro se ha unido a tu organización {organisationName}"
 #: apps/remix/app/routes/_unauthenticated+/check-email.tsx
 msgid "A password reset email has been sent, if you have an account you should see it in your inbox shortly."
 msgstr "Se ha enviado un correo electrónico para restablecer la contraseña, si tienes una cuenta deberías verlo en tu bandeja de entrada en breve."
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "A recipient applied the company seal of {legalEntityName} ({sealName})"
+msgstr "Un destinatario aplicó el sello de la empresa {legalEntityName} ({sealName})"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -1543,7 +1554,6 @@ msgstr "Un correo electrónico que contiene una invitación se enviará a cada m
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.groups.$id.tsx
@@ -1837,6 +1847,19 @@ msgstr "El uso de la API se está acercando a los límites de uso justo"
 msgid "App Version"
 msgstr "Versión de la Aplicación"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Applied"
+msgstr "Aplicado"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply company seal"
+msgstr "Aplicar el sello de la empresa"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply seal"
+msgstr "Aplicar sello"
+
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Approaching fair use limit"
 msgstr "Límite de uso justo próximo a alcanzarse"
@@ -2013,7 +2036,6 @@ msgstr "Asistiendo"
 
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
-#: packages/lib/types/document-meta.ts
 #: packages/ui/primitives/document-flow/add-settings.types.ts
 #: packages/ui/primitives/template-flow/add-template-settings.types.tsx
 msgid "At least one signature type must be enabled"
@@ -2228,6 +2250,11 @@ msgstr "Preferencias de marca"
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
+msgid "Branding preferences not saved"
+msgstr "No se guardaron las preferencias de marca"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
+#: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
 msgid "Branding preferences updated"
 msgstr "Preferencias de marca actualizadas"
 
@@ -2358,6 +2385,7 @@ msgstr "¿No puedes encontrar a alguien?"
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/dialogs/session-logout-all-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-checkbox-dialog.tsx
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-email-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-initials-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-name-dialog.tsx
@@ -2519,6 +2547,10 @@ msgstr "Límite de caracteres"
 msgid "Charts"
 msgstr "Gráficas"
 
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Check the seal below. Once applied, it becomes part of the document."
+msgstr "Revise el sello a continuación. Una vez aplicado, pasa a formar parte del documento."
+
 #: apps/remix/app/components/forms/password-setup-request-button.tsx
 #: apps/remix/app/components/forms/password-setup-request.tsx
 msgid "Check your email"
@@ -2548,6 +2580,10 @@ msgstr "Valores de Checkbox"
 #: packages/lib/constants/i18n.ts
 msgid "Chinese"
 msgstr "Chino"
+
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "Choose a seal"
+msgstr "Elija un sello"
 
 #: apps/remix/app/components/dialogs/template-direct-link-dialog.tsx
 msgid "Choose an existing recipient from below to continue"
@@ -2652,6 +2688,23 @@ msgstr "Contraer barra lateral"
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
 msgid "Comma-separated list of email domains to block from signing up."
 msgstr "Lista de dominios de correo electrónico, separados por comas, que se bloquearán para el registro."
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-drag-drop.tsx
+#: packages/lib/utils/fields.ts
+#: packages/ui/primitives/document-flow/types.ts
+msgid "Company seal"
+msgstr "Sello de la empresa"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
+msgid "Company Seal Settings"
+msgstr "Configuración de sellos de la empresa"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/utils/settings-nav.ts
+msgid "Company seals"
+msgstr "Sellos de la empresa"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
@@ -2816,6 +2869,7 @@ msgstr "Contenido"
 #: apps/remix/app/components/dialogs/passkey-create-dialog.tsx
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/general/document-signing/document-signing-form.tsx
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/team.verify.email.$token.tsx
@@ -3174,6 +3228,12 @@ msgstr "Creado En"
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.$id.logs.tsx
 msgid "Created by"
 msgstr "Creado por"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Created by {0} on {1}"
+msgstr "Creado por {0} el {1}"
 
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Created on"
@@ -5145,6 +5205,11 @@ msgstr "Tamaño de fuente del campo"
 msgid "Field format"
 msgstr "Formato de campo"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Field ID"
+msgstr "ID del campo"
+
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: packages/ui/primitives/document-flow/field-item.tsx
 msgid "Field ID:"
@@ -5686,6 +5751,10 @@ msgstr "Si crees que necesitarás límites más altos, contacta con el equipo de
 msgid "If your authenticator app does not support QR codes, you can use the following code instead:"
 msgstr "Si tu aplicación de autenticación no admite códigos QR, puedes usar el siguiente código en su lugar:"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Image"
+msgstr "Imagen"
+
 #: packages/lib/constants/billing.ts
 msgctxt "Subscription status"
 msgid "Inactive"
@@ -6082,6 +6151,10 @@ msgstr "Dejar la organización"
 #: apps/remix/app/components/forms/editor/editor-field-generic-field-forms.tsx
 msgid "Left"
 msgstr "Izquierda"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Legal entity"
+msgstr "Entidad jurídica"
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
 msgid "Legality of Electronic Signatures"
@@ -6559,6 +6632,7 @@ msgstr "N/A"
 #: apps/remix/app/components/tables/settings-security-passkey-table-actions.tsx
 #: apps/remix/app/components/tables/settings-security-passkey-table.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/users.$id.tsx
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.tokens.tsx
 #: packages/lib/utils/fields.ts
 #: packages/ui/primitives/document-flow/add-fields.tsx
@@ -6796,6 +6870,10 @@ msgstr "No se encontraron resultados"
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "No results found."
 msgstr "No se encontraron resultados."
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "No seals yet."
+msgstr "Todavía no hay sellos."
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "No signature field found"
@@ -8577,17 +8655,38 @@ msgstr "Guardar cambios"
 msgid "Save failed"
 msgstr "Guardado fallido"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Save seal"
+msgstr "Guardar sello"
+
 #: packages/ui/primitives/template-flow/add-template-fields.tsx
 msgid "Save Template"
 msgstr "Guardar plantilla"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal created"
+msgstr "Sello creado"
+
+#. placeholder {0}: seal.id
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal ID: {0}"
+msgstr "ID del sello: {0}"
 
 #: apps/remix/app/routes/_authenticated+/admin+/unsealed-documents._index.tsx
 msgid "Seal job triggered"
 msgstr "Tarea de sellado activada"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal preview"
+msgstr "Vista previa del sello"
+
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Sealing job started"
 msgstr "Se inició el trabajo de sellado"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seals that members of your organisation can apply to documents. A seal cannot be changed or removed once saved, so check the image before saving."
+msgstr "Sellos que los miembros de su organización pueden aplicar a los documentos. Un sello no se puede cambiar ni eliminar una vez guardado, así que revise la imagen antes de guardar."
 
 #: apps/remix/app/components/general/app-nav-desktop.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.members.tsx
@@ -10380,6 +10479,22 @@ msgstr "El destinatario debe firmar el documento para que se complete."
 msgid "The recipient is required to view the document for it to be completed."
 msgstr "El destinatario debe ver el documento para que se complete."
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal can now be placed on documents."
+msgstr "El sello ya se puede colocar en los documentos."
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal was not created"
+msgstr "No se creó el sello"
+
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
+msgid "The sender has linked a page for you to visit next."
+msgstr "El remitente ha enlazado una página para que la visite a continuación."
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "The signature image of {signer} could not be rendered, so the document was not sealed"
+msgstr "No se pudo representar la imagen de la firma de {signer}, por lo que el documento no se selló"
+
 #: packages/ui/components/document/document-send-email-message-helper.tsx
 msgid "The signer's email"
 msgstr "El correo electrónico del firmante"
@@ -10821,6 +10936,10 @@ msgstr "La firma existente de este PDF ya no es válida: el archivo se modificó
 msgid "This recipient can no longer be modified as they have signed a field, or completed the document."
 msgstr "Este destinatario ya no puede ser modificado ya que ha firmado un campo o completado el documento."
 
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "This recipient is not a member of the organisation, so they cannot apply the seal and the document cannot be sent."
+msgstr "Este destinatario no es miembro de la organización, por lo que no puede aplicar el sello y el documento no se puede enviar."
+
 #: apps/remix/app/components/forms/signin.tsx
 msgid "This session has expired. Please try again."
 msgstr "Esta sesión ha expirado. Por favor, inténtalo de nuevo."
@@ -11108,6 +11227,10 @@ msgstr "Demasiados intentos"
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Too many attempts have been made to complete this document, which can happen after several incorrect verification codes. Please wait up to an hour, request a new code and try again."
 msgstr "Se han realizado demasiados intentos para completar este documento, lo que puede ocurrir tras varios códigos de verificación incorrectos. Espera hasta una hora, solicita un código nuevo e inténtalo de nuevo."
+
+#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
+msgid "Too many codes have been requested. Please wait a few minutes before requesting another."
+msgstr "Se han solicitado demasiados códigos. Espere unos minutos antes de solicitar otro."
 
 #: apps/remix/app/components/general/document-signing/document-signing-access-2fa-gate.tsx
 msgid "Too many incorrect codes. Please wait up to an hour and request a new code."
@@ -12145,7 +12268,6 @@ msgid "We encountered an unknown error while attempting to remove this user. Ple
 msgstr "Encontramos un error desconocido al intentar eliminar a este usuario. Por favor, inténtalo de nuevo más tarde."
 
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 msgid "We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later."
 msgstr "Se encontró un error desconocido mientras se intentaba solicitar el código de autenticación de dos factores. Por favor, inténtelo de nuevo más tarde."
 
@@ -12512,6 +12634,10 @@ msgstr "Has agregado un campo"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You added a recipient"
 msgstr "Has agregado un destinatario"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "You applied the company seal of {legalEntityName} ({sealName})"
+msgstr "Has aplicado el sello de la empresa {legalEntityName} ({sealName})"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You approved the document"

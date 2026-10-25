@@ -102,7 +102,11 @@ export async function rejectDocumentWithToken({
 
   // Update the recipient status to rejected
   const updatedRecipient = await prisma.$transaction(async (tx) => {
-    const actor = await lockEnvelopeForRecipientAction(tx, { envelopeId: envelope.id, recipientId: recipient.id });
+    const actor = await lockEnvelopeForRecipientAction(tx, {
+      envelopeId: envelope.id,
+      recipientId: recipient.id,
+      token,
+    });
 
     // A recipient may not reject before their turn (G4 D5, #145).
     await assertRecipientsTurn(tx, { envelopeId: envelope.id, recipientId: recipient.id });

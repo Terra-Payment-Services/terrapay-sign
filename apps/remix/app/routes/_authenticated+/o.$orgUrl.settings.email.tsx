@@ -54,7 +54,7 @@ export default function OrganisationSettingsGeneral() {
     }
   };
 
-  if (isLoadingOrganisation || !organisationWithSettings) {
+  if (isLoadingOrganisation || !organisationWithSettings?.organisationGlobalSettings) {
     return <SpinnerBox />;
   }
 

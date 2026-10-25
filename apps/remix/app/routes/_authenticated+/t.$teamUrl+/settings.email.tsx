@@ -48,7 +48,7 @@ export default function TeamEmailSettingsGeneral() {
     }
   };
 
-  if (isLoadingTeam || !teamWithSettings) {
+  if (isLoadingTeam || !teamWithSettings?.teamSettings) {
     return <SpinnerBox />;
   }
 

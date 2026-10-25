@@ -54,6 +54,7 @@ import {
   envelopeRow,
   JOB,
   keepRecord,
+  outsideSweepWindow,
   pause,
   QUIET_WINDOW_MS,
   REJECTION_REASON,
@@ -232,7 +233,11 @@ test("C32 A rejects between the signing-request job's two checks: B gets no mail
         await prisma.$transaction([
           prisma.recipient.update({
             where: { id: seeded.a.id },
-            data: { signingStatus: SigningStatus.REJECTED, rejectionReason: REJECTION_REASON, signedAt: new Date() },
+            data: {
+              signingStatus: SigningStatus.REJECTED,
+              rejectionReason: REJECTION_REASON,
+              signedAt: outsideSweepWindow(),
+            },
           }),
           prisma.documentAuditLog.create({
             data: {

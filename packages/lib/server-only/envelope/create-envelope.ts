@@ -50,6 +50,7 @@ import { assertDocumentDataAccess } from '../document-data/assert-document-data-
 import { assertSignatureMethodsEnabled } from '../document-meta/assert-signature-methods-enabled';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { incrementDocumentId, incrementTemplateId } from '../envelope/increment-id';
+import { assertFieldTypesSupported } from '../field/assert-field-types-supported';
 import { assertOrganisationRatesAndLimits } from '../rate-limit/assert-organisation-rates-and-limits';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
 import { resolveSignatureLevel } from '../signature-level/resolve-signature-level';
@@ -367,6 +368,14 @@ export const createEnvelope = async ({
 
     return delegatedOwner;
   };
+
+  // Before anything is written, so a refused request leaves no meta or fields behind (#242).
+  assertFieldTypesSupported(internalVersion, [
+    ...(data.recipients ?? []).flatMap((recipient) => (recipient.fields ?? []).map((field) => field.type)),
+    ...data.envelopeItems.flatMap((item) =>
+      (item.placeholders ?? []).map((placeholder) => placeholder.fieldAndMeta.type),
+    ),
+  ]);
 
   // Seal fields are checked, and their label set from the seal, before anything is written.
   for (const recipient of data.recipients ?? []) {

@@ -10,7 +10,12 @@ import type { TDocumentEmailSettings } from '../../types/document-email';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
+import { assertEnvelopeSettingsEditable } from '../envelope/assert-envelope-settings-editable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import {
+  assertSigningOrderTypeChangeAllowed,
+  lockEnvelopeForSigningOrderEdit,
+} from '../recipient/assert-signing-order-edit-allowed';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
 import { assertCompatibleSigningOrder } from '../signature-level/assert-compatible-signing-order';
 import { assertMergedDocumentMetaMethodsEnabled } from './assert-signature-methods-enabled';
@@ -101,6 +106,37 @@ export const updateDocumentMeta = async ({
 
   return await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    // A finished envelope keeps its settings (#182).
+    await assertEnvelopeSettingsEditable(tx, {
+      envelopeId: envelope.id,
+      meta: {
+        subject,
+        message,
+        dateFormat,
+        timezone,
+        redirectUrl,
+        signingOrder,
+        allowDictateNextSigner,
+        emailReplyTo,
+        emailSettings,
+        distributionMethod,
+        typedSignatureEnabled,
+        uploadSignatureEnabled,
+        drawSignatureEnabled,
+        language,
+      },
+    });
+
+    if (envelope.type === EnvelopeType.DOCUMENT) {
+      const lockedOrder = await lockEnvelopeForSigningOrderEdit(tx, envelope.id);
+
+      assertSigningOrderTypeChangeAllowed({
+        ...lockedOrder,
+        currentSigningOrder: lockedOrder.signingOrder,
+        nextSigningOrder: signingOrder,
+      });
+    }
 
     await assertMergedDocumentMetaMethodsEnabled(tx, envelope.documentMetaId, {
       typedSignatureEnabled,

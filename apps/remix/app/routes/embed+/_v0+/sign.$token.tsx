@@ -60,14 +60,10 @@ const assertEmbedAccess2FASatisfied = async ({
   throw data(
     {
       type: 'embed-access-code-required',
-      documentAuthOptions,
+      // Only what the gate renders: nothing else of the recipient or the document's auth before the code (#214).
       recipient: {
-        id: recipient.id,
         token: recipient.token,
         email: recipient.email,
-        name: recipient.name,
-        role: recipient.role,
-        authOptions: recipient.authOptions,
       },
     },
     {
@@ -122,6 +118,7 @@ async function handleV1Loader({ params, request }: Route.LoaderArgs) {
 
   const { derivedRecipientAccessAuth } = extractDocumentAuthMethods({
     documentAuth: document.authOptions,
+    recipientAuth: recipient.authOptions,
   });
 
   const isAccessAuthValid = derivedRecipientAccessAuth.every((accesssAuth) =>

@@ -28,7 +28,7 @@ export const validateTwoFactorAuthentication = async ({
   }
 
   if (backupCode) {
-    return verifyBackupCode({ user, backupCode });
+    return await verifyBackupCode({ user, backupCode });
   }
 
   throw new AppError(AppErrorCode.TWO_FACTOR_MISSING_CREDENTIALS);

@@ -13,6 +13,7 @@ import { mapRecipientToLegacyRecipient } from '../../utils/recipients';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
+import { assertSigningPositionsAllowed, lockEnvelopeForSigningOrderEdit } from './assert-signing-order-edit-allowed';
 
 export interface CreateEnvelopeRecipientsOptions {
   userId: number;
@@ -102,6 +103,12 @@ export const createEnvelopeRecipients = async ({
 
   const createdRecipients = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
+
+    if (envelope.type === EnvelopeType.DOCUMENT) {
+      const locked = await lockEnvelopeForSigningOrderEdit(tx, envelope.id);
+
+      assertSigningPositionsAllowed({ ...locked, next: [...locked.recipients, ...normalizedRecipients] });
+    }
 
     return await Promise.all(
       normalizedRecipients.map(async (recipient) => {

@@ -7,6 +7,7 @@ import { ZDefaultRecipientsSchema } from '@documenso/lib/types/default-recipient
 import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';
 import { ZDocumentMetaDateFormatSchema, ZDocumentMetaTimezoneSchema } from '@documenso/lib/types/document-meta';
 import { DocumentVisibility } from '@documenso/lib/types/document-visibility';
+import { ZBrandingUrlSchema } from '@documenso/lib/utils/branding-url';
 import { ZSanitizeBrandingCssWarningSchema } from '@documenso/lib/utils/sanitize-branding-css';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { z } from 'zod';
@@ -32,7 +33,7 @@ export const ZUpdateOrganisationSettingsRequestSchema = z.object({
 
     // Branding related settings.
     brandingEnabled: z.boolean().optional(),
-    brandingUrl: z.string().optional(),
+    brandingUrl: ZBrandingUrlSchema.optional(),
     brandingCompanyDetails: z.string().optional(),
     brandingColors: ZCssVarsSchema.nullish(),
     brandingCss: z

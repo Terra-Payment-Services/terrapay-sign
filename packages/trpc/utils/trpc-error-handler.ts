@@ -1,8 +1,36 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { alphaid } from '@documenso/lib/universal/id';
 import { logger } from '@documenso/lib/utils/logger';
+import type { TRPCError } from '@trpc/server';
 import type { ErrorHandlerOptions } from '@trpc/server/unstable-core-do-not-import';
 
 import type { TrpcContext } from '../server/context';
+
+const requestIdsWithoutContext = new WeakMap<TRPCError, string>();
+
+/**
+ * The request id an error is reported under: the context logger's, or, when the context could not be created, one
+ * kept per error so the client's masked response and the server's log line still share it (#168).
+ */
+export const getErrorRequestId = (error: TRPCError, ctx?: Pick<TrpcContext, 'logger'>): string => {
+  const contextRequestId = ctx?.logger.bindings().requestId;
+
+  if (typeof contextRequestId === 'string') {
+    return contextRequestId;
+  }
+
+  const existing = requestIdsWithoutContext.get(error);
+
+  if (existing) {
+    return existing;
+  }
+
+  const requestId = alphaid();
+
+  requestIdsWithoutContext.set(error, requestId);
+
+  return requestId;
+};
 
 // Parameters<NonNullable<Parameters<typeof trpcServer>[0]['onError']>>[0], // :-)
 export const handleTrpcRouterError = (
@@ -21,7 +49,7 @@ export const handleTrpcRouterError = (
   // not an AppError.
   const isLoggableTrpcError = !isAppError && errorCodesToAlertOn.includes(error.code);
 
-  const errorLogger = (ctx?.logger || logger).child({
+  const errorLogger = (ctx?.logger || logger.child({ requestId: getErrorRequestId(error) })).child({
     status: 'error',
     appError: AppError.toJSON(appError),
     path,

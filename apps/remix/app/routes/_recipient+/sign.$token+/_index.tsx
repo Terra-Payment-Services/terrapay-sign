@@ -21,7 +21,6 @@ import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-emai
 import { DocumentAccessAuth } from '@documenso/lib/types/document-auth';
 import { SignatureLevel } from '@documenso/lib/types/signature-level';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
-import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { logger } from '@documenso/lib/utils/logger';
 import { isRecipientExpired } from '@documenso/lib/utils/recipients';
 import { prisma } from '@documenso/prisma';
@@ -144,7 +143,6 @@ const handleV1Loader = async ({ params, request }: Route.LoaderArgs) => {
     return {
       isDocumentAccessValid: false,
       isAccess2FARequired: true,
-      documentAuthOptions: document.authOptions,
       recipient: pickGateRecipient(recipient),
     } as const;
   }
@@ -155,8 +153,6 @@ const handleV1Loader = async ({ params, request }: Route.LoaderArgs) => {
     recipientAccessAuth: derivedRecipientAccessAuth,
   }).catch(() => null);
 
-  const { documentMeta } = document;
-
   if (recipient.signingStatus === SigningStatus.REJECTED) {
     throw redirect(`/sign/${token}/rejected`);
   }
@@ -165,10 +161,9 @@ const handleV1Loader = async ({ params, request }: Route.LoaderArgs) => {
     throw redirect(`/sign/${token}/expired`);
   }
 
+  // The complete page names any redirect URL rather than this link forwarding to it (#186).
   if (document.status === DocumentStatus.COMPLETED || recipient.signingStatus === SigningStatus.SIGNED) {
-    const redirectUrl = documentMeta?.redirectUrl;
-
-    throw redirect(redirectUrl && isValidRedirectUrl(redirectUrl) ? redirectUrl : `/sign/${token}/complete`);
+    throw redirect(`/sign/${token}/complete`);
   }
 
   const [recipientSignatures, settings] = await Promise.all([
@@ -277,7 +272,6 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
     return {
       isDocumentAccessValid: false,
       isAccess2FARequired: true,
-      documentAuthOptions: envelope.authOptions,
       recipient: pickGateRecipient(recipient),
     } as const;
   }
@@ -287,9 +281,7 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
   }
 
   if (isCompleted) {
-    const { redirectUrl } = envelope.documentMeta;
-
-    throw redirect(redirectUrl && isValidRedirectUrl(redirectUrl) ? redirectUrl : `/sign/${token}/complete`);
+    throw redirect(`/sign/${token}/complete`);
   }
 
   if (isExpired) {
@@ -324,16 +316,13 @@ const handleV2Loader = async ({ params, request }: Route.LoaderArgs) => {
 };
 
 /**
- * Only what the access code gate needs, so nothing of the document leaves the
- * server before the code is entered.
+ * Only what the access code gate needs, so nothing of the document or the
+ * recipient beyond the address the code went to leaves the server before the
+ * code is entered (#214).
  */
-const pickGateRecipient = (recipient: Pick<Recipient, 'id' | 'token' | 'email' | 'name' | 'role' | 'authOptions'>) => ({
-  id: recipient.id,
+const pickGateRecipient = (recipient: Pick<Recipient, 'token' | 'email'>) => ({
   token: recipient.token,
   email: recipient.email,
-  name: recipient.name,
-  role: recipient.role,
-  authOptions: recipient.authOptions,
 });
 
 export async function loader(loaderArgs: Route.LoaderArgs) {
@@ -404,7 +393,7 @@ const SigningPageV1 = ({ data }: { data: Awaited<ReturnType<typeof handleV1Loade
 
   if (!data.isDocumentAccessValid) {
     if (data.isAccess2FARequired) {
-      return <DocumentSigningAccess2FAGate documentAuthOptions={data.documentAuthOptions} recipient={data.recipient} />;
+      return <DocumentSigningAccess2FAGate recipient={data.recipient} />;
     }
 
     return <DocumentSigningAuthPageView email={data.recipientEmail} emailHasAccount={!!data.recipientHasAccount} />;
@@ -500,7 +489,7 @@ const SigningPageV2 = ({ data }: { data: Awaited<ReturnType<typeof handleV2Loade
 
   if (!data.isDocumentAccessValid) {
     if (data.isAccess2FARequired) {
-      return <DocumentSigningAccess2FAGate documentAuthOptions={data.documentAuthOptions} recipient={data.recipient} />;
+      return <DocumentSigningAccess2FAGate recipient={data.recipient} />;
     }
 
     return <DocumentSigningAuthPageView email={data.recipientEmail} emailHasAccount={!!data.recipientHasAccount} />;

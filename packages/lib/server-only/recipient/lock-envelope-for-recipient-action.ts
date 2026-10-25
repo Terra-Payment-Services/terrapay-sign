@@ -11,6 +11,11 @@ export type LockEnvelopeForRecipientActionOptions = {
    * filling in another recipient's field). Refused once that recipient has signed.
    */
   fieldRecipientId?: number | null;
+  /**
+   * The signing token the request came with. Refused as an unknown recipient once the recipient's token has been
+   * replaced, which an email change does (#150).
+   */
+  token?: string;
 };
 
 /**
@@ -24,7 +29,7 @@ export type LockEnvelopeForRecipientActionOptions = {
  */
 export const lockEnvelopeForRecipientAction = async (
   tx: Prisma.TransactionClient,
-  { envelopeId, recipientId, fieldRecipientId }: LockEnvelopeForRecipientActionOptions,
+  { envelopeId, recipientId, fieldRecipientId, token }: LockEnvelopeForRecipientActionOptions,
 ) => {
   // FOR NO KEY UPDATE still serialises these actions against each other, but not against the key-share
   // lock a foreign key takes, so an owner's field edit that holds Field rows and writes an audit row
@@ -43,7 +48,7 @@ export const lockEnvelopeForRecipientAction = async (
 
   const recipients = await tx.recipient.findMany({
     where: { envelopeId },
-    select: { id: true, signingStatus: true },
+    select: { id: true, signingStatus: true, token: true },
   });
 
   if (recipients.some((recipient) => recipient.signingStatus === SigningStatus.REJECTED)) {
@@ -54,7 +59,7 @@ export const lockEnvelopeForRecipientAction = async (
 
   const actor = recipients.find((recipient) => recipient.id === recipientId);
 
-  if (!actor) {
+  if (!actor || (token !== undefined && actor.token !== token)) {
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Recipient not found',
     });

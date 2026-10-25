@@ -24,40 +24,40 @@ describe('recipient access code cookie', () => {
   });
 
   it('vouches for the recipient it was issued to', async () => {
-    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7 }));
+    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7, token: 'tok' }));
 
-    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7 })).toBe(true);
+    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7, token: 'tok' })).toBe(true);
   });
 
   it('is HttpOnly and expires', async () => {
-    const setCookie = await createRecipientAccess2FACookie({ recipientId: 7 });
+    const setCookie = await createRecipientAccess2FACookie({ recipientId: 7, token: 'tok' });
 
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain(`Max-Age=${RECIPIENT_ACCESS_2FA_COOKIE_MAX_AGE_SECONDS}`);
   });
 
   it('cannot be renamed onto another recipient', async () => {
-    const issued = (await createRecipientAccess2FACookie({ recipientId: 7 })).split(';')[0];
+    const issued = (await createRecipientAccess2FACookie({ recipientId: 7, token: 'tok' })).split(';')[0];
     const value = issued.slice(issued.indexOf('=') + 1);
     const headers = new Headers({ cookie: `recipientAccess2FA-8=${value}` });
 
-    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 8 })).toBe(false);
+    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 8, token: 'tok' })).toBe(false);
   });
 
   it('is refused once it has expired', async () => {
     const now = Date.now();
-    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7, now }));
+    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7, token: 'tok', now }));
     const later = now + RECIPIENT_ACCESS_2FA_COOKIE_MAX_AGE_SECONDS * 1000 + 1;
 
-    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7, now: later })).toBe(false);
+    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7, token: 'tok', now: later })).toBe(false);
   });
 
   it('is refused when signed with another secret', async () => {
-    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7 }));
+    const headers = asRequestHeaders(await createRecipientAccess2FACookie({ recipientId: 7, token: 'tok' }));
 
     vi.stubEnv('NEXTAUTH_SECRET', 'a-different-secret-entirely-for-signing');
 
-    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7 })).toBe(false);
+    expect(await hasRecipientAccess2FACookie({ headers, recipientId: 7, token: 'tok' })).toBe(false);
   });
 
   it('is only required when the recipient access auth asks for a code', async () => {
@@ -67,7 +67,7 @@ describe('recipient access code cookie', () => {
       await isRecipientAccess2FASatisfied({
         headers,
         documentAuthOptions: null,
-        recipient: { id: 7, authOptions: null },
+        recipient: { id: 7, token: 'tok', authOptions: null },
       }),
     ).toBe(true);
 
@@ -75,7 +75,7 @@ describe('recipient access code cookie', () => {
       await isRecipientAccess2FASatisfied({
         headers,
         documentAuthOptions: null,
-        recipient: { id: 7, authOptions: { accessAuth: ['TWO_FACTOR_AUTH'], actionAuth: [] } },
+        recipient: { id: 7, token: 'tok', authOptions: { accessAuth: ['TWO_FACTOR_AUTH'], actionAuth: [] } },
       }),
     ).toBe(false);
   });
@@ -98,7 +98,7 @@ const issueCookieFor = async (environment: Record<string, string>) => {
   vi.doMock('@documenso/prisma', () => ({ prisma: { recipient: { findFirst: vi.fn() } } }));
 
   const fresh = await import('./recipient-access-2fa-cookie');
-  const [pair, ...rest] = (await fresh.createRecipientAccess2FACookie({ recipientId: 7 }))
+  const [pair, ...rest] = (await fresh.createRecipientAccess2FACookie({ recipientId: 7, token: 'tok' }))
     .split(';')
     .map((part) => part.trim());
 

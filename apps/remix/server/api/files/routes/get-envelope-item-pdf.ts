@@ -1,10 +1,10 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
+import { sValidator } from '@documenso/auth/server/lib/utils/s-validator';
 import { checkEnvelopeFileAccess } from '@documenso/lib/server-only/envelope/check-envelope-file-access';
 import type { DocumentDataVersion } from '@documenso/lib/types/document';
 import { sha256 } from '@documenso/lib/universal/crypto';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import type { DocumentData, EnvelopeItem } from '@prisma/client';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';

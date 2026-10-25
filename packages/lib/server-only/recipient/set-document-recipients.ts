@@ -18,7 +18,12 @@ import { canRecipientBeModified, isRecipientEmailValidForSending } from '../../u
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
-import { lockEnvelopeForOwnerEdit } from './lock-envelope-for-owner-edit';
+import {
+  assertRecipientsNamedOnce,
+  assertSigningPositionsAllowed,
+  lockEnvelopeForSigningOrderEdit,
+} from './assert-signing-order-edit-allowed';
+import { getRecipientEmailChangeData } from './recipient-email-change';
 
 export interface SetDocumentRecipientsOptions {
   userId: number;
@@ -154,15 +159,38 @@ export const setDocumentRecipients = async ({
     };
   });
 
+  assertRecipientsNamedOnce(linkedRecipients.map((recipient) => recipient._persisted?.id));
+
   const persistedRecipients = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
 
     // The checks above are made again under the envelope lock, which rejection and signing also take. A recipient
     // who rejected or signed after the first read is otherwise reset to NOT_SIGNED by the upsert below, or
     // deleted, even when the caller left them unchanged (#121).
-    const locked = await lockEnvelopeForOwnerEdit(tx, envelope.id);
+    const locked = await lockEnvelopeForSigningOrderEdit(tx, envelope.id);
 
     const lockedRecipientOf = (id: number) => locked.recipients.find((candidate) => candidate.id === id);
+
+    // The order checked below and the one written are the same: the entry's where it carries one, else the row read
+    // under the lock, never the one read before it (#157 C2d).
+    const effectiveRecipients = linkedRecipients.map((recipient) => {
+      const lockedPersisted = recipient._persisted ? lockedRecipientOf(recipient._persisted.id) : undefined;
+
+      return {
+        ...recipient,
+        signingOrder:
+          recipient.signingOrder === undefined ? (lockedPersisted?.signingOrder ?? null) : recipient.signingOrder,
+      };
+    });
+
+    assertSigningPositionsAllowed({
+      ...locked,
+      next: effectiveRecipients.map((recipient) => ({
+        id: recipient._persisted?.id,
+        role: recipient.role,
+        signingOrder: recipient.signingOrder,
+      })),
+    });
 
     const isLockedRecipientModifiable = (id: number) => {
       const lockedRecipient = lockedRecipientOf(id);
@@ -176,7 +204,7 @@ export const setDocumentRecipients = async ({
       });
     }
 
-    const lockedLinkedRecipients = linkedRecipients.map((recipient) => {
+    const lockedLinkedRecipients = effectiveRecipients.map((recipient) => {
       if (!recipient._persisted) {
         return recipient;
       }
@@ -234,6 +262,7 @@ export const setDocumentRecipients = async ({
             sendStatus: recipient.role === RecipientRole.CC ? SendStatus.SENT : SendStatus.NOT_SENT,
             signingStatus: recipient.role === RecipientRole.CC ? SigningStatus.SIGNED : SigningStatus.NOT_SIGNED,
             authOptions,
+            ...(recipient._persisted ? getRecipientEmailChangeData(recipient._persisted.email, recipient.email) : {}),
           },
           create: {
             name: recipient.name,

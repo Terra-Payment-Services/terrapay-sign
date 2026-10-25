@@ -25,6 +25,7 @@ import {
   resolveCompanySealFieldMeta,
 } from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { assertFieldTypesSupported } from './assert-field-types-supported';
 
 export type SetFieldsForTemplateOptions = {
   userId: number;
@@ -83,6 +84,11 @@ export const setFieldsForTemplate = async ({
       message: 'Document not found',
     });
   }
+
+  assertFieldTypesSupported(
+    envelope.internalVersion,
+    fields.map((field) => field.type),
+  );
 
   const existingFields = envelope.fields;
 

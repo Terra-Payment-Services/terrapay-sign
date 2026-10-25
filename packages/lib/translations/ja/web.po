@@ -264,9 +264,11 @@ msgstr "{0} のダイレクト署名テンプレート"
 msgid "{0} field"
 msgstr "{0} フィールド"
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{0} からドキュメント「{1}」への{recipientActionVerb}依頼が届いています。"
 
@@ -274,13 +276,6 @@ msgstr "{0} からドキュメント「{1}」への{recipientActionVerb}依頼�
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} a document"
 msgstr "{0} からドキュメントへの{recipientActionVerb}依頼が届いています"
-
-#. placeholder {0}: user.name || user.email
-#. placeholder {1}: envelope.team.name
-#. placeholder {2}: envelope.title
-#: packages/lib/server-only/document/resend-document.ts
-msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0} が「{1}」を代表してドキュメント「{2}」の{recipientActionVerb}を依頼しています。"
 
 #. placeholder {0}: formatChipCount(totalVisibleCount, isVisibleCountCapped)
 #: apps/remix/app/components/general/app-command-menu.tsx
@@ -291,6 +286,12 @@ msgstr "{0} 件の結果"
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
 msgid "{0} Teams"
 msgstr "{0} のチーム"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "{0}, {1}"
+msgstr "{0}, {1}"
 
 #. placeholder {0}: currentStepData.order
 #. placeholder {1}: envelopeEditorSteps.length
@@ -364,9 +365,11 @@ msgstr "{inviterName} は、あなたをドキュメント {documentName} から
 msgid "{inviterName} has removed you from the document<0/>\"{documentName}\""
 msgstr "{inviterName} は、あなたをドキュメント<0/>「{documentName}」から削除しました"
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{inviterName} が「{0}」を代表して、ドキュメント「{1}」の{recipientActionVerb}を依頼しています。"
 
@@ -481,6 +484,10 @@ msgstr "{user} がフィールドを追加しました。"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} added a recipient"
 msgstr "{user} が受信者を追加しました。"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "{user} applied the company seal of {legalEntityName} ({sealName})"
+msgstr "{user} が {legalEntityName} の社印（{sealName}）を押印しました"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} approved the document"
@@ -970,6 +977,10 @@ msgstr "新しいメンバーが組織 {organisationName} に参加しました"
 #: apps/remix/app/routes/_unauthenticated+/check-email.tsx
 msgid "A password reset email has been sent, if you have an account you should see it in your inbox shortly."
 msgstr "パスワード再設定用のメールを送信しました。アカウントをお持ちの場合は、まもなく受信トレイに届きます。"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "A recipient applied the company seal of {legalEntityName} ({sealName})"
+msgstr "受信者が {legalEntityName} の社印（{sealName}）を押印しました"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -1543,7 +1554,6 @@ msgstr "各メンバー宛てに招待状を含むメールが送信されます
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.groups.$id.tsx
@@ -1837,6 +1847,19 @@ msgstr "API の使用量がフェアユースの上限に近づいています"
 msgid "App Version"
 msgstr "アプリのバージョン"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Applied"
+msgstr "押印日時"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply company seal"
+msgstr "社印を押印"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply seal"
+msgstr "押印する"
+
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Approaching fair use limit"
 msgstr "フェアユースの上限に近づいています"
@@ -2013,7 +2036,6 @@ msgstr "補助中"
 
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
-#: packages/lib/types/document-meta.ts
 #: packages/ui/primitives/document-flow/add-settings.types.ts
 #: packages/ui/primitives/template-flow/add-template-settings.types.tsx
 msgid "At least one signature type must be enabled"
@@ -2228,6 +2250,11 @@ msgstr "ブランディング設定"
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
+msgid "Branding preferences not saved"
+msgstr "ブランディング設定は保存されませんでした"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
+#: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
 msgid "Branding preferences updated"
 msgstr "ブランディング設定を更新しました"
 
@@ -2358,6 +2385,7 @@ msgstr "メンバーが見つかりませんか？"
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/dialogs/session-logout-all-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-checkbox-dialog.tsx
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-email-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-initials-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-name-dialog.tsx
@@ -2519,6 +2547,10 @@ msgstr "文字数制限"
 msgid "Charts"
 msgstr "グラフ"
 
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Check the seal below. Once applied, it becomes part of the document."
+msgstr "以下の印影を確認してください。押印すると文書の一部になります。"
+
 #: apps/remix/app/components/forms/password-setup-request-button.tsx
 #: apps/remix/app/components/forms/password-setup-request.tsx
 msgid "Check your email"
@@ -2548,6 +2580,10 @@ msgstr "チェックボックスの値"
 #: packages/lib/constants/i18n.ts
 msgid "Chinese"
 msgstr "中国語"
+
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "Choose a seal"
+msgstr "印を選択"
 
 #: apps/remix/app/components/dialogs/template-direct-link-dialog.tsx
 msgid "Choose an existing recipient from below to continue"
@@ -2652,6 +2688,23 @@ msgstr "サイドバーを折りたたむ"
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
 msgid "Comma-separated list of email domains to block from signing up."
 msgstr "サインアップをブロックするメールドメインをカンマ区切りで入力してください。"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-drag-drop.tsx
+#: packages/lib/utils/fields.ts
+#: packages/ui/primitives/document-flow/types.ts
+msgid "Company seal"
+msgstr "社印"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
+msgid "Company Seal Settings"
+msgstr "社印の設定"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/utils/settings-nav.ts
+msgid "Company seals"
+msgstr "社印"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
@@ -2816,6 +2869,7 @@ msgstr "コンテンツ"
 #: apps/remix/app/components/dialogs/passkey-create-dialog.tsx
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/general/document-signing/document-signing-form.tsx
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/team.verify.email.$token.tsx
@@ -3174,6 +3228,12 @@ msgstr "作成日時"
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.$id.logs.tsx
 msgid "Created by"
 msgstr "作成者"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Created by {0} on {1}"
+msgstr "{1} に {0} が作成"
 
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Created on"
@@ -5145,6 +5205,11 @@ msgstr "フィールドのフォントサイズ"
 msgid "Field format"
 msgstr "フィールド形式"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Field ID"
+msgstr "フィールド ID"
+
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: packages/ui/primitives/document-flow/field-item.tsx
 msgid "Field ID:"
@@ -5686,6 +5751,10 @@ msgstr "より高い上限が必要になりそうな場合は、{SUPPORT_EMAIL}
 msgid "If your authenticator app does not support QR codes, you can use the following code instead:"
 msgstr "認証アプリが QR コードに対応していない場合は、代わりに次のコードを使用できます。"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Image"
+msgstr "画像"
+
 #: packages/lib/constants/billing.ts
 msgctxt "Subscription status"
 msgid "Inactive"
@@ -6082,6 +6151,10 @@ msgstr "組織から退出"
 #: apps/remix/app/components/forms/editor/editor-field-generic-field-forms.tsx
 msgid "Left"
 msgstr "左"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Legal entity"
+msgstr "法人"
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
 msgid "Legality of Electronic Signatures"
@@ -6559,6 +6632,7 @@ msgstr "N/A"
 #: apps/remix/app/components/tables/settings-security-passkey-table-actions.tsx
 #: apps/remix/app/components/tables/settings-security-passkey-table.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/users.$id.tsx
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.tokens.tsx
 #: packages/lib/utils/fields.ts
 #: packages/ui/primitives/document-flow/add-fields.tsx
@@ -6796,6 +6870,10 @@ msgstr "結果が見つかりません"
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "No results found."
 msgstr "結果が見つかりません。"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "No seals yet."
+msgstr "まだ印がありません。"
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "No signature field found"
@@ -8577,17 +8655,38 @@ msgstr "変更を保存"
 msgid "Save failed"
 msgstr "保存に失敗しました"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Save seal"
+msgstr "印を保存"
+
 #: packages/ui/primitives/template-flow/add-template-fields.tsx
 msgid "Save Template"
 msgstr "テンプレートを保存"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal created"
+msgstr "印を作成しました"
+
+#. placeholder {0}: seal.id
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal ID: {0}"
+msgstr "印 ID: {0}"
 
 #: apps/remix/app/routes/_authenticated+/admin+/unsealed-documents._index.tsx
 msgid "Seal job triggered"
 msgstr "封印ジョブをトリガーしました"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal preview"
+msgstr "印影のプレビュー"
+
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Sealing job started"
 msgstr "封印ジョブを開始しました"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seals that members of your organisation can apply to documents. A seal cannot be changed or removed once saved, so check the image before saving."
+msgstr "組織のメンバーが文書に押印できる印です。保存した印は変更も削除もできないため、保存する前に画像を確認してください。"
 
 #: apps/remix/app/components/general/app-nav-desktop.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.members.tsx
@@ -10380,6 +10479,22 @@ msgstr "受信者は、ドキュメントを完了するために署名する必
 msgid "The recipient is required to view the document for it to be completed."
 msgstr "受信者は、ドキュメントを完了するために閲覧する必要があります。"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal can now be placed on documents."
+msgstr "この印を文書に配置できるようになりました。"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal was not created"
+msgstr "印は作成されませんでした"
+
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
+msgid "The sender has linked a page for you to visit next."
+msgstr "送信者が次にアクセスするページを指定しています。"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "The signature image of {signer} could not be rendered, so the document was not sealed"
+msgstr "{signer} の署名画像を表示できなかったため、文書は封印されませんでした"
+
 #: packages/ui/components/document/document-send-email-message-helper.tsx
 msgid "The signer's email"
 msgstr "署名者のメールアドレス"
@@ -10821,6 +10936,10 @@ msgstr "この PDF の既存の署名はすでに無効です。署名後にフ�
 msgid "This recipient can no longer be modified as they have signed a field, or completed the document."
 msgstr "この受信者は、すでにフィールドに署名したかドキュメントを完了しているため、これ以上変更できません。"
 
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "This recipient is not a member of the organisation, so they cannot apply the seal and the document cannot be sent."
+msgstr "この受信者は組織のメンバーではないため、押印できず、文書を送信できません。"
+
 #: apps/remix/app/components/forms/signin.tsx
 msgid "This session has expired. Please try again."
 msgstr "このセッションの有効期限が切れています。もう一度お試しください。"
@@ -11108,6 +11227,10 @@ msgstr "試行回数が多すぎます"
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Too many attempts have been made to complete this document, which can happen after several incorrect verification codes. Please wait up to an hour, request a new code and try again."
 msgstr "この文書の完了が何度も試行されました。誤った認証コードを複数回入力した場合に発生することがあります。最大 1 時間待ってから、新しいコードをリクエストしてもう一度お試しください。"
+
+#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
+msgid "Too many codes have been requested. Please wait a few minutes before requesting another."
+msgstr "コードのリクエストが多すぎます。数分待ってから、もう一度リクエストしてください。"
 
 #: apps/remix/app/components/general/document-signing/document-signing-access-2fa-gate.tsx
 msgid "Too many incorrect codes. Please wait up to an hour and request a new code."
@@ -12145,7 +12268,6 @@ msgid "We encountered an unknown error while attempting to remove this user. Ple
 msgstr "このユーザーの削除中に不明なエラーが発生しました。後でもう一度お試しください。"
 
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 msgid "We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later."
 msgstr "二要素認証コードのリクエスト中に不明なエラーが発生しました。後でもう一度お試しください。"
 
@@ -12512,6 +12634,10 @@ msgstr "フィールドを追加しました"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You added a recipient"
 msgstr "受信者を追加しました"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "You applied the company seal of {legalEntityName} ({sealName})"
+msgstr "{legalEntityName} の社印（{sealName}）を押印しました"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You approved the document"

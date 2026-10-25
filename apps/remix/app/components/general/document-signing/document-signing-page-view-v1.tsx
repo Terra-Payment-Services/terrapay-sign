@@ -14,7 +14,6 @@ import type { CompletedField } from '@documenso/lib/types/fields';
 import { isFieldUnsignedAndRequired } from '@documenso/lib/utils/advanced-fields-helpers';
 import { getDocumentDataUrlForPdfViewer } from '@documenso/lib/utils/envelope-download';
 import { validateFieldsInserted } from '@documenso/lib/utils/fields';
-import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import type { FieldWithSignatureAndFieldMeta } from '@documenso/prisma/types/field-with-signature-and-fieldmeta';
 import type { RecipientWithFields } from '@documenso/prisma/types/recipient-with-fields';
 import { trpc } from '@documenso/trpc/react';
@@ -116,11 +115,8 @@ export const DocumentSigningPageViewV1 = ({
 
     await completeDocumentWithToken(payload);
 
-    if (documentMeta?.redirectUrl && isValidRedirectUrl(documentMeta.redirectUrl)) {
-      window.location.href = documentMeta.redirectUrl;
-    } else {
-      window.location.href = `/sign/${recipient.token}/complete`;
-    }
+    // The complete page names any redirect URL and lets the signer choose to follow it (#186).
+    window.location.href = `/sign/${recipient.token}/complete`;
   };
 
   let senderName = document.user.name ?? '';

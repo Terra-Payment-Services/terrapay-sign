@@ -8,12 +8,13 @@ import type { Envelope, Field, Recipient } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
+import { assertFieldTypesSupported } from '../field/assert-field-types-supported';
 import { convertPlaceholdersToFieldInputs, extractPdfPlaceholders } from '../pdf/auto-place-fields';
 import { findRecipientByPlaceholder } from '../pdf/helpers';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
 
 type UnsafeReplaceEnvelopeItemPdfOptions = {
-  envelope: Pick<Envelope, 'id' | 'type' | 'formValues' | 'teamId'>;
+  envelope: Pick<Envelope, 'id' | 'type' | 'formValues' | 'teamId' | 'internalVersion'>;
 
   /**
    * Recipients used to resolve placeholder field assignments.
@@ -87,6 +88,12 @@ export const UNSAFE_replaceEnvelopeItemPdf = async ({
   });
 
   const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
+
+  // Before the upload, so a refused replacement stores nothing (#242).
+  assertFieldTypesSupported(
+    envelope.internalVersion,
+    placeholders.map((placeholder) => placeholder.fieldAndMeta.type),
+  );
 
   // Upload the new PDF and get a new DocumentData record.
   const { documentData: newDocumentData, filePageCount } = await putPdfFileServerSide(

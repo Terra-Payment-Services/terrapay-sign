@@ -1,4 +1,4 @@
-import { getHighestOrganisationRoleInGroup } from '@documenso/lib/utils/organisations';
+import { canExecuteOrganisationAction, getHighestOrganisationRoleInGroup } from '@documenso/lib/utils/organisations';
 import { prisma } from '@documenso/prisma';
 
 import { authenticatedProcedure } from '../trpc';
@@ -48,6 +48,10 @@ export const getOrganisations = async ({ userId }: { userId: number }) => {
 
     return {
       ...organisation,
+      // The billing customer is for those who manage the organisation, as in organisation.get (#164).
+      customerId: canExecuteOrganisationAction('MANAGE_ORGANISATION', currentOrganisationRole)
+        ? organisation.customerId
+        : null,
       currentOrganisationRole: currentOrganisationRole,
       currentMemberId: organisation.members[0].id,
     };

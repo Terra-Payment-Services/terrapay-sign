@@ -24,8 +24,8 @@
  * forced order the outcome is determined: with the sign queued ahead of the
  * completion that brings its turn, the sign must be refused, 400
  * RECIPIENT_OUT_OF_TURN, field untouched; with the completion queued first, the
- * sign must answer 200. Those are the order-specific assertions below. C91 is
- * sharpened the same way (reorder first: the sign is refused).
+ * sign must answer 200. Those are the order-specific assertions below. C91's
+ * reorder is refused in every ordering since #157, so its sign always wins.
  *
  * | Criterion | Test                                                                  | Interleaving                     |
  * | --------- | --------------------------------------------------------------------- | -------------------------------- |
@@ -483,16 +483,22 @@ const seedC91 = async (version: 1 | 2) => {
 for (const version of VERSIONS) {
   const route = ROUTE_FOR_VERSION[version];
 
-  test(`C91 control V${version}: ${route} alone swaps s2 and s3 on fixture S with s1 SIGNED`, async ({ request }) => {
+  // Superseded by #157 C2: the swap moves the current signer, so it is refused whatever the timing.
+  test(`C91 control V${version}: ${route} alone cannot swap s2 and s3 on fixture S with s1 SIGNED`, async ({
+    request,
+  }) => {
     const seeded = await seedC91(version);
     const cookie = await seedSessionCookie(seeded.owner.user.id);
     const reply = await reorder(request, seeded, route, cookie);
 
     await keepRecord(`C91-control-v${version}.json`, { envelopeId: seeded.envelopeId, route, reply: brief(reply) });
 
-    expect(isOk(reply), `premise: the reorder alone succeeds: ${reply.status} ${reply.body.slice(0, 300)}`).toBe(true);
-    expect(await order(seeded, 's2'), 'premise: s2 stored at order 3').toBe(3);
-    expect(await order(seeded, 's3'), 'premise: s3 stored at order 2').toBe(2);
+    expect(reply.status >= 400 && reply.status < 500, `the reorder alone is refused: ${reply.status}`).toBe(true);
+    expect(reply.body, 'refused by the signing-order rule (#157)').toContain(
+      'A recipient cannot be placed at or ahead of the signer whose turn it is.',
+    );
+    expect(await order(seeded, 's2'), 's2 stays at order 2').toBe(2);
+    expect(await order(seeded, 's3'), 's3 stays at order 3').toBe(3);
   });
 
   test(`C91 V${version}: s2's TEXT sign and a ${route} reorder swapping s2 behind s3, released together`, async ({
@@ -563,29 +569,8 @@ for (const version of VERSIONS) {
         s2Order === 2 && s3Order === 3 ? null : `orders changed to s2=${s2Order}, s3=${s3Order} after a refusal`,
       ];
 
-      /** Allowed state 2: the reorder applied (200) and s2's sign refused, out of turn. */
-      const reorderWon = () => [
-        isOk(reorderReply) ? null : `the reorder answered ${reorderReply.status}, expected 200`,
-        s2Order === 3 && s3Order === 2 ? null : `after the reorder s2=${s2Order}, s3=${s3Order}, expected 3 and 2`,
-        isOutOfTurn(signReply)
-          ? null
-          : `sign after the reorder answered ${signReply.status} ${errorOf(signReply).code ?? ''}, expected 400 ${OUT_OF_TURN}`,
-        inserted ? 'the out-of-turn field was inserted' : null,
-      ];
-
-      if (!isForced) {
-        // Order unknown: either allowed state passes.
-        const one = signWon().filter(Boolean);
-        const two = reorderWon().filter(Boolean);
-
-        if (one.length > 0 && two.length > 0) {
-          problems.push(`unforced trial matches neither allowed state: ${one.join('; ')} | ${two.join('; ')}`);
-        }
-      } else if (which === 'sign-first') {
-        problems.push(...signWon());
-      } else {
-        problems.push(...reorderWon());
-      }
+      // Since #157 the reorder is refused in every ordering, so the sign winning is the only allowed state.
+      problems.push(...signWon());
 
       return { verdict: verdictOf(...problems), record };
     });

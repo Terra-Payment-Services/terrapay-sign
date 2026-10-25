@@ -1,4 +1,6 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { getMemberOrganisationRole } from '@documenso/lib/server-only/team/get-member-roles';
+import { canExecuteOrganisationAction } from '@documenso/lib/utils/organisations';
 import { prisma } from '@documenso/prisma';
 
 import { authenticatedProcedure } from '../trpc';
@@ -17,10 +19,22 @@ export const getOrganisationRoute = authenticatedProcedure
       },
     });
 
-    return await getOrganisation({
+    const organisation = await getOrganisation({
       userId: ctx.user.id,
       organisationReference,
     });
+
+    const role = await getMemberOrganisationRole({
+      organisationId: organisation.id,
+      reference: { type: 'User', id: ctx.user.id },
+    });
+
+    // Only those who can manage the organisation see its settings, subscription and billing customer (#164).
+    if (!canExecuteOrganisationAction('MANAGE_ORGANISATION', role)) {
+      return { ...organisation, organisationGlobalSettings: null, subscription: null, customerId: null };
+    }
+
+    return organisation;
   });
 
 type GetOrganisationOptions = {

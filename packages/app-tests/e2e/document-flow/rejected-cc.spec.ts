@@ -36,6 +36,7 @@ import {
   expectOk,
   expectRefused,
   keepRecord,
+  outsideSweepWindow,
   type Reply,
   recipientRow,
   reject,
@@ -59,7 +60,7 @@ const makeCc = async (admin: Awaited<ReturnType<typeof adminSession>>, recipient
 const seedRejection = async (seeded: Seeded, recipientId: number, role: RecipientRole) => {
   const row = await prisma.recipient.update({
     where: { id: recipientId },
-    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: REASON, signedAt: new Date(), role },
+    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: REASON, signedAt: outsideSweepWindow(), role },
   });
 
   await prisma.documentAuditLog.create({

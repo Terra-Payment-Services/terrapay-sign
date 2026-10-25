@@ -20,6 +20,7 @@ import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { type BoundingBox, savePdfWithWhiteouts, whiteoutRegions } from '../pdf/auto-place-fields';
 import { assertSignaturesValidOnArrival } from '../pdf/normalize-pdf';
 import { assertRecipientFieldsModifiableUnderLock } from '../recipient/lock-envelope-for-owner-edit';
+import { assertFieldTypesSupported } from './assert-field-types-supported';
 
 type CoordinatePosition = {
   page: number;
@@ -244,6 +245,11 @@ export const createEnvelopeFields = async ({
     const placeholderWhiteouts = new Map<string, Array<{ pageIndex: number; bbox: BoundingBox }>>();
 
     // Field validation and placeholder resolution.
+    assertFieldTypesSupported(
+      envelope.internalVersion,
+      fields.map((field) => field.type),
+    );
+
     const validatedFields = fields.flatMap((field) => {
       const recipient = envelope.recipients.find((recipient) => recipient.id === field.recipientId);
 

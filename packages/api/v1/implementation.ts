@@ -1177,6 +1177,11 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      // A refusal such as the signing-order rule (#157) keeps its own status and message.
+      if (err instanceof AppError && err.code === AppErrorCode.INVALID_REQUEST) {
+        return AppError.toRestAPIError(err);
+      }
+
       return {
         status: 500,
         body: {

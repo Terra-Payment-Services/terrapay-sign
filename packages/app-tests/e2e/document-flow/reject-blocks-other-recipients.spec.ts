@@ -9,8 +9,8 @@
  *
  * "Rejected but not yet sealed" (C1 to C8) is seeded directly: signer A is
  * REJECTED with a reason and a DOCUMENT_RECIPIENT_REJECTED audit row, the
- * envelope is still PENDING and no seal job is queued. signedAt is set to now
- * so the seal sweep leaves the envelope alone for the length of the test.
+ * envelope is still PENDING and no seal job is queued. signedAt is set outside
+ * the seal sweep's window so the sweep never picks the envelope up.
  *
  * Each sequential test also runs the same request on a sibling envelope where
  * nobody has rejected, and expects it to succeed, so a refusal cannot come
@@ -50,6 +50,7 @@ import { type APIRequestContext, type APIResponse, expect, test } from '@playwri
 import { DocumentStatus, FieldType, SigningStatus } from '@prisma/client';
 
 import { apiSeedPendingDocument } from '../fixtures/api-seeds';
+import { outsideSweepWindow } from '../fixtures/reject-seal';
 import {
   addressFor,
   assertMailCatcherReachable,
@@ -299,8 +300,8 @@ const seedEnvelope = async (
       }
     : undefined;
 
-  // Keep the seal sweep away: it looks only at envelopes whose recipients last acted long ago.
-  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: new Date() } });
+  // Keep the seal sweep away: see outsideSweepWindow.
+  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: outsideSweepWindow() } });
 
   await markVersion(envelope.id, options.internalVersion ?? 2);
 
@@ -319,7 +320,7 @@ const seedEnvelope = async (
 const seedRejectedNotSealed = async (seeded: Seeded, reason = 'A rejected before the seal') => {
   await prisma.recipient.update({
     where: { id: seeded.a.id },
-    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: reason, signedAt: new Date() },
+    data: { signingStatus: SigningStatus.REJECTED, rejectionReason: reason, signedAt: outsideSweepWindow() },
   });
 
   await prisma.documentAuditLog.create({
@@ -1397,7 +1398,7 @@ const seedAssistantEnvelope = async (
   }
 
   // Keep the seal sweep away, as seedEnvelope does.
-  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: new Date() } });
+  await prisma.recipient.updateMany({ where: { envelopeId: envelope.id }, data: { signedAt: outsideSweepWindow() } });
 
   await markVersion(envelope.id, options.internalVersion ?? 2);
 

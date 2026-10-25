@@ -29,10 +29,10 @@ export const ZGetTeamResponseSchema = TeamSchema.pick({
   currentTeamRole: z.nativeEnum(TeamMemberRole),
   teamSettings: TeamGlobalSettingsSchema.omit({
     id: true,
-  }),
+  }).nullable(),
   derivedSettings: OrganisationGlobalSettingsSchema.omit({
     id: true,
-  }),
+  }).nullable(),
 });
 
 export type TGetTeamResponse = z.infer<typeof ZGetTeamResponseSchema>;

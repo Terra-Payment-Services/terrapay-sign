@@ -7,6 +7,20 @@ const CONTENT_TYPE_JSON = 'application/json';
 const CONTENT_TYPE_URLENCODED = 'application/x-www-form-urlencoded';
 const CONTENT_TYPE_MULTIPART = 'multipart/form-data';
 
+const SUPPORTED_BODY_CONTENT_TYPES = [CONTENT_TYPE_JSON, CONTENT_TYPE_URLENCODED, CONTENT_TYPE_MULTIPART];
+
+const isBodilessMethod = (req: Request) => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+
+const hasSupportedContentType = (req: Request) => {
+  if (isBodilessMethod(req)) {
+    return true;
+  }
+
+  const mediaType = (req.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+
+  return SUPPORTED_BODY_CONTENT_TYPES.includes(mediaType);
+};
+
 const getUrlEncodedBody = async (req: Request) => {
   const params = new URLSearchParams(await req.text());
 
@@ -49,7 +63,7 @@ const getMultipartBody = async (req: Request) => {
  */
 const getRequestBody = async (req: Request) => {
   try {
-    const contentType = req.headers.get('content-type') || '';
+    const contentType = (req.headers.get('content-type') || '').toLowerCase();
 
     if (contentType.includes(CONTENT_TYPE_JSON)) {
       return {
@@ -101,9 +115,11 @@ const getRequestBody = async (req: Request) => {
 const createRequestProxy = async (req: Request, url?: string) => {
   const body = await getRequestBody(req);
 
-  const originalContentType = req.headers.get('content-type') || '';
+  const originalContentType = (req.headers.get('content-type') || '').toLowerCase();
 
+  const isJson = originalContentType.includes(CONTENT_TYPE_JSON);
   const isMultipart = originalContentType.includes(CONTENT_TYPE_MULTIPART);
+  const isUrlEncoded = originalContentType.includes(CONTENT_TYPE_URLENCODED);
 
   return new Proxy(req, {
     get: (target, prop) => {
@@ -130,8 +146,15 @@ const createRequestProxy = async (req: Request, url?: string) => {
           // This is necessary because `createOpenApiNodeHttpHandler` aborts on any bodied
           // request that isn't application/json. Since we've already parsed the multipart
           // data into a plain object above, this is safe to do.
-          if (isMultipart) {
+          // URL-encoded bodies are parsed above too, and tRPC has no handler for them (#227).
+          // JSON is rewritten as well, because tRPC matches the type case-sensitively (#227).
+          if (isJson || isMultipart || isUrlEncoded) {
             headers.set('content-type', CONTENT_TYPE_JSON);
+          }
+
+          // tRPC also rejects some content types on a GET, outside any await, so a bodiless request carries none (#227).
+          if (isBodilessMethod(target)) {
+            headers.delete('content-type');
           }
 
           return headers;
@@ -156,8 +179,22 @@ export type CreateOpenApiFetchHandlerOptions<TRouter extends OpenApiRouter> = Om
 export const createOpenApiFetchHandler = async <TRouter extends OpenApiRouter>(
   opts: CreateOpenApiFetchHandlerOptions<TRouter>,
 ): Promise<Response> => {
+  // trpc-to-openapi does not await tRPC's content-type check, so an unsupported type used to reject with nothing
+  // listening and end the process (#227). Only the types parsed above reach it.
+  if (!hasSupportedContentType(opts.req)) {
+    return new Response(JSON.stringify({ message: 'Unsupported content type', code: 'UNSUPPORTED_MEDIA_TYPE' }), {
+      status: 415,
+      headers: { 'content-type': CONTENT_TYPE_JSON },
+    });
+  }
+
   const resHeaders = new Headers();
   const url = new URL(opts.req.url.replace(opts.endpoint, ''));
+
+  // tRPC reads these in the same un-awaited call and rejects a malformed connectionParams, or a batch whose path
+  // parameter splits on commas into mixed procedure types; no OpenAPI route uses either (#227).
+  url.searchParams.delete('connectionParams');
+  url.searchParams.delete('batch');
   const req: Request = await createRequestProxy(opts.req, url.toString());
 
   // @ts-expect-error Inherited from original fetch handler in `trpc-to-openapi`
@@ -203,6 +240,24 @@ export const createOpenApiFetchHandler = async <TRouter extends OpenApiRouter>(
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const nodeRes = res as unknown as Parameters<typeof openApiHttpHandler>[1];
 
-    void openApiHttpHandler(nodeReq, nodeRes);
+    // A rejection here would otherwise be unhandled and end the process (#227), e.g. the library throws for a
+    // bodied request whose content type it does not accept.
+    openApiHttpHandler(nodeReq, nodeRes).catch((error: unknown) => {
+      const isUnsupportedMediaType = error instanceof TRPCError && error.code === 'UNSUPPORTED_MEDIA_TYPE';
+
+      resolve(
+        new Response(
+          JSON.stringify(
+            isUnsupportedMediaType
+              ? { message: 'Unsupported content type', code: 'UNSUPPORTED_MEDIA_TYPE' }
+              : { message: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' },
+          ),
+          {
+            status: isUnsupportedMediaType ? 415 : 500,
+            headers: { 'content-type': CONTENT_TYPE_JSON },
+          },
+        ),
+      );
+    });
   });
 };

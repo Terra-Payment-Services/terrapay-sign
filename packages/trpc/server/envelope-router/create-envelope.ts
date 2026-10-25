@@ -1,6 +1,7 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { convertToPdf } from '@documenso/lib/server-only/document-conversion';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
+import { assertFieldTypesSupported } from '@documenso/lib/server-only/field/assert-field-types-supported';
 import {
   assertEnvelopeItemCountWithinLimit,
   getEnvelopeItemLimit,
@@ -95,8 +96,9 @@ export const createEnvelopeRouteCaller = async ({
 
   assertEnvelopeItemCountWithinLimit({ count: files.length, limit: maximumEnvelopeItemCount });
 
-  // For each file: convert to PDF if needed, normalize, extract & clean placeholders, then upload.
-  const envelopeItems = await Promise.all(
+  // For each file: convert to PDF if needed, normalize, extract & clean placeholders; all are checked before any is
+  // uploaded, so a refused request stores nothing (#242).
+  const preparedFiles = await Promise.all(
     files.map(async (file) => {
       let pdf = await convertToPdf(file, logger);
 
@@ -115,6 +117,17 @@ export const createEnvelopeRouteCaller = async ({
       // Todo: Embeds - Might need to add this for client-side embeds in the future.
       const { cleanedPdf, placeholders } = await extractPdfPlaceholders(normalized);
 
+      return { file, cleanedPdf, placeholders };
+    }),
+  );
+
+  assertFieldTypesSupported(2, [
+    ...(recipients ?? []).flatMap((recipient) => (recipient.fields ?? []).map((field) => field.type)),
+    ...preparedFiles.flatMap(({ placeholders }) => placeholders.map((placeholder) => placeholder.fieldAndMeta.type)),
+  ]);
+
+  const envelopeItems = await Promise.all(
+    preparedFiles.map(async ({ file, cleanedPdf, placeholders }) => {
       const { documentData } = await putPdfFileServerSide(
         {
           name: file.name,

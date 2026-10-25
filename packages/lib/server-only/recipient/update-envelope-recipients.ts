@@ -15,7 +15,12 @@ import { canRecipientBeModified } from '../../utils/recipients';
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertCompatibleRecipientRole } from '../signature-level/assert-compatible-recipient-role';
-import { lockEnvelopeForOwnerEdit } from './lock-envelope-for-owner-edit';
+import {
+  assertRecipientsNamedOnce,
+  assertSigningPositionsAllowed,
+  lockEnvelopeForSigningOrderEdit,
+} from './assert-signing-order-edit-allowed';
+import { getRecipientEmailChangeData } from './recipient-email-change';
 
 export interface UpdateEnvelopeRecipientsOptions {
   userId: number;
@@ -89,6 +94,8 @@ export const updateEnvelopeRecipients = async ({
     });
   }
 
+  assertRecipientsNamedOnce(recipients.map((recipient) => recipient.id));
+
   for (const recipient of recipients) {
     if (recipient.role === undefined) {
       continue;
@@ -131,7 +138,7 @@ export const updateEnvelopeRecipients = async ({
 
     // Checked again under the envelope lock, which rejection and signing also take, so a recipient who rejected
     // or signed after the read above is not reset by this update (#121).
-    const locked = await lockEnvelopeForOwnerEdit(tx, envelope.id);
+    const locked = await lockEnvelopeForSigningOrderEdit(tx, envelope.id);
 
     const lockedRecipientsToUpdate = recipientsToUpdate.map(({ originalRecipient, updateData }) => {
       const lockedRecipient = locked.recipients.find((candidate) => candidate.id === originalRecipient.id);
@@ -142,11 +149,27 @@ export const updateEnvelopeRecipients = async ({
         });
       }
 
-      return { originalRecipient: lockedRecipient, updateData };
+      // The role and order checked below and the ones written are the same: the entry's value where it carries one,
+      // else the row read under the lock. An explicit undefined (SuperJSON) counts as omitted (#157 C2d).
+      return {
+        originalRecipient: lockedRecipient,
+        updateData,
+        role: updateData.role === undefined ? lockedRecipient.role : updateData.role,
+        signingOrder: updateData.signingOrder === undefined ? lockedRecipient.signingOrder : updateData.signingOrder,
+      };
+    });
+
+    assertSigningPositionsAllowed({
+      ...locked,
+      next: lockedRecipientsToUpdate.map(({ originalRecipient, role, signingOrder }) => ({
+        id: originalRecipient.id,
+        role,
+        signingOrder,
+      })),
     });
 
     return await Promise.all(
-      lockedRecipientsToUpdate.map(async ({ originalRecipient, updateData }) => {
+      lockedRecipientsToUpdate.map(async ({ originalRecipient, updateData, role, signingOrder }) => {
         let authOptions = ZRecipientAuthOptionsSchema.parse(originalRecipient.authOptions);
 
         if (updateData.actionAuth !== undefined || updateData.accessAuth !== undefined) {
@@ -159,6 +182,8 @@ export const updateEnvelopeRecipients = async ({
         const mergedRecipient = {
           ...originalRecipient,
           ...updateData,
+          role,
+          signingOrder,
         };
 
         const { count: updatedCount } = await tx.recipient.updateMany({
@@ -179,6 +204,7 @@ export const updateEnvelopeRecipients = async ({
             sendStatus: mergedRecipient.role === RecipientRole.CC ? SendStatus.SENT : SendStatus.NOT_SENT,
             signingStatus: mergedRecipient.role === RecipientRole.CC ? SigningStatus.SIGNED : SigningStatus.NOT_SIGNED,
             authOptions,
+            ...getRecipientEmailChangeData(originalRecipient.email, mergedRecipient.email),
           },
         });
 

@@ -152,6 +152,59 @@ export const normalizeRecipientSigningOrders = <T extends RecipientWithSigningOr
 };
 
 /**
+ * The editor's ordering for a pending SEQUENTIAL document, since the server refuses any other move once signing has
+ * begun (#157 C6). Each saved recipient keeps its stored order as it is (signing groups, gaps, no order and CCs alike).
+ * A recipient entering the sequence, an unsaved non-CC or a saved CC whose role is now non-CC, goes after every saved
+ * non-CC: with no order when one of those has none (unordered recipients sort last), otherwise after the highest order.
+ */
+export const keepStoredRecipientSigningOrders = <T extends RecipientWithSigningOrder & { id?: number }>(
+  recipients: T[],
+  storedRecipients: Array<RecipientWithSigningOrder & { id: number }>,
+): T[] => {
+  const storedById = new Map(storedRecipients.map((stored) => [stored.id, stored]));
+
+  const isEntering = (recipient: T) => {
+    if (isCcRecipient(recipient)) {
+      return false;
+    }
+
+    const stored = recipient.id === undefined ? undefined : storedById.get(recipient.id);
+
+    return stored === undefined || isCcRecipient(stored);
+  };
+
+  const settledNonCcOrders = recipients
+    .filter((recipient) => !isEntering(recipient))
+    .map((recipient) => storedById.get(recipient.id ?? -1))
+    .filter((stored) => stored !== undefined && !isCcRecipient(stored))
+    .map((stored) => stored?.signingOrder ?? null);
+
+  const hasUnorderedNonCc = settledNonCcOrders.some((signingOrder) => signingOrder === null);
+  let nextSigningOrder = Math.max(0, ...settledNonCcOrders.map((signingOrder) => signingOrder ?? 0));
+
+  return recipients.map((recipient) => {
+    if (isEntering(recipient)) {
+      // Null, not omitted: an omitted order keeps the stored one, which for a promoted CC is a CC's order (#157 A5).
+      if (hasUnorderedNonCc) {
+        return { ...recipient, signingOrder: null };
+      }
+
+      nextSigningOrder += 1;
+
+      return { ...recipient, signingOrder: nextSigningOrder };
+    }
+
+    const stored = recipient.id === undefined ? undefined : storedById.get(recipient.id);
+
+    if (stored === undefined) {
+      return recipient;
+    }
+
+    return { ...recipient, signingOrder: stored.signingOrder ?? undefined };
+  });
+};
+
+/**
  * Returns recipients who are missing required fields for their role.
  *
  * Currently only SIGNERs are validated - they must have at least one signature field.

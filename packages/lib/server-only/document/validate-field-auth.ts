@@ -26,7 +26,7 @@ export const validateFieldAuth = async ({
   authOptions,
 }: ValidateFieldAuthOptions) => {
   // Override all non-signature fields to not require any auth.
-  if (field.type !== FieldType.SIGNATURE) {
+  if (field.type !== FieldType.SIGNATURE && field.type !== FieldType.FREE_SIGNATURE) {
     return undefined;
   }
 

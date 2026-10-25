@@ -101,6 +101,6 @@ export const verifyRecipientAccess2FA = async ({
   });
 
   return {
-    cookie: await createRecipientAccess2FACookie({ recipientId: recipient.id }),
+    cookie: await createRecipientAccess2FACookie({ recipientId: recipient.id, token: recipient.token }),
   };
 };

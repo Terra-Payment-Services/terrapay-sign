@@ -6,23 +6,41 @@ import { generateHOTP } from 'oslo/otp';
 
 import { apiSignin } from '../fixtures/authentication';
 
-test.describe.configure({ mode: 'parallel', timeout: 60000 });
+// Each use of one secret needs its own 30-second step (#197), so a test with three uses takes about a minute.
+test.describe.configure({ mode: 'parallel', timeout: 180000 });
 
 const PERIOD_MS = 30_000;
 
 /**
+ * The newest step counter handed out for each secret. The server refuses a code of a step it has already accepted
+ * (#197), so a second code for the same secret waits for a later step.
+ */
+const lastStepBySecret = new Map<string, number>();
+
+/**
  * TOTP for a base32 secret, computed as an authenticator app would. The server accepts only the
  * current 30-second window, so if the window is about to roll over, wait for the next one rather
- * than send a code that may expire in flight.
+ * than send a code that may expire in flight. A secret already used in the current step waits for
+ * the next one.
  */
 const totpFor = async (secret: string) => {
+  const lastStep = lastStepBySecret.get(secret);
+
+  if (lastStep !== undefined && Math.floor(Date.now() / PERIOD_MS) <= lastStep) {
+    await new Promise((resolve) => setTimeout(resolve, PERIOD_MS - (Date.now() % PERIOD_MS) + 250));
+  }
+
   const remaining = PERIOD_MS - (Date.now() % PERIOD_MS);
 
   if (remaining < 3_000) {
     await new Promise((resolve) => setTimeout(resolve, remaining + 250));
   }
 
-  return await generateHOTP(base32.decode(secret), Math.floor(Date.now() / PERIOD_MS));
+  const counter = Math.floor(Date.now() / PERIOD_MS);
+
+  lastStepBySecret.set(secret, counter);
+
+  return await generateHOTP(base32.decode(secret), counter);
 };
 
 /**
@@ -198,14 +216,16 @@ test('[USER] after disabling two-factor with a valid code, setup works again', a
  * The state is read from the security page and checked through /disable, which takes the same
  * TOTP or backup code as sign-in but is not subject to the login rate limit (50 sign-ins per 15
  * minutes per address), which a sign-in per round would exhaust. Even rounds prove the
- * authenticator with a TOTP for A, odd rounds with the backup code enable returned (or the TOTP
- * when enable did not answer 200). A round that finds a wrong authenticator leaves two-factor on,
+ * authenticator with a TOTP for A, waiting for a fresh step when enable spent the current one
+ * (#197); odd rounds use the backup code enable returned (or the TOTP when enable did not answer
+ * 200). A round that finds a wrong authenticator leaves two-factor on,
  * so the next round starts with a fresh user.
  */
 test('[USER] enable and a concurrent setup never leave two-factor on for a secret enable did not check', async ({
   page,
 }) => {
-  test.setTimeout(900_000);
+  // Up to twenty TOTP rounds may each wait a full step.
+  test.setTimeout(1_500_000);
 
   const ROUNDS = 40;
   const failures: string[] = [];
@@ -256,6 +276,7 @@ test('[USER] enable and a concurrent setup never leave two-factor on for a secre
     counts.on++;
 
     const recoveryCodes: string[] | undefined = enable.ok() ? JSON.parse(enableText).recoveryCodes : undefined;
+    // totpFor waits for the next step when enable already spent this one for secret A.
     const useBackup = round % 2 === 1 && !!recoveryCodes?.length;
 
     const disable = await postTwoFactor(

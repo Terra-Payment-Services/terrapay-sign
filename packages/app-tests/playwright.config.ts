@@ -136,7 +136,12 @@ const localProjects = [
   {
     name: 'ui',
     testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
-    testIgnore: [/e2e\/remote\/.*\.spec\.ts/, /e2e\/directory-sync\/.*\.spec\.ts/, /e2e\/worker-wedge\/.*\.spec\.ts/],
+    testIgnore: [
+      /e2e\/remote\/.*\.spec\.ts/,
+      /e2e\/directory-sync\/.*\.spec\.ts/,
+      /e2e\/worker-wedge\/.*\.spec\.ts/,
+      /e2e\/sweep-debris\/.*\.spec\.ts/,
+    ],
     use: {
       ...devices['Desktop Chrome'],
       viewport: { width: 1920, height: 1200 },
@@ -145,6 +150,16 @@ const localProjects = [
     // so a four-core runner got one ui worker while the job sized for two left
     // the other idle for most of the run. E2E_WORKERS, when the job sets it, wins.
     workers: Number(process.env.E2E_WORKERS) || calculateWorkers(),
+  },
+  // The seal sweep debris check (#177) counts every envelope the sweep would
+  // reseal, so it runs alone once the projects seeding the shared database
+  // have finished. Pass --no-deps to run it by itself.
+  {
+    name: 'sweep-debris',
+    testMatch: /e2e\/sweep-debris\/.*\.spec\.ts/,
+    fullyParallel: false,
+    workers: 1,
+    dependencies: ['api', 'ui', 'remote'],
   },
   // The directory sync specs start a built server of their own per test,
   // with the sync configured against a stub of Microsoft Graph, and give each

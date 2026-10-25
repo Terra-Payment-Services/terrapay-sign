@@ -2,7 +2,7 @@
 
 TerraPay Sign is a modified version of Documenso, the open source document signing
 platform, and TerraPay runs it as its internal e-signature service. TerraPay modified the
-program, and this version is dated 20 October 2026. This file is the notice that section
+program, and this version is dated 25 October 2026. This file is the notice that section
 5(a) of the GNU Affero General Public License, version 3, requires of a modified work.
 
 The program is based on upstream's `main` branch at commit `5603a9e5`, six commits after
@@ -52,6 +52,15 @@ refused while two-factor is on, so a signed-in session cannot replace the authen
 backup codes without a code. Enabling two-factor succeeds only while the stored secret is
 the one whose code was checked, so a setup that lands in the middle cannot leave two-factor
 on for a secret the user never confirmed.
+An authenticator code is accepted once on the account's own routes, among them those that enable
+and disable two-factor and show the recovery codes: each accepted code records its time step, and a code
+from that step or an earlier one is then refused, so a code sent twice at once is accepted for
+one request alone. That adds a database column, which setting up a new authenticator clears. A recovery code
+is removed from the stored list when it is used, including when it is used to show the recovery
+codes, and of two requests that use one code at once only one succeeds. Disabling two-factor
+checks the code against the authenticator stored when the request is made and clears only that
+one, so an authenticator set up and enabled in the meantime is left in place and the request is
+refused, as is one that finds two-factor already off, with a client error.
 
 A scheduled job reconciles access against the directory, either a configured group or the
 whole tenant, so a person who leaves loses access without a manual step. Disabled,
@@ -82,6 +91,12 @@ concurrent change cannot slip underneath it.
 Recipient suggestions include a team's members only when the person asking belongs to that
 team. The team was taken from a request header and never checked, so a signed-in user could name
 another organisation's team and read its members' names and addresses.
+
+An organisation's settings, its subscription and its billing customer are returned only to the
+organisation's administrators and managers, and a team's settings, with the organisation's settings
+derived into them, only to the team's administrators and managers. The organisation list that every
+signed-in page loads carries no settings, and gives the subscription and billing customer to
+those roles alone.
 
 ## Signing and certificates
 
@@ -217,6 +232,29 @@ under the lock, so a date the recipient filled in while the completion waited ke
 and gets no second audit entry. API v1 answers 400,
 where it answered 500, when it refuses to resend a rejected document.
 
+Changing a recipient's email address to a different one gives the recipient a new signing link
+and marks the document unopened for them, whether the owner, an administrator or the previous
+signer dictating the next one makes the change, so the link sent to the old address stops working:
+every signing action checks under the envelope's lock that its link is still the recipient's. An
+address that differs only in letter case keeps the link. An administrator's edit of a recipient is
+taken under the same lock as the owner's, cannot change the address of a recipient who has filled
+in a field, and is recorded in the document's audit log with the values it changed. When it changes
+the address, the recipient counts as not yet sent the document, as on the owner's edits, unless
+they are a CC.
+
+Once a document is completed, rejected or cancelled, or a recipient has rejected it, its settings
+stay as they are: the subject, message, date format, time zone, redirect address, signing order, dictation of
+the next signer, reply-to address, email settings, distribution method, signature methods and
+language, its access and action authentication, and legacy field insertion. A request that repeats
+the stored values passes. The check is made under the envelope's lock, so a completion or a
+rejection that commits first is seen, and the folder, visibility and external id may still change.
+Access and action authentication are written only when a request names them, and their audit
+entries compare with the values read under the lock.
+
+A signed-in user who uses a direct template signs as their own account. The address they give
+must be their account's, compared without letter case or surrounding spaces, or the request is
+refused with a client error, and the audit entries carry the account's id.
+
 A legacy (V1) document's PDF is checked again whenever the document is about to notify
 someone: before the next signer in a sequential order is invited, on resend, and when a
 signing email or a reminder is sent. A refusal is logged and the notification skipped, and
@@ -309,6 +347,23 @@ before it shows the document or records it as viewed. A signed-in visitor outsid
 team who opens a signing link before their turn sees the waiting page, where it failed with an
 error.
 
+Once a recipient other than a CC has signed, rejected or filled in a field of a pending document,
+the document cannot be switched from parallel to sequential signing or back. In a pending
+sequential document, the owner's edits of the recipients cannot move a recipient whose turn has come
+or passed, nor make one a CC, and cannot place any other recipient at or ahead of the step whose
+turn it is; only a new CC, or a recipient who is a CC and stays one, may sit anywhere. These rules
+are checked under the envelope's lock against the positions that will be written. An owner's request
+that names one recipient twice is refused, and API v1 answers a signing-order refusal when it adds a
+recipient with 400, where it answered 500. The version 2 editor keeps the
+stored positions on such a document and places a new signer after the last one, or with no
+position where a stored signer has none.
+
+A free-signature field can be signed only on a legacy (V1) document. It is refused on a version 2
+document or template wherever fields arrive: when the envelope is created, from placeholders in an
+uploaded PDF, when a file is added or replaced, and when fields are created, set or updated, and the
+refusal comes before any file is stored. On a legacy document a free-signature field asks for the
+document's action authentication, as a signature field does.
+
 ## Recipient and server security
 
 The client address that audit rows record and rate limits count is read from the
@@ -330,10 +385,43 @@ no longer works on another site, while one that relies on the signing link or an
 access code still does, because the access code cookie stays SameSite=None and partitioned. The dashboard is also
 read-only: it shows jobs and refuses every request to add, retry, promote, remove, clean,
 pause or resume them. A redirect address given for after signing must be an http or https
-URL when a document is created through API v1, and the signing pages follow a stored one only
-when it is, falling back to the completion page, so a `javascript:` or `data:` address saved
-before this check is never followed, nor copied onto a new document from a template or a
-duplicate.
+URL when a document is created through API v1. No signing page follows it of its own accord: after
+signing, and on opening the link again, the recipient lands on the completion page, which shows the
+address and its host with a Continue link that sends no referrer. The link is offered only to a
+recipient other than a CC who has signed, while the document is not deleted and the recipient's link
+has not expired, and only for an http or https address, so a `javascript:` or `data:` address saved
+before this check is never offered, nor copied onto a new document from a template or a duplicate.
+
+Where a document or
+a recipient requires the recipient's own account, which the editor does not offer but the API
+accepts, the document's files and downloads, its attachment list and its list of items, as served to
+a signing link, check that requirement as the signing page does, together with the access code; on
+a direct template's link it means any signed-in user. The embedded legacy signing page reads a rule
+set on the recipient as well as one set on the document. Until the access code is entered, the page
+that asks for it receives nothing of the recipient beyond the signing link and the address the code
+was sent to, and none of the document's authentication settings. An access code
+counts only for the signing link it was entered under, so a recipient whose link changes enters a
+code again. A recipient who asks for more access code emails than the rate limit allows is answered
+429, where the answer was 500, and the prompt asks them to wait a few minutes; a limit that refuses
+a request sets its own rate-limit headers on the answer. A passkey, authenticator code or password
+asked for on a signing action proves the recipient only when the signed-in account's address is the
+recipient's. Where a recipient's access rule is not met, the rejected page names them by email
+address alone.
+
+A request that fails validation on the authentication routes or on the file and download routes is
+answered 400 with the path of each field at fault and the message "Invalid value", never with the
+values submitted. An unexpected server error raised in a tRPC procedure, whether it is called
+by the app or through API v2, is answered with "Something went wrong" and a request id, without
+its original message or stack trace, and the server log records the detail under the same id. API v2 answers a request whose body is not JSON,
+URL-encoded or multipart with 415, and a failure inside its request handling with 415 or 500, each
+with a JSON body. It reads a supported content type in any letter case, passes a URL-encoded body to
+its procedures as JSON, and ignores the content type of a GET, HEAD or OPTIONS request; the library that serves it is patched to the same end, and installing the
+dependencies fails if any patch in `patches/` does not apply. A failure to close the browser after
+generating a certificate or audit log PDF no longer stops the server. A Brand Website, set in organisation
+or team branding, must be empty or an absolute http or https address whose host is made of dotted
+ASCII labels, the last starting with a letter, with an optional port, and which holds no whitespace,
+invisible or control character, backslash or user name; the branding form says why it refuses one,
+and emails link the address only when it passes the same rule.
 
 Each webhook delivery that has a secret is signed with HMAC-SHA256 over a timestamp and
 the body, in `X-TerraPay-Timestamp` and `X-TerraPay-Signature`, so a receiver can check
@@ -448,7 +536,7 @@ the arguments of `:is()` and `:not()` add none. Each check returns at most 500 w
 count of the rest. A signing page caches the checked stylesheet for each stored stylesheet and
 colour set, up to 200 of them and 16 MiB per server process, and reuses the result while it
 is resident in the process cache rather than redoing the work on every page load. These are limits on this check, not a guarantee about
-every other cost of a large stylesheet. The save-time check cannot see every way the rules of a stylesheet combine in the browser.
+every other cost of a large stylesheet. The save-time check cannot see every way separate rules of a stylesheet combine in the browser.
 The signing page therefore guards
 the stylesheet as the browser applies it, and so that the guard never has to watch a state a tenant
 rule depends on, a selector may name no state at all. Each selector is checked on its raw text, as
@@ -479,8 +567,7 @@ Every visible, enabled text box, text area and select is also judged by its boun
 whatever it holds, so a filled name field or a typed rejection reason keeps its border. An icon shape's fill is
 measured only where it paints: a shape that encloses no area, such as the lines of an X, at no
 point of a 7 by 7 grid inside its box, kept off the box's edges (where the browser reports an
-open line's endpoints as inside its fill), is not judged on a fill nobody sees. The
-grid can miss a filled shape whose painted area is very small, which then goes unmeasured. An element with an opacity
+open line's endpoints as inside its fill), is not judged on a fill nobody sees. An element with an opacity
 below 1, or inside one, is painted as the browser paints it: the faded group is composited at
 that opacity over what lies beneath it, so the dialog close button, drawn at 70% opacity, is
 measured on the colour it shows. The default
@@ -501,12 +588,11 @@ a hovered app control can pair an app colour with a tenant one. The page therefo
 measures again as a whole, at most once a frame, whenever its content changes, such as a dialog
 opening; whenever hover or focus starts or ends anywhere (`pointerover`, `pointerout`, `focusin`,
 `focusout`); when a pointer button or a key goes down or up (`pointerdown`, `pointerup`,
-`keydown`, `keyup`), for the app's `active:` and `focus-visible:` styles, although the
-signing-page buttons' `focus-visible:` classes today set only a ring, which is not measured; when the signer types
+`keydown`, `keyup`), for the app's `active:` and `focus-visible:` styles; when the signer types
 (`input`); and when a transition ends. A `pointermove` event itself schedules nothing. A scan takes
 about 3 ms for 500 elements and 30 ms for 5,000. An element in a colour or opacity transition or animation, or inside
 one, is measured once it finishes, so a dialog's entrance fade is judged at its settled
-opacity; an element inside an opacity animation that never ends is not measured. The page also measures at once when one of the stylesheet's media conditions, print media or the colour scheme changes, or the
+opacity. The page also measures at once when one of the stylesheet's media conditions, print media or the colour scheme changes, or the
 window is resized; and before printing, with the stylesheet's print rules applied to a copy. If
 anything fails, the whole stylesheet is disabled for the rest of the visit, its print copy with
 it, and the page is measured again, so a failing print rule does not count against the tokens. If anything still fails, the colour tokens are disabled as well, which the
@@ -514,27 +600,16 @@ save-time pairs cannot always prevent, since text colour is inherited and a text
 a background token no pair names. The page then shows the default theme with the tenant's logo.
 The guard runs whenever a page has a stylesheet or colour tokens, and measures again when a token
 style element changes. There is no limit on how often the page scans: a stylesheet can no
-longer restyle anything on hover, so the guard has no hover loop to stop. A failing stylesheet is not painted when the page loads, but the
-app's colour transitions run for 150 ms and the guard measures one only when it settles, so the
-colours a transition passes through are not measured, and an unreadable end state can show
-briefly before the stylesheet is disabled. The price is that a
-stylesheet appears only once the page's script has run, a moment after the first paint. The
-guard needs JavaScript: without it the stylesheet is served inside `<noscript>`, and the
-save-time check is the only layer. A broad `button` rule can pass when the page loads and be
+longer restyle anything on hover, so the guard has no hover loop to stop. Where it can, the signing page
+checks a stylesheet as it applies it. A broad `button` rule can pass when the page loads and be
 switched off once the signature dialog opens, because the dialog's muted labels, such as the
 pen colour and "Upload Signature", sit on buttons the rule repaints. The admin who saved the
-stylesheet is not warned at save time that the guard will disable it, in that case or any other. The guard reads background colours alone, so background
-images are not sampled. A visible, enabled text box is measured on its own text colour whether
+stylesheet is not warned at save time that the guard will disable it, in that case or any other. A visible, enabled text box is measured on its own text colour whether
 or not it holds a value, and on its placeholder while empty, so a value a script writes needs no
-event to be checked. It does not read elements marked decorative, of which there is one, the animated pen hint in an empty signature
-pad, where the whole pad is the button. What
-remains is an insider risk, open to a team or organisation admin. Outside the signing pages the
-guard covers, branding is checked only when it is saved, and that check does not catch every
-combination of rules, colours and saves that can leave text unreadable; border, outline and text
-decoration colours are not checked. On signing pages with JavaScript enabled, the check when a page loads
-adds the checks described above, within their stated limits. A listed font name is still resolved on the signer's device, so a
-device whose font of that name is something else shows that instead. The CSS an embedding host passes to an embedded
-signing page is not covered at all.
+event to be checked. These checks reduce, and do not remove, the chance that branding leaves text
+unreadable; what remains is an insider risk, open to a team or organisation admin. A listed font
+name is still resolved on the signer's device, so a device whose font of that name is something
+else shows that instead.
 
 ## Signing pages and staff screens
 
@@ -561,8 +636,10 @@ blocklist are removed, since none of them can act on a deployment with no billin
 sending mailbox and sign-in through Entra alone, and the statistics page names the running
 release rather than upstream's version. Every page except an embedded one links to this
 repository, which is the offer of source that section 13 of the licence requires. The app
-offers English and ten translated languages, and a test fails if any entry in a catalog is left without a
-translation; two messages added in this release are not yet in the catalogs.
+offers English and ten translated languages. Tests fail if a message in the source is missing from
+any catalog, if an entry is left without a translation, or if a catalog holds a raw control
+character or a merge conflict marker, which the French message for a removed attachment showed in
+place of its translation until this version.
 
 When a team's "Send on Behalf of Team" setting is off, set on the team or inherited from its
 organisation, recipients are shown the team in place of the member who sent the document, with the team's
@@ -576,7 +653,9 @@ and the team stands in for every team member an entry names, among them the memb
 was made on behalf of and a delegated owner, and for whoever recorded a rejection on a
 recipient's behalf. A team member who is also a recipient keeps their name on what they do as a
 recipient. The audit log in the
-application and the owner's own audit-log download still name the members.
+application and the owner's own audit-log download still name the members. With the setting off, signing, resend and
+reminder emails also leave out the header that carries the sending member's user id; the headers that
+carry the envelope and team ids remain.
 
 ## Company seals
 

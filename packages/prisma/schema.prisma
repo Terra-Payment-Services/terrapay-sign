@@ -62,6 +62,8 @@ model User {
   twoFactorSecret      String?
   twoFactorEnabled     Boolean @default(false)
   twoFactorBackupCodes String?
+  /// The TOTP step counter of the last code accepted on an account route, so a code is used once (#197).
+  lastTotpCounter      Int?
 
   folders      Folder[]
   envelopes    Envelope[]

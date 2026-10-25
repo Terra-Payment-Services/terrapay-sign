@@ -3,13 +3,18 @@ import { ZRecipientActionAuthTypesSchema, ZRecipientAuthOptionsSchema } from '@d
 import type { TEditorEnvelope } from '@documenso/lib/types/envelope-editor';
 import { ZRecipientEmailSchema } from '@documenso/lib/types/recipient';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { DocumentSigningOrder, RecipientRole } from '@prisma/client';
+import { DocumentSigningOrder, DocumentStatus, RecipientRole } from '@prisma/client';
 import { useId } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { isCcRecipient, normalizeRecipientSigningOrders, sortRecipientsForSigningOrder } from '../../utils/recipients';
+import {
+  isCcRecipient,
+  keepStoredRecipientSigningOrders,
+  normalizeRecipientSigningOrders,
+  sortRecipientsForSigningOrder,
+} from '../../utils/recipients';
 
 const LocalRecipientSchema = z.object({
   formId: z.string().min(1),
@@ -17,7 +22,7 @@ const LocalRecipientSchema = z.object({
   email: ZRecipientEmailSchema,
   name: z.string(),
   role: z.nativeEnum(RecipientRole),
-  signingOrder: z.number().optional(),
+  signingOrder: z.number().nullish(),
   actionAuth: z.array(ZRecipientActionAuthTypesSchema).optional().default([]),
 });
 
@@ -89,19 +94,33 @@ export const useEditorRecipients = ({ envelope }: EditorRecipientsProps): UseEdi
   const generateDefaultValues = (options?: ResetFormOptions) => {
     const { recipients, documentMeta } = options ?? {};
 
+    // Once a SEQUENTIAL document is sent, the stored orders are shown and saved as they are, not renumbered (#157 C6).
+    const keepsStoredOrders =
+      envelope.status === DocumentStatus.PENDING &&
+      (documentMeta?.signingOrder ?? envelope.documentMeta.signingOrder) === DocumentSigningOrder.SEQUENTIAL;
+
     const formRecipients = (recipients || envelope.recipients).map((recipient, index) => ({
       id: recipient.id,
       formId: String(recipient.id),
       name: recipient.name,
       email: recipient.email,
       role: recipient.role,
-      signingOrder: isCcRecipient(recipient) ? undefined : (recipient.signingOrder ?? index + 1),
+      signingOrder: keepsStoredOrders
+        ? (recipient.signingOrder ?? undefined)
+        : isCcRecipient(recipient)
+          ? undefined
+          : (recipient.signingOrder ?? index + 1),
       actionAuth: ZRecipientAuthOptionsSchema.parse(recipient.authOptions)?.actionAuth ?? undefined,
     }));
 
     const signers: TLocalRecipient[] =
       formRecipients.length > 0
-        ? normalizeRecipientSigningOrders(sortRecipientsForSigningOrder(formRecipients))
+        ? keepsStoredOrders
+          ? keepStoredRecipientSigningOrders(
+              sortRecipientsForSigningOrder(formRecipients),
+              recipients || envelope.recipients,
+            )
+          : normalizeRecipientSigningOrders(sortRecipientsForSigningOrder(formRecipients))
         : [
             {
               formId: initialId,

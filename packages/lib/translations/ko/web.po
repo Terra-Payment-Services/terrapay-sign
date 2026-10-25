@@ -264,9 +264,11 @@ msgstr "{0} 직접 서명 템플릿"
 msgid "{0} field"
 msgstr "{0} 필드"
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{0}에서 \"{1}\" 문서에 대해 귀하께 {recipientActionVerb}하도록 초대했습니다."
 
@@ -274,13 +276,6 @@ msgstr "{0}에서 \"{1}\" 문서에 대해 귀하께 {recipientActionVerb}하도
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} a document"
 msgstr "{0}이(가) 귀하께 문서에 {recipientActionVerb}하도록 초대했습니다."
-
-#. placeholder {0}: user.name || user.email
-#. placeholder {1}: envelope.team.name
-#. placeholder {2}: envelope.title
-#: packages/lib/server-only/document/resend-document.ts
-msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0}이(가) \"{1}\"을(를) 대신하여 \"{2}\" 문서에 대해 귀하께 {recipientActionVerb}하도록 초대했습니다."
 
 #. placeholder {0}: formatChipCount(totalVisibleCount, isVisibleCountCapped)
 #: apps/remix/app/components/general/app-command-menu.tsx
@@ -291,6 +286,12 @@ msgstr "결과 {0}개"
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
 msgid "{0} Teams"
 msgstr "{0} 팀"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "{0}, {1}"
+msgstr "{0}, {1}"
 
 #. placeholder {0}: currentStepData.order
 #. placeholder {1}: envelopeEditorSteps.length
@@ -364,9 +365,11 @@ msgstr "{inviterName}이(가) 귀하를 {documentName} 문서에서 제거했습
 msgid "{inviterName} has removed you from the document<0/>\"{documentName}\""
 msgstr "{inviterName}이(가) 귀하를 문서에서 제거했습니다<0/>\"{documentName}\""
 
+#. placeholder {0}: envelope.team.name
 #. placeholder {0}: team.name
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{inviterName}이(가) \"{0}\"을(를) 대신하여 \"{1}\" 문서에 대해 귀하께 {recipientActionVerb}하도록 초대했습니다."
 
@@ -481,6 +484,10 @@ msgstr "{user}님이 필드를 추가했습니다."
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} added a recipient"
 msgstr "{user}님이 수신자를 추가했습니다."
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "{user} applied the company seal of {legalEntityName} ({sealName})"
+msgstr "{user}님이 {legalEntityName}의 회사 직인({sealName})을 날인했습니다"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} approved the document"
@@ -970,6 +977,10 @@ msgstr "새 구성원이 조직 {organisationName}에 가입했습니다."
 #: apps/remix/app/routes/_unauthenticated+/check-email.tsx
 msgid "A password reset email has been sent, if you have an account you should see it in your inbox shortly."
 msgstr "비밀번호 재설정 이메일을 발송했습니다. 계정이 있으시다면 곧 받은 편지함에서 확인하실 수 있습니다."
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "A recipient applied the company seal of {legalEntityName} ({sealName})"
+msgstr "수신자가 {legalEntityName}의 회사 직인({sealName})을 날인했습니다"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -1543,7 +1554,6 @@ msgstr "각 구성원에게 초대장이 포함된 이메일이 발송됩니다.
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/organisations.$id.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.groups.$id.tsx
@@ -1837,6 +1847,19 @@ msgstr "API 사용량이 공정 이용 한도에 가까워지고 있습니다."
 msgid "App Version"
 msgstr "앱 버전"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Applied"
+msgstr "날인 일시"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply company seal"
+msgstr "회사 직인 날인"
+
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Apply seal"
+msgstr "직인 날인"
+
 #: apps/remix/app/components/general/organisations/organisation-quota-banner.tsx
 msgid "Approaching fair use limit"
 msgstr "공정 이용 한도에 가까워지고 있습니다."
@@ -2013,7 +2036,6 @@ msgstr "보조 중"
 
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
-#: packages/lib/types/document-meta.ts
 #: packages/ui/primitives/document-flow/add-settings.types.ts
 #: packages/ui/primitives/template-flow/add-template-settings.types.tsx
 msgid "At least one signature type must be enabled"
@@ -2228,6 +2250,11 @@ msgstr "브랜딩 환경설정"
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
+msgid "Branding preferences not saved"
+msgstr "브랜딩 설정이 저장되지 않았습니다"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.branding.tsx
+#: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.branding.tsx
 msgid "Branding preferences updated"
 msgstr "브랜딩 환경설정이 업데이트되었습니다"
 
@@ -2358,6 +2385,7 @@ msgstr "누군가를 찾을 수 없나요?"
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/dialogs/session-logout-all-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-checkbox-dialog.tsx
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-email-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-initials-dialog.tsx
 #: apps/remix/app/components/dialogs/sign-field-name-dialog.tsx
@@ -2519,6 +2547,10 @@ msgstr "문자 수 제한"
 msgid "Charts"
 msgstr "차트"
 
+#: apps/remix/app/components/dialogs/sign-field-company-seal-dialog.tsx
+msgid "Check the seal below. Once applied, it becomes part of the document."
+msgstr "아래 직인을 확인하세요. 날인하면 문서의 일부가 됩니다."
+
 #: apps/remix/app/components/forms/password-setup-request-button.tsx
 #: apps/remix/app/components/forms/password-setup-request.tsx
 msgid "Check your email"
@@ -2548,6 +2580,10 @@ msgstr "체크박스 값"
 #: packages/lib/constants/i18n.ts
 msgid "Chinese"
 msgstr "중국어"
+
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "Choose a seal"
+msgstr "직인 선택"
 
 #: apps/remix/app/components/dialogs/template-direct-link-dialog.tsx
 msgid "Choose an existing recipient from below to continue"
@@ -2652,6 +2688,23 @@ msgstr "사이드바 접기"
 #: apps/remix/app/components/general/admin-email-blocklist-section.tsx
 msgid "Comma-separated list of email domains to block from signing up."
 msgstr "가입을 차단할 이메일 도메인을 쉼표로 구분하여 입력하세요."
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-drag-drop.tsx
+#: packages/lib/utils/fields.ts
+#: packages/ui/primitives/document-flow/types.ts
+msgid "Company seal"
+msgstr "회사 직인"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
+msgid "Company Seal Settings"
+msgstr "회사 직인 설정"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/utils/settings-nav.ts
+msgid "Company seals"
+msgstr "회사 직인"
 
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
 #: apps/remix/app/components/embed/embed-direct-template-client-page.tsx
@@ -2816,6 +2869,7 @@ msgstr "콘텐츠"
 #: apps/remix/app/components/dialogs/passkey-create-dialog.tsx
 #: apps/remix/app/components/dialogs/public-profile-template-manage-dialog.tsx
 #: apps/remix/app/components/general/document-signing/document-signing-form.tsx
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/organisation.invite.$token.tsx
 #: apps/remix/app/routes/_unauthenticated+/team.verify.email.$token.tsx
@@ -3174,6 +3228,12 @@ msgstr "생성 일시"
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.$id.logs.tsx
 msgid "Created by"
 msgstr "작성자"
+
+#. placeholder {0}: seal.createdByName || seal.createdByEmail
+#. placeholder {1}: i18n.date(seal.createdAt)
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Created by {0} on {1}"
+msgstr "{1}에 {0}님이 생성"
 
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Created on"
@@ -5145,6 +5205,11 @@ msgstr "필드 글꼴 크기"
 msgid "Field format"
 msgstr "필드 형식"
 
+#: apps/remix/app/routes/_internal+/[__htmltopdf]+/certificate.tsx
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Field ID"
+msgstr "필드 ID"
+
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: packages/ui/primitives/document-flow/field-item.tsx
 msgid "Field ID:"
@@ -5686,6 +5751,10 @@ msgstr "더 높은 한도가 필요할 것으로 예상되면 {SUPPORT_EMAIL}로
 msgid "If your authenticator app does not support QR codes, you can use the following code instead:"
 msgstr "인증 앱이 QR 코드를 지원하지 않는 경우, 대신 다음 코드를 사용할 수 있습니다:"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Image"
+msgstr "이미지"
+
 #: packages/lib/constants/billing.ts
 msgctxt "Subscription status"
 msgid "Inactive"
@@ -6082,6 +6151,10 @@ msgstr "조직 탈퇴"
 #: apps/remix/app/components/forms/editor/editor-field-generic-field-forms.tsx
 msgid "Left"
 msgstr "왼쪽"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Legal entity"
+msgstr "법인"
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
 msgid "Legality of Electronic Signatures"
@@ -6559,6 +6632,7 @@ msgstr "해당 없음"
 #: apps/remix/app/components/tables/settings-security-passkey-table-actions.tsx
 #: apps/remix/app/components/tables/settings-security-passkey-table.tsx
 #: apps/remix/app/routes/_authenticated+/admin+/users.$id.tsx
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.tokens.tsx
 #: packages/lib/utils/fields.ts
 #: packages/ui/primitives/document-flow/add-fields.tsx
@@ -6796,6 +6870,10 @@ msgstr "결과가 없습니다."
 #: apps/remix/app/components/general/filter-pill.tsx
 msgid "No results found."
 msgstr "결과가 없습니다."
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "No seals yet."
+msgstr "아직 직인이 없습니다."
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "No signature field found"
@@ -8577,17 +8655,38 @@ msgstr "변경 사항 저장"
 msgid "Save failed"
 msgstr "저장 실패"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Save seal"
+msgstr "직인 저장"
+
 #: packages/ui/primitives/template-flow/add-template-fields.tsx
 msgid "Save Template"
 msgstr "템플릿 저장"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal created"
+msgstr "직인이 생성되었습니다"
+
+#. placeholder {0}: seal.id
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal ID: {0}"
+msgstr "직인 ID: {0}"
 
 #: apps/remix/app/routes/_authenticated+/admin+/unsealed-documents._index.tsx
 msgid "Seal job triggered"
 msgstr "봉인 작업이 트리거되었습니다"
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seal preview"
+msgstr "직인 미리보기"
+
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Sealing job started"
 msgstr "봉인 작업이 시작되었습니다"
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "Seals that members of your organisation can apply to documents. A seal cannot be changed or removed once saved, so check the image before saving."
+msgstr "조직 구성원이 문서에 날인할 수 있는 직인입니다. 저장한 직인은 변경하거나 삭제할 수 없으므로 저장하기 전에 이미지를 확인하세요."
 
 #: apps/remix/app/components/general/app-nav-desktop.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.members.tsx
@@ -10380,6 +10479,22 @@ msgstr "수신자가 문서를 완료하기 위해 서명해야 합니다."
 msgid "The recipient is required to view the document for it to be completed."
 msgstr "수신자가 문서를 완료하기 위해 열람해야 합니다."
 
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal can now be placed on documents."
+msgstr "이제 문서에 직인을 배치할 수 있습니다."
+
+#: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.seals.tsx
+msgid "The seal was not created"
+msgstr "직인이 생성되지 않았습니다"
+
+#: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
+msgid "The sender has linked a page for you to visit next."
+msgstr "발신자가 다음에 방문할 페이지를 연결했습니다."
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "The signature image of {signer} could not be rendered, so the document was not sealed"
+msgstr "{signer}의 서명 이미지를 표시할 수 없어 문서가 봉인되지 않았습니다"
+
 #: packages/ui/components/document/document-send-email-message-helper.tsx
 msgid "The signer's email"
 msgstr "서명자의 이메일"
@@ -10821,6 +10936,10 @@ msgstr "이 PDF의 기존 서명은 이미 유효하지 않습니다. 서명된 
 msgid "This recipient can no longer be modified as they have signed a field, or completed the document."
 msgstr "이 수신자는 이미 필드에 서명했거나 문서를 완료했으므로 더 이상 수정할 수 없습니다."
 
+#: apps/remix/app/components/forms/editor/editor-field-company-seal-form.tsx
+msgid "This recipient is not a member of the organisation, so they cannot apply the seal and the document cannot be sent."
+msgstr "이 수신자는 조직 구성원이 아니므로 직인을 날인할 수 없고 문서를 보낼 수 없습니다."
+
 #: apps/remix/app/components/forms/signin.tsx
 msgid "This session has expired. Please try again."
 msgstr "이 세션이 만료되었습니다. 다시 시도해 주세요."
@@ -11108,6 +11227,10 @@ msgstr "시도 횟수 초과"
 #: apps/remix/app/utils/toast-error-messages.ts
 msgid "Too many attempts have been made to complete this document, which can happen after several incorrect verification codes. Please wait up to an hour, request a new code and try again."
 msgstr "이 문서를 완료하려는 시도가 너무 많았습니다. 잘못된 인증 코드를 여러 번 입력하면 발생할 수 있습니다. 최대 1시간 정도 기다린 후 새 코드를 요청하여 다시 시도하세요."
+
+#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
+msgid "Too many codes have been requested. Please wait a few minutes before requesting another."
+msgstr "코드를 너무 많이 요청했습니다. 몇 분 기다린 후 다시 요청하세요."
 
 #: apps/remix/app/components/general/document-signing/document-signing-access-2fa-gate.tsx
 msgid "Too many incorrect codes. Please wait up to an hour and request a new code."
@@ -12145,7 +12268,6 @@ msgid "We encountered an unknown error while attempting to remove this user. Ple
 msgstr "이 사용자를 제거하는 중 알 수 없는 오류가 발생했습니다. 나중에 다시 시도해 주세요."
 
 #: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
-#: apps/remix/app/components/general/document-signing/access-auth-2fa-form.tsx
 msgid "We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later."
 msgstr "2단계 인증 코드를 요청하는 동안 알 수 없는 오류가 발생했습니다. 나중에 다시 시도해 주세요."
 
@@ -12512,6 +12634,10 @@ msgstr "필드를 추가했습니다"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You added a recipient"
 msgstr "수신자를 추가했습니다"
+
+#: packages/lib/utils/document-audit-logs.ts
+msgid "You applied the company seal of {legalEntityName} ({sealName})"
+msgstr "{legalEntityName}의 회사 직인({sealName})을 날인했습니다"
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You approved the document"

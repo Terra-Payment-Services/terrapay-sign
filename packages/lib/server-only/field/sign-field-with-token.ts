@@ -301,6 +301,7 @@ export const signFieldWithToken = async ({
       envelopeId: envelope.id,
       recipientId: recipient.id,
       fieldRecipientId: field.recipientId,
+      token,
     });
 
     // Under the lock, so a completion or reorder that commits first is seen; an assistant's own turn (#145).

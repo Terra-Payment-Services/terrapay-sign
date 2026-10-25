@@ -8,6 +8,7 @@ import { nanoid } from '@documenso/lib/universal/id';
 import {
   isAssistantLastSigner,
   isCcRecipient,
+  keepStoredRecipientSigningOrders,
   normalizeRecipientSigningOrders,
   canRecipientBeModified as utilCanRecipientBeModified,
 } from '@documenso/lib/utils/recipients';
@@ -31,7 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@documenso/ui/primitive
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { DragDropContext, Draggable, Droppable, type DropResult, type SensorAPI } from '@hello-pangea/dnd';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { DocumentSigningOrder, EnvelopeType, RecipientRole, SendStatus } from '@prisma/client';
+import { DocumentSigningOrder, DocumentStatus, EnvelopeType, RecipientRole, SendStatus } from '@prisma/client';
 import { motion } from 'framer-motion';
 import { GripVerticalIcon, HelpCircleIcon, PlusIcon, TrashIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -112,7 +113,16 @@ export const EnvelopeEditorRecipientForm = () => {
     return watchedSigners.some((signer) => signer.role === RecipientRole.ASSISTANT);
   }, [watchedSigners]);
 
+  // Once a SEQUENTIAL document is sent, stored orders stay as they are and new rows go after them (#157 C6).
+  const keepsStoredSigningOrders =
+    envelope.status === DocumentStatus.PENDING &&
+    envelope.documentMeta.signingOrder === DocumentSigningOrder.SEQUENTIAL;
+
   const normalizeSigningOrders = (signers: typeof watchedSigners) => {
+    if (keepsStoredSigningOrders) {
+      return keepStoredRecipientSigningOrders(signers, recipients);
+    }
+
     return normalizeRecipientSigningOrders(signers, (signer) => canRecipientBeModified(signer.id));
   };
 
@@ -730,6 +740,7 @@ export const EnvelopeEditorRecipientForm = () => {
                                               '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
                                             )}
                                             {...field}
+                                            value={field.value ?? ''}
                                             onChange={(e) => {
                                               field.onChange(e);
                                               handleSigningOrderChange(index, e.target.value);

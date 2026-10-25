@@ -15,5 +15,5 @@ export const updateRecipientRoute = adminProcedure
       },
     });
 
-    await updateRecipient({ id, name, email, role });
+    await updateRecipient({ id, name, email, role, requestMetadata: ctx.metadata });
   });

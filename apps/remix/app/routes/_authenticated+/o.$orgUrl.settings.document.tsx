@@ -82,7 +82,7 @@ export default function OrganisationSettingsDocumentPage() {
     }
   };
 
-  if (isLoadingOrganisation || !organisationWithSettings) {
+  if (isLoadingOrganisation || !organisationWithSettings?.organisationGlobalSettings) {
     return (
       <div className="flex items-center justify-center rounded-lg py-32">
         <Loader className="h-6 w-6 animate-spin text-muted-foreground" />

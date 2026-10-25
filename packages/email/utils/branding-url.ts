@@ -1,3 +1,5 @@
+import { isSafeBrandingUrl } from '@documenso/lib/utils/branding-url';
+
 /**
  * Returns the normalized Brand Website URL only when it is a safe absolute
  * http(s) URL.
@@ -11,11 +13,9 @@ export const getSafeBrandingUrl = (brandingUrl: string | null | undefined): stri
     return null;
   }
 
-  const parsed = URL.parse(brandingUrl);
-
-  if (parsed?.protocol !== 'http:' && parsed?.protocol !== 'https:') {
+  if (!isSafeBrandingUrl(brandingUrl)) {
     return null;
   }
 
-  return parsed.href;
+  return new URL(brandingUrl).href;
 };

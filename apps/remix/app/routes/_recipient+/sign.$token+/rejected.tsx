@@ -81,10 +81,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     };
   }
 
-  // Don't leak data if access is denied.
+  // Don't leak data if access is denied: the sign-in prompt names the recipient by email only (#245).
   return {
     isDocumentAccessValid: false,
-    recipientReference,
+    recipientReference: recipient.email,
     branding,
   };
 }

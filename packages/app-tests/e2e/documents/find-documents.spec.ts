@@ -21,6 +21,7 @@ import {
 
 import { apiSignin, apiSignout } from '../fixtures/authentication';
 import { checkDocumentCounts, checkDocumentTabCount, toggleDocumentSenderFilter } from '../fixtures/documents';
+import { outsideSweepWindow } from '../fixtures/reject-seal';
 
 test.describe.configure({
   mode: 'parallel',
@@ -1232,7 +1233,7 @@ test.describe('Find Documents UI - Rejected and Expired Tabs', () => {
     });
     await prisma.recipient.updateMany({
       where: { envelopeId: signedDoc.id },
-      data: { expiresAt: PAST, signingStatus: SigningStatus.SIGNED },
+      data: { expiresAt: PAST, signingStatus: SigningStatus.SIGNED, signedAt: outsideSweepWindow() },
     });
 
     // Expired but CC — must NOT count as expired.
@@ -1241,7 +1242,7 @@ test.describe('Find Documents UI - Rejected and Expired Tabs', () => {
     });
     await prisma.recipient.updateMany({
       where: { envelopeId: ccDoc.id },
-      data: { expiresAt: PAST, role: RecipientRole.CC },
+      data: { expiresAt: PAST, role: RecipientRole.CC, signedAt: outsideSweepWindow() },
     });
 
     // Expired, unsigned, non-CC — the only one that should appear.

@@ -1,3 +1,4 @@
+import { AppError } from '@documenso/lib/errors/app-error';
 import { TWO_FACTOR_EMAIL_EXPIRATION_MINUTES } from '@documenso/lib/server-only/2fa/email/constants';
 import { send2FATokenEmail } from '@documenso/lib/server-only/2fa/email/send-2fa-token-email';
 import { assertRateLimit } from '@documenso/lib/server-only/rate-limit/rate-limit-middleware';
@@ -92,7 +93,8 @@ export const accessAuthRequest2FAEmailRoute = procedure
     } catch (error) {
       console.error('Error sending access auth 2FA email:', error);
 
-      if (error instanceof TRPCError) {
+      // AppError carries its own status, so a rate-limit refusal answers 429 rather than 500 (#215).
+      if (error instanceof TRPCError || error instanceof AppError) {
         throw error;
       }
 

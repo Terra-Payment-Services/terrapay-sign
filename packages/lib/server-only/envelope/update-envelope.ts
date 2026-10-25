@@ -3,7 +3,7 @@ import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-reques
 import type { CreateDocumentAuditLogDataResponse } from '@documenso/lib/utils/document-audit-logs';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import type { DocumentMeta, DocumentVisibility, Prisma, TemplateType } from '@prisma/client';
+import type { DocumentMeta, DocumentVisibility, Envelope, Prisma, TemplateType } from '@prisma/client';
 import { DocumentStatus, EnvelopeType, FolderType, WebhookTriggerEvents } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 
@@ -20,11 +20,16 @@ import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { buildTeamWhereQuery, canAccessTeamDocument } from '../../utils/teams';
 import { assertMergedDocumentMetaMethodsEnabled } from '../document-meta/assert-signature-methods-enabled';
 import { warnIgnoredEmailId } from '../email/warn-ignored-email-id';
+import {
+  assertSigningOrderTypeChangeAllowed,
+  lockEnvelopeForSigningOrderEdit,
+} from '../recipient/assert-signing-order-edit-allowed';
 import { recomputeNextReminderForEnvelope } from '../recipient/update-recipient-next-reminder';
 import { assertCompatibleDictateNextSigner } from '../signature-level/assert-compatible-dictate-next-signer';
 import { assertCompatibleSigningOrder } from '../signature-level/assert-compatible-signing-order';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 import { assertEnvelopeMutable } from './assert-envelope-mutable';
+import { assertEnvelopeSettingsEditable } from './assert-envelope-settings-editable';
 import { getEnvelopeWhereInput } from './get-envelope-by-id';
 
 export type UpdateEnvelopeOptions = {
@@ -141,11 +146,6 @@ export const updateEnvelope = async ({
     });
   }
 
-  const authOptions = createDocumentAuthOptions({
-    globalAccessAuth: newGlobalAccessAuth,
-    globalActionAuth: newGlobalActionAuth,
-  });
-
   // Organisation sender addresses were removed: emailId is accepted, logged and never stored.
   const { emailId, ...metaWithoutEmailId } = meta;
 
@@ -191,10 +191,6 @@ export const updateEnvelope = async ({
 
   const isTitleSame = data.title === undefined || data.title === envelope.title;
   const isExternalIdSame = data.externalId === undefined || data.externalId === envelope.externalId;
-  const isGlobalAccessSame =
-    documentGlobalAccessAuth === undefined || isDeepEqual(documentGlobalAccessAuth, newGlobalAccessAuth);
-  const isGlobalActionSame =
-    documentGlobalActionAuth === undefined || isDeepEqual(documentGlobalActionAuth, newGlobalActionAuth);
   const isDocumentVisibilitySame = data.visibility === undefined || data.visibility === envelope.visibility;
   const isFolderSame = data.folderId === undefined || data.folderId === envelope.folderId;
   const isTemplateTypeSame = data.templateType === undefined || data.templateType === envelope.templateType;
@@ -233,34 +229,6 @@ export const updateEnvelope = async ({
         data: {
           from: envelope.externalId,
           to: data.externalId || '',
-        },
-      }),
-    );
-  }
-
-  if (!isGlobalAccessSame) {
-    auditLogs.push(
-      createDocumentAuditLogData({
-        type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_GLOBAL_AUTH_ACCESS_UPDATED,
-        envelopeId: envelope.id,
-        metadata: requestMetadata,
-        data: {
-          from: documentGlobalAccessAuth,
-          to: newGlobalAccessAuth,
-        },
-      }),
-    );
-  }
-
-  if (!isGlobalActionSame) {
-    auditLogs.push(
-      createDocumentAuditLogData({
-        type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_GLOBAL_AUTH_ACTION_UPDATED,
-        envelopeId: envelope.id,
-        metadata: requestMetadata,
-        data: {
-          from: documentGlobalActionAuth,
-          to: newGlobalActionAuth,
         },
       }),
     );
@@ -313,6 +281,65 @@ export const updateEnvelope = async ({
   const updatedEnvelope = await prisma.$transaction(async (tx) => {
     await assertEnvelopeMutable(envelope, tx);
 
+    // A finished envelope keeps its settings; folder, visibility and externalId may still change (#182).
+    // Auth and legacy field insertion are compared with the locked row, not the read above.
+    const locked = await assertEnvelopeSettingsEditable(tx, {
+      envelopeId: envelope.id,
+      meta: metaWithoutEmailId,
+      hasOtherSettingsChange: (lockedSettings) => {
+        const lockedAuth = resolveGlobalAuth(lockedSettings.authOptions, data);
+
+        return (
+          !lockedAuth.isAccessSame ||
+          !lockedAuth.isActionSame ||
+          (data.useLegacyFieldInsertion !== undefined &&
+            data.useLegacyFieldInsertion !== lockedSettings.useLegacyFieldInsertion)
+        );
+      },
+    });
+
+    const globalAuth = resolveGlobalAuth(locked.authOptions, data);
+
+    if (!globalAuth.isAccessSame) {
+      auditLogs.push(
+        createDocumentAuditLogData({
+          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_GLOBAL_AUTH_ACCESS_UPDATED,
+          envelopeId: envelope.id,
+          metadata: requestMetadata,
+          data: {
+            from: globalAuth.fromAccess,
+            to: globalAuth.toAccess,
+          },
+        }),
+      );
+    }
+
+    if (!globalAuth.isActionSame) {
+      auditLogs.push(
+        createDocumentAuditLogData({
+          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_GLOBAL_AUTH_ACTION_UPDATED,
+          envelopeId: envelope.id,
+          metadata: requestMetadata,
+          data: {
+            from: globalAuth.fromAction,
+            to: globalAuth.toAction,
+          },
+        }),
+      );
+    }
+
+    const isGlobalAuthRequested = data.globalAccessAuth !== undefined || data.globalActionAuth !== undefined;
+
+    if (envelope.type === EnvelopeType.DOCUMENT) {
+      const lockedOrder = await lockEnvelopeForSigningOrderEdit(tx, envelope.id);
+
+      assertSigningOrderTypeChangeAllowed({
+        ...lockedOrder,
+        currentSigningOrder: lockedOrder.signingOrder,
+        nextSigningOrder: meta.signingOrder,
+      });
+    }
+
     // Checked on the locked row, so two updates cannot together turn all three methods off (C94).
     await assertMergedDocumentMetaMethodsEnabled(tx, envelope.documentMetaId, meta);
 
@@ -328,7 +355,11 @@ export const updateEnvelope = async ({
         publicDescription: data.publicDescription,
         publicTitle: data.publicTitle,
         useLegacyFieldInsertion: data.useLegacyFieldInsertion,
-        authOptions,
+        // Written only when requested, so an unrelated edit does not rewrite a stored null; omitted parts keep the
+        // locked row's values (#182).
+        authOptions: isGlobalAuthRequested
+          ? createDocumentAuthOptions({ globalAccessAuth: globalAuth.toAccess, globalActionAuth: globalAuth.toAction })
+          : undefined,
         folder: folderUpdateQuery,
         documentMeta: {
           update: {
@@ -370,4 +401,25 @@ export const updateEnvelope = async ({
   const { recipients: _recipients, documentMeta: _documentMeta, ...finalEnvelope } = updatedEnvelope;
 
   return finalEnvelope;
+};
+
+// The requested global auth against a stored value; an omitted part keeps the stored one (#182).
+const resolveGlobalAuth = (storedAuthOptions: Envelope['authOptions'], data: UpdateEnvelopeOptions['data']) => {
+  const { documentAuthOption } = extractDocumentAuthMethods({
+    documentAuth: storedAuthOptions,
+  });
+
+  const fromAccess = documentAuthOption?.globalAccessAuth ?? null;
+  const fromAction = documentAuthOption?.globalActionAuth ?? null;
+  const toAccess = data?.globalAccessAuth === undefined ? fromAccess : data.globalAccessAuth;
+  const toAction = data?.globalActionAuth === undefined ? fromAction : data.globalActionAuth;
+
+  return {
+    fromAccess,
+    fromAction,
+    toAccess,
+    toAction,
+    isAccessSame: isDeepEqual(fromAccess, toAccess),
+    isActionSame: isDeepEqual(fromAction, toAction),
+  };
 };

@@ -31,6 +31,7 @@ import {
 } from '../company-seal/company-seal-field';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { lockEnvelopeForOwnerEdit } from '../recipient/lock-envelope-for-owner-edit';
+import { assertFieldTypesSupported } from './assert-field-types-supported';
 
 export interface SetFieldsForDocumentOptions {
   userId: number;
@@ -79,6 +80,11 @@ export const setFieldsForDocument = async ({
       message: 'Document not found',
     });
   }
+
+  assertFieldTypesSupported(
+    envelope.internalVersion,
+    fields.map((field) => field.type),
+  );
 
   if (envelope.completedAt) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {

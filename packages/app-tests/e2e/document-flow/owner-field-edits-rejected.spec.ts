@@ -37,6 +37,7 @@ import {
   dataOf,
   expectRefused,
   keepRecord,
+  outsideSweepWindow,
   REJECTION_REASON,
   type Reply,
   recipientRow,
@@ -86,7 +87,11 @@ const rejectWhile = async (seeded: Seeded, lockFieldId: number | null, request: 
 
       await tx.recipient.update({
         where: { id: seeded.a.id },
-        data: { signingStatus: SigningStatus.REJECTED, rejectionReason: REJECTION_REASON, signedAt: new Date() },
+        data: {
+          signingStatus: SigningStatus.REJECTED,
+          rejectionReason: REJECTION_REASON,
+          signedAt: outsideSweepWindow(),
+        },
       });
 
       await tx.documentAuditLog.create({

@@ -1,4 +1,4 @@
-import { getHighestOrganisationRoleInGroup } from '@documenso/lib/utils/organisations';
+import { canExecuteOrganisationAction, getHighestOrganisationRoleInGroup } from '@documenso/lib/utils/organisations';
 import { buildTeamWhereQuery, extractDerivedTeamSettings, getHighestTeamRoleInGroup } from '@documenso/lib/utils/teams';
 import { prisma } from '@documenso/prisma';
 
@@ -69,11 +69,16 @@ export const getOrganisationSession = async ({
     },
   });
 
-  return organisations.map((organisation) => {
+  const sessions = organisations.map((organisation) => {
     const { organisationGlobalSettings } = organisation;
+    const currentOrganisationRole = getHighestOrganisationRoleInGroup(organisation.groups);
 
     return {
       ...organisation,
+      // Only those who can manage the organisation see its subscription and billing customer (#164).
+      ...(canExecuteOrganisationAction('MANAGE_ORGANISATION', currentOrganisationRole)
+        ? {}
+        : { subscription: null, customerId: null }),
       teams: organisation.teams.map((team) => {
         const derivedSettings = extractDerivedTeamSettings(organisationGlobalSettings, team.teamGlobalSettings);
 
@@ -85,7 +90,11 @@ export const getOrganisationSession = async ({
           },
         };
       }),
-      currentOrganisationRole: getHighestOrganisationRoleInGroup(organisation.groups),
+      currentOrganisationRole,
     };
   });
+
+  // The root loader serialises this result without the tRPC output schema, so parse it here: the raw organisation and
+  // team settings must not reach a member's page payload (#164).
+  return ZGetOrganisationSessionResponseSchema.parse(sessions);
 };

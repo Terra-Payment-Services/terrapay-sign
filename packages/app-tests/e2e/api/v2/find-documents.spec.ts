@@ -22,6 +22,7 @@ import { expect, test } from '@playwright/test';
 import type { Team, User } from '@prisma/client';
 
 import { apiSignin } from '../../fixtures/authentication';
+import { outsideSweepWindow } from '../../fixtures/reject-seal';
 
 const WEBAPP_BASE_URL = NEXT_PUBLIC_WEBAPP_URL();
 const baseUrl = `${WEBAPP_BASE_URL}/api/v2`;
@@ -1659,7 +1660,7 @@ test.describe('Find Documents API - Expired Recipient Filter', () => {
     });
     await prisma.recipient.updateMany({
       where: { envelopeId: signedDoc.id },
-      data: { expiresAt: PAST, signingStatus: SigningStatus.SIGNED },
+      data: { expiresAt: PAST, signingStatus: SigningStatus.SIGNED, signedAt: outsideSweepWindow() },
     });
 
     const ccDoc = await seedPendingDocument(user, team.id, [recipient], {
@@ -1667,7 +1668,7 @@ test.describe('Find Documents API - Expired Recipient Filter', () => {
     });
     await prisma.recipient.updateMany({
       where: { envelopeId: ccDoc.id },
-      data: { expiresAt: PAST, role: RecipientRole.CC },
+      data: { expiresAt: PAST, role: RecipientRole.CC, signedAt: outsideSweepWindow() },
     });
 
     const validDoc = await seedPendingDocument(user, team.id, [recipient], {

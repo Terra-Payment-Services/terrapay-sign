@@ -71,6 +71,9 @@ const SVG_OVER_BOUND = `${P}${Buffer.from(
 
 type Seeded = G4Seeded & { since: Date };
 
+/** Envelopes the running test seeded; the ones a stopped seal leaves PENDING are deleted after it (#177). */
+const seededByTest: string[] = [];
+
 const seedStored = async (internalVersion: 1 | 2, stored: string): Promise<Seeded> => {
   const seeded = await seedG4Envelope({
     internalVersion,
@@ -84,6 +87,8 @@ const seedStored = async (internalVersion: 1 | 2, stored: string): Promise<Seede
       { key: 's2', signingOrder: 2, fields: [{ key: 'sig', type: FieldType.SIGNATURE, inserted: true }] },
     ],
   });
+
+  seededByTest.push(seeded.envelopeId);
 
   await prisma.signature.create({
     data: { fieldId: seeded.r.s1.fields.sig.id, recipientId: seeded.r.s1.id, signatureImageAsBase64: stored },
@@ -100,6 +105,14 @@ const seedStored = async (internalVersion: 1 | 2, stored: string): Promise<Seede
 
   return { ...seeded, since: new Date() };
 };
+
+// A stopped seal leaves the envelope PENDING with s2's recent signedAt, which the seal sweep would retry.
+test.afterEach(async () => {
+  await prisma.envelope.updateMany({
+    where: { id: { in: seededByTest.splice(0) }, status: DocumentStatus.PENDING },
+    data: { deletedAt: new Date() },
+  });
+});
 
 const sealAndSettle = async (request: APIRequestContext, seeded: Seeded) => {
   expect2xx(await completeWithToken(request, seeded, seeded.r.s2.token), "premise: s2's completion is accepted");

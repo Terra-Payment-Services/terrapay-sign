@@ -35,19 +35,18 @@ import { legacyServiceAccountEmail } from '@documenso/lib/server-only/user/servi
 import { updatePassword } from '@documenso/lib/server-only/user/update-password';
 import { verifyEmail } from '@documenso/lib/server-only/user/verify-email';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { compare } from '@node-rs/bcrypt';
 import { UserSecurityAuditLogType } from '@prisma/client';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
-
 import { AuthenticationErrorCode } from '../lib/errors/error-codes';
 import { invalidateSessions } from '../lib/session/session';
 import { getCsrfCookie } from '../lib/session/session-cookies';
 import { onAuthorize } from '../lib/utils/authorizer';
 import { getSession } from '../lib/utils/get-session';
+import { sValidator } from '../lib/utils/s-validator';
 import type { HonoAuthContext } from '../types/context';
 import {
   ZForgotPasswordSchema,

@@ -50,6 +50,7 @@ vi.mock('../../../server-only/email/get-email-context', () => ({
     claims: {},
     emailsDisabled: false,
     emailTransport: { sendMail },
+    settings: { includeSenderDetails: false },
   }),
 }));
 

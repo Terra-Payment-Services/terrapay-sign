@@ -21,7 +21,7 @@ export const ZGetOrganisationRequestSchema = z.object({
 });
 
 export const ZGetOrganisationResponseSchema = ZOrganisationSchema.extend({
-  organisationGlobalSettings: OrganisationGlobalSettingsSchema,
+  organisationGlobalSettings: OrganisationGlobalSettingsSchema.nullable(),
   organisationClaim: OrganisationClaimSchema,
   subscription: SubscriptionSchema.nullable(),
   members: z.array(

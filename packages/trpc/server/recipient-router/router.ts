@@ -648,6 +648,7 @@ export const recipientRouter = router({
           isAccess2FAVerified: await hasRecipientAccess2FACookie({
             headers: ctx.req.headers,
             recipientId: envelope.recipients[0].id,
+            token,
           }),
           nextSigner,
           recipientOverride,
@@ -705,7 +706,7 @@ export const recipientRouter = router({
       reason,
       userId: ctx.user?.id,
       isAccess2FAVerified: recipient
-        ? await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id })
+        ? await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id, token })
         : false,
       requestMetadata: ctx.metadata.requestMetadata,
     });

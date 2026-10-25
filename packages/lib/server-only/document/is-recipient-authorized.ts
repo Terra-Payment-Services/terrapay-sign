@@ -33,6 +33,16 @@ type IsRecipientAuthorizedOptions = {
   authOptions?: TDocumentAuthMethods;
 };
 
+/**
+ * Whether the signed-in user is the recipient's own account. A passkey, authenticator code or password proves who
+ * the signed-in user is, so it authorises the recipient only when that user is the recipient (#240).
+ */
+const isRecipientAccount = async (userId: number, recipientEmail: string) => {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+
+  return !!user && user.email.trim().toLowerCase() === recipientEmail.trim().toLowerCase();
+};
+
 const getUserByEmail = async (email: string) => {
   return await prisma.user.findFirst({
     where: {
@@ -105,7 +115,7 @@ export const isRecipientAuthorized = async ({
       return recipientUser.id === userId;
     })
     .with({ type: DocumentAuth.PASSKEY }, async ({ authenticationResponse, tokenReference }) => {
-      if (!userId) {
+      if (!userId || !(await isRecipientAccount(userId, recipient.email))) {
         return false;
       }
 
@@ -129,7 +139,7 @@ export const isRecipientAuthorized = async ({
         });
       }
 
-      if (!userId) {
+      if (!userId || !(await isRecipientAccount(userId, recipient.email))) {
         return false;
       }
 
@@ -151,10 +161,12 @@ export const isRecipientAuthorized = async ({
         user,
         totpCode: token,
         window: 10, // 5 minutes worth of tokens
+        // Asked for once per signing action, so a code is not consumed here (#226).
+        consume: false,
       });
     })
     .with({ type: DocumentAuth.PASSWORD }, async ({ password }) => {
-      if (!userId) {
+      if (!userId || !(await isRecipientAccount(userId, recipient.email))) {
         return false;
       }
 

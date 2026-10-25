@@ -108,6 +108,9 @@ const QUIET_MS = 8_000;
 
 type Stored = G4Seeded & { since: Date; dataIdBefore: string; dataHashBefore: string; receiver: Receiver };
 
+/** Envelopes the running test seeded; the ones a stopped seal leaves PENDING are deleted after it (#177). */
+const seededByTest: string[] = [];
+
 const sha256 = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
 
 /** The hash of the bytes the envelope item's document data holds. */
@@ -167,6 +170,8 @@ const seedStored = async (
   }
 
   await registerWebhook(receiver, seeded.owner.user.id, seeded.owner.team.id);
+
+  seededByTest.push(seeded.envelopeId);
 
   const item = await prisma.envelopeItem.findUniqueOrThrow({ where: { id: seeded.itemId } });
   const dataHashBefore = await itemDataHash(seeded.itemId);
@@ -463,6 +468,14 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await receiver.close();
+});
+
+// A stopped seal leaves the envelope PENDING with a recent signedAt, which the seal sweep would retry.
+test.afterEach(async () => {
+  await prisma.envelope.updateMany({
+    where: { id: { in: seededByTest.splice(0) }, status: DocumentStatus.PENDING },
+    data: { deletedAt: new Date() },
+  });
 });
 
 test('C61 a stored valid PNG seals as today on V1 and V2 (and the premise for C58-C60)', async ({ request }) => {

@@ -42,6 +42,7 @@ import {
   jobsFor,
   keepRecord,
   type Outcome,
+  outsideSweepWindow,
   pause,
   QUIET_WINDOW_MS,
   REJECTION_REASON,
@@ -175,6 +176,16 @@ const waitForWaiter = async (pid: number) => {
   return false;
 };
 
+/** C18's and C19's envelopes: B signs for real, so each is inside the seal sweep's window; deleted after the test, pass or fail (#177). */
+const seededByRace: string[] = [];
+
+test.afterEach(async () => {
+  await prisma.envelope.updateMany({
+    where: { id: { in: seededByRace.splice(0) } },
+    data: { deletedAt: new Date() },
+  });
+});
+
 for (const dictated of [true, false]) {
   test(`C18 a rejection that commits while B's completion waits on A's row: A is never invited (${
     dictated ? 'dictated signer X' : 'no dictated signer'
@@ -182,6 +193,8 @@ for (const dictated of [true, false]) {
     test.setTimeout(180_000);
 
     const seeded = await seedSequential(request);
+
+    seededByRace.push(seeded.envelopeId);
 
     expectOk(await signV2(request, seeded.b), 'B signs its field');
 
@@ -201,7 +214,11 @@ for (const dictated of [true, false]) {
 
         await tx.recipient.update({
           where: { id: seeded.a.id },
-          data: { signingStatus: SigningStatus.REJECTED, rejectionReason: REJECTION_REASON, signedAt: new Date() },
+          data: {
+            signingStatus: SigningStatus.REJECTED,
+            rejectionReason: REJECTION_REASON,
+            signedAt: outsideSweepWindow(),
+          },
         });
 
         await tx.documentAuditLog.create({
@@ -264,6 +281,8 @@ test("C19 B's completion naming X and the owner's reject of A together: a reject
 
   await runIterations('C19', async (): Promise<Outcome> => {
     const seeded = await seedSequential(request);
+
+    seededByRace.push(seeded.envelopeId);
 
     expectOk(await signV2(request, seeded.b), 'B signs its field before the race');
 

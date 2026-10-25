@@ -49,7 +49,7 @@ export default function TeamsSettingsRemindersPage() {
     }
   };
 
-  if (isLoadingTeam || !teamWithSettings) {
+  if (isLoadingTeam || !teamWithSettings?.teamSettings) {
     return (
       <div className="flex items-center justify-center rounded-lg py-32">
         <Loader className="h-6 w-6 animate-spin text-muted-foreground" />

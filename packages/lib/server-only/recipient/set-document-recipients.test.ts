@@ -21,6 +21,8 @@ const transactionClient = {
   $queryRaw: async () => [],
   envelope: {
     findFirstOrThrow: async () => ({ signatureLevel: 'SES', status: 'PENDING' }),
+    // The signing-order rules (#157) read status and order under the lock; PARALLEL leaves them out of these cases.
+    findUniqueOrThrow: async () => ({ status: 'PENDING', documentMeta: { signingOrder: 'PARALLEL' } }),
   },
   recipient: {
     findMany: async () => (await envelopeFindFirst()).recipients,

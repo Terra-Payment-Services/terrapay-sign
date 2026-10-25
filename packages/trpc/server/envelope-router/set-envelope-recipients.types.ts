@@ -8,7 +8,7 @@ export const ZSetEnvelopeRecipientSchema = z.object({
   email: ZRecipientEmailSchema,
   name: z.string().max(255),
   role: z.nativeEnum(RecipientRole),
-  signingOrder: z.number().optional(),
+  signingOrder: z.number().nullish(),
   actionAuth: z.array(ZRecipientActionAuthTypesSchema).optional().default([]),
 });
 

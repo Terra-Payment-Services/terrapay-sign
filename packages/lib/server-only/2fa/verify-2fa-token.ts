@@ -1,3 +1,4 @@
+import { prisma } from '@documenso/prisma';
 import type { User } from '@prisma/client';
 import { base32 } from '@scure/base';
 import { generateHOTP } from 'oslo/otp';
@@ -12,6 +13,8 @@ type VerifyTwoFactorAuthenticationTokenOptions = {
   window?: number;
   // The duration that the token is valid for in seconds
   period?: number;
+  // Record the code's step so it cannot be used again; false only for recipient 2FA (#226)
+  consume?: boolean;
 };
 
 export const verifyTwoFactorAuthenticationToken = async ({
@@ -19,6 +22,7 @@ export const verifyTwoFactorAuthenticationToken = async ({
   totpCode,
   window = 1,
   period = 30_000,
+  consume = true,
 }: VerifyTwoFactorAuthenticationTokenOptions) => {
   const key = DOCUMENSO_ENCRYPTION_KEY;
 
@@ -42,11 +46,27 @@ export const verifyTwoFactorAuthenticationToken = async ({
     const hotp = await generateHOTP(decodedSecret, counter);
 
     if (totpCode === hotp) {
-      return true;
+      return consume ? await consumeTotpCounter(user.id, user.twoFactorSecret, counter) : true;
     }
 
     now -= period;
   }
 
   return false;
+};
+
+// One conditional write, so two concurrent uses of a code, or a code older than the last accepted one, fail (#197).
+// Bound to the secret the code was checked against, so a request that read a replaced secret cannot spend a step of
+// the new one.
+const consumeTotpCounter = async (userId: number, twoFactorSecret: string, counter: number) => {
+  const { count } = await prisma.user.updateMany({
+    where: {
+      id: userId,
+      twoFactorSecret,
+      OR: [{ lastTotpCounter: null }, { lastTotpCounter: { lt: counter } }],
+    },
+    data: { lastTotpCounter: counter },
+  });
+
+  return count === 1;
 };

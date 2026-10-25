@@ -11,6 +11,8 @@ import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-re
 import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get-recipient-signatures';
 import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-email';
 import { isDocumentCompleted } from '@documenso/lib/utils/document';
+import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
+import { isRecipientExpired } from '@documenso/lib/utils/recipients';
 import { trpc } from '@documenso/trpc/react';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
 import { cn } from '@documenso/ui/lib/utils';
@@ -18,7 +20,7 @@ import { Badge } from '@documenso/ui/primitives/badge';
 import { Button } from '@documenso/ui/primitives/button';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
+import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
 import { Link, redirect } from 'react-router';
 import { match } from 'ts-pattern';
@@ -100,6 +102,21 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const returnToHomePath = canRedirectToFolder ? `/t/${document.team.url}/documents/f/${document.folderId}` : '/';
 
+  // The redirect URL is named here and followed only if the recipient chooses to (#186). It is offered to a
+  // recipient who has acted (CC recipients are created SIGNED but never act), on a live document, before any
+  // expiry. The link and the text both use the absolute URL the WHATWG parser gives with no base, so a
+  // base-dependent value such as "https:partner.example" cannot point the link at a path on this site.
+  const storedRedirectUrl = document.documentMeta?.redirectUrl;
+  const isOfferedRedirect =
+    recipient.signingStatus === SigningStatus.SIGNED &&
+    recipient.role !== RecipientRole.CC &&
+    !document.deletedAt &&
+    !isRecipientExpired(recipient) &&
+    !!storedRedirectUrl &&
+    isValidRedirectUrl(storedRedirectUrl);
+  const redirectUrl = isOfferedRedirect && storedRedirectUrl ? new URL(storedRedirectUrl) : null;
+  const redirectTarget = redirectUrl ? { href: redirectUrl.href, host: redirectUrl.host } : null;
+
   return {
     isDocumentAccessValid: true,
     canSignUp,
@@ -109,6 +126,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     document,
     recipient,
     returnToHomePath,
+    redirectTarget,
     branding,
   };
 }
@@ -129,6 +147,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
     recipient,
     recipientEmail,
     returnToHomePath,
+    redirectTarget,
     branding,
   } = loaderData;
 
@@ -283,6 +302,21 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 </Button>
               )}
             </div>
+
+            {redirectTarget && (
+              <div className="mt-8 flex max-w-[60ch] flex-col items-center text-center">
+                <p className="text-muted-foreground text-sm">
+                  <Trans>The sender has linked a page for you to visit next.</Trans>
+                </p>
+                <p className="mt-2 break-all font-semibold text-lg">{redirectTarget.host}</p>
+                <p className="mt-1 break-all text-muted-foreground text-xs">{redirectTarget.href}</p>
+                <Button asChild className="mt-4">
+                  <a href={redirectTarget.href} referrerPolicy="no-referrer">
+                    <Trans>Continue</Trans>
+                  </a>
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col items-center">

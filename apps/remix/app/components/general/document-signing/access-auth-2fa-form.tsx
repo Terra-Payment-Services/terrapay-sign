@@ -1,3 +1,5 @@
+import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { TRecipientAccessAuth } from '@documenso/lib/types/document-auth';
 import { trpc } from '@documenso/trpc/react';
 import { cn } from '@documenso/ui/lib/utils';
@@ -16,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { useRequiredDocumentSigningAuthContext } from './document-signing-auth-provider';
+import { useDocumentSigningAuthContext } from './document-signing-auth-provider';
 
 type FormStep = 'method-selection' | 'code-input';
 type TwoFactorMethod = 'email' | 'authenticator';
@@ -43,7 +45,11 @@ export const AccessAuth2FAForm = ({ onSubmit, token, error }: AccessAuth2FAFormP
   const { _ } = useLingui();
   const { toast } = useToast();
 
-  const { user } = useRequiredDocumentSigningAuthContext();
+  // The access code gate renders this form outside the signing auth provider, so it falls back to the session (#214).
+  const authContext = useDocumentSigningAuthContext();
+  const { sessionData } = useOptionalSession();
+
+  const user = authContext ? authContext.user : sessionData?.user;
 
   const { mutateAsync: request2FAEmail, isPending: isRequesting2FAEmail } =
     trpc.document.accessAuth.request2FAEmail.useMutation();
@@ -56,6 +62,20 @@ export const AccessAuth2FAForm = ({ onSubmit, token, error }: AccessAuth2FAFormP
   });
 
   const hasAuthenticatorEnabled = user?.twoFactorEnabled === true;
+
+  const onRequestError = (error: unknown) => {
+    const isRateLimited = AppError.parseError(error).code === AppErrorCode.TOO_MANY_REQUESTS;
+
+    toast({
+      title: _(msg`An error occurred`),
+      description: isRateLimited
+        ? _(msg`Too many codes have been requested. Please wait a few minutes before requesting another.`)
+        : _(
+            msg`We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later.`,
+          ),
+      variant: 'destructive',
+    });
+  };
 
   const onMethodSelect = async (method: TwoFactorMethod) => {
     setSelectedMethod(method);
@@ -71,13 +91,7 @@ export const AccessAuth2FAForm = ({ onSubmit, token, error }: AccessAuth2FAFormP
 
         setStep('code-input');
       } catch (error) {
-        toast({
-          title: _(msg`An error occurred`),
-          description: _(
-            msg`We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later.`,
-          ),
-          variant: 'destructive',
-        });
+        onRequestError(error);
 
         return;
       }
@@ -121,13 +135,7 @@ export const AccessAuth2FAForm = ({ onSubmit, token, error }: AccessAuth2FAFormP
       setExpiresAt(result.expiresAt);
       setMillisecondsRemaining(result.expiresAt.valueOf() - Date.now());
     } catch (error) {
-      toast({
-        title: _(msg`An error occurred`),
-        description: _(
-          msg`We encountered an unknown error while attempting to request the two-factor authentication code. Please try again later.`,
-        ),
-        variant: 'destructive',
-      });
+      onRequestError(error);
     }
   };
 

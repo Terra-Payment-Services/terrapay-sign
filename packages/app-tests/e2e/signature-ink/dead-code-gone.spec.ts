@@ -164,12 +164,33 @@ test('C99 npx tsc --noEmit in packages/lib reports no error the merge-base with 
     'premise: the merge-base with main is found (origin/main or CI_MERGE_REQUEST_DIFF_BASE_SHA)',
   ).toBeTruthy();
 
-  const prismaChanges = execFileSync('git', ['diff', '--name-only', `${base}`, 'HEAD', '--', 'packages/prisma'], {
+  // Additions only (new migrations, new schema lines) keep HEAD's generated client a superset of the base's, so the
+  // base still compiles against it; anything modified or removed would not.
+  const prismaChanges = execFileSync('git', ['diff', '--name-status', `${base}`, 'HEAD', '--', 'packages/prisma'], {
     cwd: WORKTREE_ROOT,
     encoding: 'utf8',
-  }).trim();
+  })
+    .split('\n')
+    .filter(Boolean)
+    .filter((line) => !/^A\tpackages\/prisma\/migrations\//.test(line));
 
-  expect(prismaChanges, "premise: packages/prisma is unchanged, so HEAD's generated client fits the base").toBe('');
+  const removedSchemaLines = execFileSync(
+    'git',
+    ['diff', '--unified=0', `${base}`, 'HEAD', '--', 'packages/prisma/schema.prisma'],
+    { cwd: WORKTREE_ROOT, encoding: 'utf8' },
+  )
+    .split('\n')
+    .filter((line) => line.startsWith('-') && !line.startsWith('---'));
+
+  expect(
+    prismaChanges.filter((line) => line !== 'M\tpackages/prisma/schema.prisma'),
+    "premise: packages/prisma changes are additive, so HEAD's generated client fits the base",
+  ).toEqual([]);
+
+  expect(
+    removedSchemaLines,
+    "premise: schema.prisma only gains lines, so HEAD's generated client fits the base",
+  ).toEqual([]);
 
   const head = tscLib(WORKTREE_ROOT);
   const worktree = baseWorktree(`${base}`);

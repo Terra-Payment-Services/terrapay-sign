@@ -17,6 +17,7 @@ import {
 import { assertEnvelopeMutable } from '../envelope/assert-envelope-mutable';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { assertRecipientFieldsModifiableUnderLock } from '../recipient/lock-envelope-for-owner-edit';
+import { assertFieldTypesSupported } from './assert-field-types-supported';
 
 export interface UpdateEnvelopeFieldsOptions {
   userId: number;
@@ -77,6 +78,11 @@ export const updateEnvelopeFields = async ({
       message: 'Envelope already complete',
     });
   }
+
+  assertFieldTypesSupported(
+    envelope.internalVersion,
+    fields.flatMap((field) => (field.type ? [field.type] : [])),
+  );
 
   const fieldsToUpdate = fields.map((field) => {
     const originalField = envelope.fields.find((existingField) => existingField.id === field.id);

@@ -12,9 +12,9 @@
  * | -------------------------------------------------------------------- | --------- |
  * | C3 <page> does not follow a stored javascript: URL [x2]               | C3        |
  * | C3 <page> does not follow a stored data: URL [x2]                     | C3        |
- * | C4 <page> follows a stored app-origin redirect URL [x2]               | C4        |
+ * | C4 <page> offers Continue to a stored app-origin URL [x2] (#186)      | C4        |
  * | C5 <document> reopened after signing never redirects to <scheme> [x4]| C5        |
- * | C5 <document> reopened after signing redirects to an app URL [x2]    | C5        |
+ * | C5 <document> reopened after signing offers Continue to it [x2]      | C5        |
  * | C7 direct-template submission drops / keeps the template's URL [x2]  | C7        |
  *
  * C5 fetches /sign/<token> through a request context with maxRedirects: 0 and
@@ -40,7 +40,9 @@
  * first sign of an attempt.
  *
  * C4 uses the app's own origin (http under the local server), so it does not
- * depend on an outside site.
+ * depend on an outside site. Since #186 no redirect is followed automatically:
+ * C4 and the C5 control assert that the browser lands on /sign/<token>/complete
+ * and that its Continue link carries the stored URL as `new URL(stored).href`.
  */
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { formatDirectTemplatePath } from '@documenso/lib/utils/templates';
@@ -49,9 +51,10 @@ import { seedPendingDocumentWithFullFields } from '@documenso/prisma/seed/docume
 import { seedDirectTemplate } from '@documenso/prisma/seed/templates';
 import { seedTestEmail, seedUser } from '@documenso/prisma/seed/users';
 import { expect, type Page, test } from '@playwright/test';
-import { FieldType, SigningStatus } from '@prisma/client';
+import { DocumentStatus, FieldType, SigningStatus } from '@prisma/client';
 import { nanoid } from 'nanoid';
 
+import { outsideSweepWindow } from '../fixtures/reject-seal';
 import { signSignaturePad } from '../fixtures/signature';
 
 test.describe.configure({ mode: 'parallel', timeout: 120_000 });
@@ -143,6 +146,16 @@ const SIGNING_PAGES: SigningPage[] = [
   { name: 'envelope signing completion dialog', internalVersion: 2, sign: signV2 },
 ];
 
+/** Documents the running test seeded; any its signing leaves PENDING are deleted after it (#177). */
+const seededByTest: string[] = [];
+
+test.afterEach(async () => {
+  await prisma.envelope.updateMany({
+    where: { id: { in: seededByTest.splice(0) }, status: DocumentStatus.PENDING },
+    data: { deletedAt: new Date() },
+  });
+});
+
 /** A pending single-signer document whose meta carries the given redirect URL. */
 const seedSignerWithRedirect = async (internalVersion: 1 | 2, redirectUrl: string) => {
   const { user, team } = await seedUser();
@@ -154,6 +167,8 @@ const seedSignerWithRedirect = async (internalVersion: 1 | 2, redirectUrl: strin
     fields: [FieldType.SIGNATURE],
     updateDocumentOptions: { internalVersion, title: `Redirect after signing ${nanoid()}` },
   });
+
+  seededByTest.push(document.id);
 
   await prisma.documentMeta.update({ where: { id: document.documentMetaId }, data: { redirectUrl } });
 
@@ -270,10 +285,11 @@ for (const signingPage of SIGNING_PAGES) {
     }
 
     /**
-     * Guards C4: the fix keeps legitimate redirects working. A stored redirect
-     * URL on the app's own origin is followed after signing.
+     * Guards C4: the fix keeps legitimate redirects working. Since #186 a stored
+     * app-origin redirect URL is offered on the complete page as a Continue link
+     * rather than followed automatically.
      */
-    test('C4 follows a stored app-origin redirect URL after signing', async ({ page }) => {
+    test('C4 offers Continue to a stored app-origin redirect URL after signing', async ({ page }) => {
       const marker = `redirect-69-${nanoid()}`;
       const redirectUrl = `${APP_ORIGIN}/signin?r=${marker}`;
       const { recipient } = await seedSignerWithRedirect(signingPage.internalVersion, redirectUrl);
@@ -283,17 +299,26 @@ for (const signingPage of SIGNING_PAGES) {
       await signingPage.sign(page, recipient.fields);
 
       await page
-        .waitForURL((url) => url.origin === APP_ORIGIN && url.searchParams.get('r') === marker, { timeout: 30_000 })
+        .waitForURL((url) => url.pathname === `/sign/${recipient.token}/complete` || url.searchParams.has('r'), {
+          timeout: 30_000,
+        })
         .catch((error: unknown) => {
           throw new Error(
-            `the browser did not land on ${redirectUrl}; it is on ${page.url()}\n${describeEvidence(evidence)}\n${String(error)}`,
+            `the browser did not land on the complete page; it is on ${page.url()}\n${describeEvidence(evidence)}\n${String(error)}`,
           );
         });
 
+      // A late automatic redirect would show here.
+      await page.waitForTimeout(3_000);
+
       const landed = new URL(page.url());
 
-      expect(landed.pathname).toBe('/signin');
-      expect(landed.searchParams.get('r')).toBe(marker);
+      expect(landed.origin, `it is on ${page.url()}`).toBe(APP_ORIGIN);
+      expect(landed.pathname, `it is on ${page.url()}`).toBe(`/sign/${recipient.token}/complete`);
+      await expect(page.getByRole('link', { name: 'Continue', exact: true })).toHaveAttribute(
+        'href',
+        new URL(redirectUrl).href,
+      );
     });
   });
 }
@@ -316,7 +341,7 @@ const seedSignedRecipientWithRedirect = async (internalVersion: 1 | 2, redirectU
 
   await prisma.recipient.update({
     where: { id: recipient.id },
-    data: { signingStatus: SigningStatus.SIGNED, signedAt: new Date() },
+    data: { signingStatus: SigningStatus.SIGNED, signedAt: outsideSweepWindow() },
   });
 
   return recipient;
@@ -347,10 +372,11 @@ for (const signingPage of SIGNING_PAGES) {
     }
 
     /**
-     * Guards C5's control: an app-origin redirect URL stored on a signed
-     * document is still where the reopened signing page sends the recipient.
+     * Guards C5's control: since #186 the reopened signing page sends the
+     * recipient to the complete page, which offers the stored app-origin URL
+     * as a Continue link.
      */
-    test('C5 reopened after signing redirects to a stored app-origin URL', async ({ page }) => {
+    test('C5 reopened after signing offers Continue to a stored app-origin URL', async ({ page }) => {
       const redirectUrl = `${APP_ORIGIN}/signin?r=redirect-69-${nanoid()}`;
       const recipient = await seedSignedRecipientWithRedirect(signingPage.internalVersion, redirectUrl);
 
@@ -359,7 +385,14 @@ for (const signingPage of SIGNING_PAGES) {
 
       expect(status, `the loader redirects: ${details}`).toBeGreaterThanOrEqual(300);
       expect(status, `the loader redirects: ${details}`).toBeLessThan(400);
-      expect(resolved?.href, details).toBe(new URL(redirectUrl).href);
+      expect(resolved?.origin, details).toBe(APP_ORIGIN);
+      expect(resolved?.pathname, details).toBe(`/sign/${recipient.token}/complete`);
+
+      await page.goto(`/sign/${recipient.token}/complete`);
+      await expect(page.getByRole('link', { name: 'Continue', exact: true })).toHaveAttribute(
+        'href',
+        new URL(redirectUrl).href,
+      );
     });
   });
 }

@@ -511,6 +511,7 @@ test('criterion_5_the_job_refuses_an_envelope_that_is_not_ses', async ({ request
   test.setTimeout(180_000);
 
   const receiver = await startReceiver();
+  let seededEnvelopeId: string | undefined;
 
   try {
     const context = await apiContext('seal-job-5');
@@ -518,6 +519,8 @@ test('criterion_5_the_job_refuses_an_envelope_that_is_not_ses', async ({ request
     await registerWebhook(receiver, context.user.id, context.team.id);
 
     const seeded = await seedTwoSignerEnvelope(request, context);
+
+    seededEnvelopeId = seeded.envelope.id;
 
     // Sending refuses anything but SES, so a pending QES envelope is one that
     // was sent before that rule.
@@ -547,6 +550,11 @@ test('criterion_5_the_job_refuses_an_envelope_that_is_not_ses', async ({ request
     expect(receiver.deliveries, 'nobody was told').toEqual([]);
   } finally {
     await receiver.close();
+
+    // The refused envelope stays PENDING with a recent rejection, which the seal sweep would retry (#177).
+    if (seededEnvelopeId) {
+      await prisma.envelope.update({ where: { id: seededEnvelopeId }, data: { deletedAt: new Date() } });
+    }
   }
 });
 

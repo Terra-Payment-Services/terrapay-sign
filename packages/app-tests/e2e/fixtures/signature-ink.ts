@@ -43,7 +43,7 @@ import {
 import { nanoid } from 'nanoid';
 import { PNG } from 'pngjs';
 import { findServerPid } from './branding-server-probes';
-import { type Reply, send, trpcRaw } from './reject-seal';
+import { outsideSweepWindow, type Reply, send, trpcRaw } from './reject-seal';
 import { INBUCKET_URL } from './send-path';
 
 export const WEBAPP_BASE_URL = NEXT_PUBLIC_WEBAPP_URL();
@@ -514,7 +514,7 @@ export const seedG4Envelope = async (options: SeedG4Options): Promise<G4Seeded> 
         signingStatus: spec.signingStatus ?? SigningStatus.NOT_SIGNED,
         sendStatus: spec.sendStatus ?? (isPending ? SendStatus.SENT : SendStatus.NOT_SENT),
         readStatus: spec.readStatus ?? ReadStatus.NOT_OPENED,
-        signedAt: spec.signingStatus === SigningStatus.SIGNED ? new Date() : null,
+        signedAt: spec.signingStatus === SigningStatus.SIGNED ? outsideSweepWindow() : null,
       },
     });
 
@@ -664,7 +664,7 @@ export const seedInserted = async (
 export const seedSigned = async (seeded: G4Seeded, recipientKey: string) =>
   await prisma.recipient.update({
     where: { id: seeded.r[recipientKey].id },
-    data: { signingStatus: SigningStatus.SIGNED, signedAt: new Date() },
+    data: { signingStatus: SigningStatus.SIGNED, signedAt: outsideSweepWindow() },
   });
 
 // ---------------------------------------------------------------------------

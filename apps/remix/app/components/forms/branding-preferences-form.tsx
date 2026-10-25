@@ -7,12 +7,21 @@ import {
 } from '@documenso/lib/constants/branding';
 import { DEFAULT_BRAND_COLORS, DEFAULT_BRAND_RADIUS } from '@documenso/lib/constants/theme';
 import { ZCssVarsSchema, ZStoredCssVarsSchema } from '@documenso/lib/types/css-vars';
+import { ZBrandingUrlSchema } from '@documenso/lib/utils/branding-url';
 import { normalizeBrandingColors } from '@documenso/lib/utils/normalize-branding-colors';
 import { cn } from '@documenso/ui/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@documenso/ui/primitives/accordion';
 import { Button } from '@documenso/ui/primitives/button';
 import { ColorPicker } from '@documenso/ui/primitives/color-picker';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@documenso/ui/primitives/form/form';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@documenso/ui/primitives/form/form';
 import { Input } from '@documenso/ui/primitives/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@documenso/ui/primitives/select';
 import { Textarea } from '@documenso/ui/primitives/textarea';
@@ -41,7 +50,7 @@ const ZBrandingPreferencesFormSchema = z.object({
     )
     .refine((file) => BRANDING_LOGO_ALLOWED_TYPES.includes(file.type), 'Only .jpg, .png, and .webp files are accepted')
     .nullish(),
-  brandingUrl: z.string().url().optional().or(z.literal('')),
+  brandingUrl: ZBrandingUrlSchema.optional(),
   brandingCompanyDetails: z.string().max(500).optional(),
   brandingColors: ZCssVarsSchema.default({}),
   brandingCss: z.string().max(10_000).default(''),
@@ -379,6 +388,8 @@ export function BrandingPreferencesForm({
                       </span>
                     )}
                   </FormDescription>
+
+                  <FormMessage />
                 </InheritableField>
               )}
             />

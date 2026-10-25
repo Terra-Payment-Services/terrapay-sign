@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import { prisma } from '@documenso/prisma';
 import type { Envelope, Recipient } from '@prisma/client';
 import { parseSigned, serializeSigned } from 'hono/utils/cookie';
@@ -25,6 +27,13 @@ const getCookieSecret = () => {
 };
 
 /**
+ * A keyed digest of the signing token, so the cookie stops counting once the token is replaced (an email change,
+ * #150, #209) without the cookie carrying the token itself.
+ */
+const getTokenDigest = (token: string) =>
+  createHmac('sha256', getCookieSecret()).update(`recipientAccess2FA:${token}`).digest('base64url');
+
+/**
  * One cookie per recipient, so verifying for one document does not disturb
  * another open in the same browser.
  */
@@ -33,21 +42,24 @@ export const getRecipientAccess2FACookieName = (recipientId: number) =>
 
 /**
  * Build the Set-Cookie header that marks a recipient as having entered their
- * access code. The signed value carries the recipient ID and an expiry, so it
- * cannot be renamed onto another recipient or kept alive past its lifetime.
+ * access code. The signed value carries the recipient ID, an expiry and a digest
+ * of the token, so it cannot be renamed onto another recipient, kept alive past
+ * its lifetime, or carried over to a replaced token.
  */
 export const createRecipientAccess2FACookie = async ({
   recipientId,
+  token,
   now = Date.now(),
 }: {
   recipientId: number;
+  token: string;
   now?: number;
 }): Promise<string> => {
   const expiresAt = now + RECIPIENT_ACCESS_2FA_COOKIE_MAX_AGE_SECONDS * 1000;
 
   return await serializeSigned(
     getRecipientAccess2FACookieName(recipientId),
-    `${recipientId}:${expiresAt}`,
+    `${recipientId}:${expiresAt}:${getTokenDigest(token)}`,
     getCookieSecret(),
     {
       httpOnly: true,
@@ -66,15 +78,17 @@ export const createRecipientAccess2FACookie = async ({
 
 /**
  * Whether the request carries a valid, unexpired access code cookie for this
- * recipient.
+ * recipient, issued under this token.
  */
 export const hasRecipientAccess2FACookie = async ({
   headers,
   recipientId,
+  token,
   now = Date.now(),
 }: {
   headers: Headers;
   recipientId: number;
+  token: string;
   now?: number;
 }): Promise<boolean> => {
   const cookieHeader = headers.get('cookie');
@@ -91,9 +105,19 @@ export const hasRecipientAccess2FACookie = async ({
     return false;
   }
 
-  const [cookieRecipientId, expiresAt] = value.split(':');
+  const match = /^(\d+):(\d+):([A-Za-z0-9_-]{43})$/.exec(value);
 
-  return Number(cookieRecipientId) === recipientId && Number(expiresAt) > now;
+  if (!match) {
+    return false;
+  }
+
+  const [, cookieRecipientId, expiresAt, digest] = match;
+
+  return (
+    Number(cookieRecipientId) === recipientId &&
+    Number(expiresAt) > now &&
+    timingSafeEqual(Buffer.from(digest), Buffer.from(getTokenDigest(token)))
+  );
 };
 
 /**
@@ -125,13 +149,13 @@ export const isRecipientAccess2FASatisfied = async ({
 }: {
   headers: Headers;
   documentAuthOptions: Envelope['authOptions'];
-  recipient: Pick<Recipient, 'id' | 'authOptions'>;
+  recipient: Pick<Recipient, 'id' | 'token' | 'authOptions'>;
 }) => {
   if (!isRecipientAccess2FARequired({ documentAuthOptions, recipient })) {
     return true;
   }
 
-  return await hasRecipientAccess2FACookie({ headers, recipientId: recipient.id });
+  return await hasRecipientAccess2FACookie({ headers, recipientId: recipient.id, token: recipient.token });
 };
 
 /**
@@ -144,6 +168,7 @@ export const isRecipientTokenAccess2FASatisfied = async ({ headers, token }: { h
     where: { token },
     select: {
       id: true,
+      token: true,
       authOptions: true,
       envelope: {
         select: {

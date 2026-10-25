@@ -50,6 +50,8 @@ export const setupTwoFactorAuthentication = async ({ user }: SetupTwoFactorAuthe
         data: encodedSecret,
         key: key,
       }),
+      // Steps used under the old secret say nothing about the new one.
+      lastTotpCounter: null,
     },
   });
 

@@ -1,6 +1,7 @@
-import { isRecipientTokenAccess2FASatisfied } from '@documenso/lib/server-only/2fa/email/recipient-access-2fa-cookie';
+import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
+import { sValidator } from '@documenso/auth/server/lib/utils/s-validator';
+import { isRecipientTokenAccessAuthorized } from '@documenso/lib/server-only/document/assert-recipient-access-authorized';
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { DocumentStatus, type Prisma } from '@prisma/client';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -60,7 +61,9 @@ route.get(
       };
     }
 
-    if (!(await isRecipientTokenAccess2FASatisfied({ headers: c.req.raw.headers, token }))) {
+    const { user } = await getOptionalSession(c);
+
+    if (!(await isRecipientTokenAccessAuthorized({ headers: c.req.raw.headers, token, userId: user?.id }))) {
       return c.json({ error: 'Access code required' }, 401);
     }
 

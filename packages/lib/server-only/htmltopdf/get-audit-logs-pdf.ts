@@ -89,7 +89,8 @@ export const getAuditLogsPdf = async ({ documentId, language }: GetAuditLogsPdfO
 
   await browserContext.close();
 
-  void browser.close();
+  // Not awaited, so a failed close must not become an unhandled rejection (#227).
+  void browser.close().catch(() => undefined);
 
   return result;
 };

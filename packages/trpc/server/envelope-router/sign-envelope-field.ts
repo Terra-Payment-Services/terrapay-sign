@@ -145,6 +145,7 @@ export const signEnvelopeFieldRoute = procedure
         envelopeId: envelope.id,
         recipientId: recipient.id,
         fieldRecipientId: field.recipientId,
+        token,
       });
 
       // Under the lock, so a completion or reorder that commits first is seen; an assistant's own turn (#145).
@@ -176,7 +177,7 @@ export const signEnvelopeFieldRoute = procedure
 
     if (
       isRecipientAccess2FARequired({ documentAuthOptions: envelope.authOptions, recipient }) &&
-      !(await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id }))
+      !(await hasRecipientAccess2FACookie({ headers: ctx.req.headers, recipientId: recipient.id, token }))
     ) {
       throw new AppError(AppErrorCode.UNAUTHORIZED, {
         message: 'The access code must be entered before signing',

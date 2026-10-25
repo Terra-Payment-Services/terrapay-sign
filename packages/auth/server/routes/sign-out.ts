@@ -1,10 +1,9 @@
 import { prisma } from '@documenso/prisma';
-import { sValidator } from '@hono/standard-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
-
 import { invalidateSessions, validateSessionToken } from '../lib/session/session';
 import { deleteSessionCookie, getSessionCookie } from '../lib/session/session-cookies';
+import { sValidator } from '../lib/utils/s-validator';
 import type { HonoAuthContext } from '../types/context';
 
 const ZSignoutSessionSchema = z.object({

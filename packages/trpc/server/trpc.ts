@@ -9,6 +9,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import type { AnyZodObject } from 'zod';
 
 import { dataTransformer } from '../utils/data-transformer';
+import { getErrorRequestId } from '../utils/trpc-error-handler';
 import type { TrpcContext } from './context';
 
 // Can't import type from trpc-to-openapi because it breaks build, not sure why.
@@ -48,7 +49,8 @@ const t = initTRPC
       if (originalError instanceof AppError) {
         if (originalError.headers && ctx) {
           for (const [headerKey, headerValue] of Object.entries(originalError.headers)) {
-            ctx.res.headers.append(headerKey, headerValue);
+            // Replace rather than append, so a refusing limiter's values win over the outer limiter's (#215).
+            ctx.res.headers.set(headerKey, headerValue);
           }
         }
 
@@ -57,6 +59,21 @@ const t = initTRPC
           appError: AppError.toJSON(originalError),
           code: originalError.code,
           httpStatus: originalError.statusCode ?? genericErrorCodeToTrpcErrorCodeMap[originalError.code]?.status ?? 400,
+        };
+      }
+
+      // An unexpected failure keeps its detail in the server log, under the request id the client is given; its
+      // message can name the ORM, the operation and the database error (#168).
+      if (!(originalError instanceof AppError) && shape.data.code === 'INTERNAL_SERVER_ERROR') {
+        const { stack: _stack, ...rest } = data;
+
+        return {
+          ...shape,
+          message: 'Something went wrong',
+          data: {
+            ...rest,
+            requestId: getErrorRequestId(error, ctx),
+          },
         };
       }
 

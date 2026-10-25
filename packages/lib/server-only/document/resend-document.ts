@@ -345,6 +345,7 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
           userId: envelope.userId,
           envelopeId: envelope.id,
           teamId: envelope.teamId,
+          includeSenderDetails: settings.includeSenderDetails,
         }),
       });
 

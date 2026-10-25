@@ -4,7 +4,6 @@ import { AppError } from '@documenso/lib/errors/app-error';
 import type { TTemplate } from '@documenso/lib/types/template';
 import { isRequiredField } from '@documenso/lib/utils/advanced-fields-helpers';
 import { getDocumentDataUrlForPdfViewer } from '@documenso/lib/utils/envelope-download';
-import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { trpc } from '@documenso/trpc/react';
 import { Card, CardContent } from '@documenso/ui/primitives/card';
 import { DocumentFlowFormContainer } from '@documenso/ui/primitives/document-flow/document-flow-root';
@@ -116,13 +115,8 @@ export const DirectTemplatePageView = ({
         }),
       });
 
-      const redirectUrl = template.templateMeta?.redirectUrl;
-
-      if (redirectUrl && isValidRedirectUrl(redirectUrl)) {
-        window.location.href = redirectUrl;
-      } else {
-        window.location.href = `/sign/${token}/complete`;
-      }
+      // The complete page names any redirect URL and lets the signer choose to follow it (#186).
+      window.location.href = `/sign/${token}/complete`;
     } catch (err) {
       const error = AppError.parseError(err);
       const errorMessage = getDirectTemplateErrorMessage(error.code);

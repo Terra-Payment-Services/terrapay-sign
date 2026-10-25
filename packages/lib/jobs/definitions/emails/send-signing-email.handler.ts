@@ -309,6 +309,7 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
           userId,
           envelopeId: envelope.id,
           teamId: envelope.teamId,
+          includeSenderDetails: settings.includeSenderDetails,
         }),
       });
 

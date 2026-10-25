@@ -1,0 +1,28 @@
+diff --git a/node_modules/trpc-to-openapi/dist/cjs/adapters/node-http/core.js b/node_modules/trpc-to-openapi/dist/cjs/adapters/node-http/core.js
+index 8bb66f9..20e1149 100644
+--- a/node_modules/trpc-to-openapi/dist/cjs/adapters/node-http/core.js
++++ b/node_modules/trpc-to-openapi/dist/cjs/adapters/node-http/core.js
+@@ -65,6 +65,9 @@ const createOpenApiNodeHttpHandler = (opts) => {
+                 searchParams: url.searchParams,
+                 headers: req.headers,
+             });
++            // TerraPay #227: getRequestInfo is async and not awaited here, so its rejection (an unsupported
++            // content type) was unhandled and ended the process.
++            Promise.resolve(info).catch(() => undefined);
+             const useBody = (0, utils_1.acceptsRequestBody)(method);
+             const inputParser = (0, utils_1.getInputOutputParsers)(procedure.procedure).inputParser;
+             const unwrappedSchema = (0, utils_1.unwrapZodType)(inputParser, true);
+diff --git a/node_modules/trpc-to-openapi/dist/esm/adapters/node-http/core.mjs b/node_modules/trpc-to-openapi/dist/esm/adapters/node-http/core.mjs
+index 52e069b..f3b15b3 100644
+--- a/node_modules/trpc-to-openapi/dist/esm/adapters/node-http/core.mjs
++++ b/node_modules/trpc-to-openapi/dist/esm/adapters/node-http/core.mjs
+@@ -61,6 +61,9 @@ export const createOpenApiNodeHttpHandler = (opts) => {
+                 searchParams: url.searchParams,
+                 headers: req.headers,
+             });
++            // TerraPay #227: getRequestInfo is async and not awaited here, so its rejection (an unsupported
++            // content type) was unhandled and ended the process.
++            Promise.resolve(info).catch(() => undefined);
+             const useBody = acceptsRequestBody(method);
+             const inputParser = getInputOutputParsers(procedure.procedure).inputParser;
+             const unwrappedSchema = unwrapZodType(inputParser, true);
